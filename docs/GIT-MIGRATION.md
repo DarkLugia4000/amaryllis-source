@@ -49,3 +49,23 @@ deployment is part of the migration.
 
 The existing source-recovery and guarded builder transformations remain.
 Simplifying them is a separate development step.
+
+
+## Verified migration result
+
+The initial import is commit 428da35. Verification used a fresh local Git clone,
+with dependencies supplied separately from the checkout.
+
+- All 104 maintained tests passed in the fresh clone.
+- All 14 information scenarios passed under the pinned Cobalt 0.9.9 engine.
+- A fresh installer was generated from committed source without a Minecraft save
+  or previous media folder.
+- Source fingerprints and the migrated core bundle matched baseline metadata.
+- Program payload counts remained five on core and three on state and auxiliaries.
+- All 45 embedded core Lua token streams matched delivered 2.8.0 behavior.
+- Generated outputs, backups, protected instruction files and credential fields
+  were excluded from the 175-file initial import.
+- Main repository status was clean and no remote was configured.
+
+The migration tag identifies this verified starting point. Detailed machine
+results are retained locally under output/git-migration/verification.json.

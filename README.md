@@ -19,7 +19,9 @@ software. The Git baseline imports the delivered 2.8.0 behavior on 29 October 20
 
 Logs, recordings, installer exports, release ZIPs, backups and older one-off
 scripts remain available locally and are excluded from the repository. The
-existing Windows builder folder keeps its current name and launcher.
+existing Windows builder folder keeps its current name and launcher. The
+top-level Git allowlist is explicit: add new maintained directories or root
+tools to .gitignore when extending the project layout.
 
 ## Development setup
 
