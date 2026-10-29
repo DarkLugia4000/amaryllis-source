@@ -42,28 +42,73 @@ The test dependency is pinned to Lupa 2.6 and its Lua 5.2 engine. Test fixtures
 use synthetic computer assignments under .cache/fixtures. They require no
 Minecraft save, previous installer folder or account credentials.
 
-## Editing and building current software
+## Authoritative source, installation disks and updates
 
-Edit the appropriate maintained Lua module under source/. Five asset-backed
-modules have their single editing location in the builder's assets directory;
-source/baseline.json records that mapping. The source loader supplies them when
-creating a synthetic build input.
+The maintained software is this repository. Edit Lua under `source/core/` and
+`source/library/`; shipped hover/level defaults live under `source/calibration/`.
+Five shared modules have one editing location in the builder's `assets/` folder:
+`core-progress.lua`, `core-media.lua`, `identity-watch.lua`, `panel-console.lua`
+and `remote-panel.lua`. Their installed paths are mapped by `source/baseline.json`.
+The migration fingerprints in that file are historical reference values.
 
-    .\.venv\Scripts\python.exe project.py build
+### Windows interface
 
-This builds current repository software and the shipped learning defaults into
-a new installer folder under output/installers/. It uses the existing builder,
-bundle format and installer verification. Program payload counts remain five
-on core and three on state and each auxiliary.
+Open `Amaryllis Installer Builder/Start Builder.cmd`. **Project source** is
+selected automatically when maintained source is present. Select the project
+folder and choose:
 
-The Windows Disk Builder exports saved ships into its local Installers directory. For
-software edited in this repository, use project.py build so that the current
-source tree supplies the programs. An existing ship receives a generated
-release through the normal Update existing ship workflow and external backup.
+- **Build installer** to create a new commissioning disk package.
+- **Update existing ship…** to build current project software and open the
+  updater with that release already selected. Select the target save, choose
+  an external backup folder, and review the update before applying it.
+
+Both actions read software from the project. A world folder is needed only as
+the update destination. Existing IDs, stored settings, PID configuration,
+learning and restart records are retained by the updater. Managed programs are
+overwritten and obsolete managed files are removed after an external backup.
+Minecraft must be fully closed before applying an update under the updater's
+current process checks. Building and previewing are read-only with respect to saves.
+
+**Saved ship export** is a separate mode for capturing the software and portable
+configuration currently installed on a ship. Its source is that saved installation.
+
+### Project commands
+
+    python project.py build
+    python project.py update --target "D:\Minecraft\saves\Amaryllis"
+    python project.py gui
+
+`build` creates a verified installer under `output/installers/`. `update` builds
+from the same source and prints a preview; it leaves the target unchanged.
+To apply that replacement with an external backup:
+
+    python project.py update --target "D:\Minecraft\saves\Amaryllis" --apply --backup "D:\Amaryllis Backups" --minecraft-closed
+
+Project builds read maintained inputs directly and use a temporary compatibility
+adapter for the existing packager. The adapter is removed after collection.
+Production builds do not use the test fixture cache. Installed program payloads
+remain five files on core and three on state and each auxiliary.
+
+### Release provenance
+
+Project releases record their source commit, whether the working tree contained
+uncommitted changes, and a fingerprint of the source and builder inputs. This
+record is included in `media/release.json`, the shared README and the local
+build report. The updater shows it in the preview and retains it in each
+computer's existing installation record. The floppy disk's installer also
+records it during fresh installation.
+
+The local build report lists individual input fingerprints and source paths;
+it remains outside the distributable installer ZIP. Source changes during a
+build prevent that output from being published as complete.
+
+Standalone Disk Builder ZIPs include a release snapshot of the maintained source
+and its revision record. They can build installers without a Minecraft save or
+Git. Their source snapshot represents that packaged release. Work on future
+software in this repository and create a new utility snapshot when distributing it.
 
 The builder's guarded compatibility transformations remain in place. Changes
 to guarded helper sections may require corresponding builder/asset updates.
-Simplifying those transformations is a separate development step.
 
 ## Validation
 

@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent
 HOME = ROOT / "Amaryllis Installer Builder"
 SUITES = ("tests.test_windows_builder", "tests.test_runtime_bundling", "tests.test_bundling_compatibility",
           "tests.test_information", "tests.test_bridge_presentation", "tests.test_persistent_modes", "tests.test_repository",
-          "tests.test_disk_setup")
+          "tests.test_disk_setup", "tests.test_project_release")
 
 
 def digest(data):
@@ -143,10 +143,26 @@ def build(output):
     builder = builder_module()
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=True)
-    path, report = builder.build(fixture(), output, log=print)
+    path, report = builder.build(ROOT, output, log=print, project_source=True)
     print(path)
     print(json.dumps({"releaseId": report["releaseId"], "mediaBytes": report["mediaBytes"]}))
     return path
+
+
+def update(target, output, backup=None, apply=False, closed=False):
+    """Build maintained software and preview or apply it with the existing offline updater."""
+    if apply and (backup is None or not closed):
+        raise ValueError("Applying requires --backup and --minecraft-closed.")
+    release = build(output)
+    builder_module()
+    import updater
+    plan = updater.preview(target, release / "media")
+    print(plan.report())
+    if apply:
+        backup = Path(backup).resolve()
+        backup.mkdir(parents=True, exist_ok=True)
+        print("Backup: " + str(updater.apply(plan, backup, closed_ack=closed)))
+    return plan
 
 
 def cobalt(mod, java):
@@ -251,6 +267,13 @@ def main():
     test.add_argument("--quick", action="store_true")
     release = commands.add_parser("build")
     release.add_argument("--output", type=Path, default=ROOT / "output/installers")
+    upgrade = commands.add_parser("update", help="Build project source and preview an existing-ship update")
+    upgrade.add_argument("--target", type=Path, required=True, help="Target save or numeric core folder")
+    upgrade.add_argument("--output", type=Path, default=ROOT / "output/installers")
+    upgrade.add_argument("--backup", type=Path)
+    upgrade.add_argument("--apply", action="store_true")
+    upgrade.add_argument("--minecraft-closed", action="store_true")
+    commands.add_parser("gui", help="Open the project Disk Builder")
     args = parser.parse_args()
     if args.command == "check":
         check()
@@ -260,6 +283,10 @@ def main():
         cobalt(args.cc_mod, args.java)
     elif args.command == "build":
         build(args.output)
+    elif args.command == "update":
+        update(args.target, args.output, args.backup, args.apply, args.minecraft_closed)
+    elif args.command == "gui":
+        builder_module().gui()
 
 
 if __name__ == "__main__":

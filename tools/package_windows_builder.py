@@ -18,6 +18,14 @@ for name, digest in hashes.items():
 names = ['builder.py', 'bundling.py', 'presentation.py', 'information.py', 'source_notes.py', 'updater.py', 'cc_settings.py', 'Start Builder.cmd', 'README.md', 'assets/asset-hashes.json']
 names += ['assets/'+name for name in hashes]
 contents = {'Amaryllis Disk Builder/'+name: (UTILITY/name).read_bytes() for name in names}
+# Include a release snapshot so the standalone utility can build without a save or Git.
+snapshot = builder.ProjectSnapshot(HERE)
+revision = builder.project_revision(HERE, builder.sha(builder.encode(snapshot.inputs)))
+for path, data in snapshot.files.items():
+    if path.is_relative_to(HERE/'source'):
+        contents['Amaryllis Disk Builder/'+path.relative_to(HERE).as_posix()] = data
+contents['Amaryllis Disk Builder/source/revision.json'] = builder.encode(revision)
+snapshot.check_unchanged()
 release_dir = HERE/'releases'/'builders'
 release_dir.mkdir(parents=True, exist_ok=True)
 target = release_dir/('Amaryllis-Disk-Builder-v'+builder.VERSION+'.zip')

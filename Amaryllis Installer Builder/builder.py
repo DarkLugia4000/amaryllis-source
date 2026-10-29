@@ -1,4 +1,4 @@
-"""Standalone, offline Amaryllis installer exporter. Reads saves; writes new output only."""
+"""Build Amaryllis installation disks from maintained source or an explicit saved-ship export."""
 from __future__ import annotations
 
 import argparse
@@ -13,12 +13,14 @@ from pathlib import Path, PurePosixPath
 import re
 import stat
 import sys
+import subprocess
+import tempfile
 import threading
 import uuid
 import zipfile
 import zlib
 
-VERSION = "2.9.0"
+VERSION = "3.0.0"
 HOME = Path(__file__).resolve().parent
 DEFAULT_OUTPUT = HOME / "Installers"
 _bundle_spec = importlib.util.spec_from_file_location("amaryllis_bundling", HOME / "bundling.py")
@@ -97,7 +99,7 @@ class Snapshot:
         require(path.stat().st_size <= 4_000_000, f"Unexpectedly large source file: {relative}")
         data = path.read_bytes()
         if path in self.files:
-            require(self.files[path] == data, f"Source changed while reading: {relative}. Retry after saving or exiting the world.")
+            require(self.files[path] == data, f"Source changed while reading: {relative}. Retry after the edits finish.")
         self.files[path] = data
         return data
 
@@ -105,6 +107,135 @@ class Snapshot:
         for path in tuple(self.files):
             # Repeat path checks as well as byte checks in case a parent was replaced.
             self.read(path)
+
+
+# Project source inputs and release provenance.
+def project_inputs(root):
+    """List maintained source and builder inputs that determine a project release."""
+    root = Path(root).expanduser().absolute()
+    require(root.is_dir() and not linked(root), "Choose an unlinked Amaryllis project folder.")
+    paths = {"source/baseline.json": root / "source/baseline.json"}
+    for group in ("core", "library", "calibration"):
+        directory = root / "source" / group
+        require(directory.is_dir() and not linked(directory), "Missing project source folder: " + group)
+        for folder, directories, files in os.walk(directory, followlinks=False):
+            require(all(not linked(Path(folder) / name) for name in directories), "Linked project source folder.")
+            directories[:] = sorted(name for name in directories if not name.startswith("."))
+            for name in sorted(files):
+                path = Path(folder) / name
+                if path.suffix in (".lua", ".json"):
+                    paths[path.relative_to(root).as_posix()] = path
+    for path in sorted(HOME.glob("*.py")):
+        paths["builder/" + path.name] = path
+    paths["builder/Start Builder.cmd"] = HOME / "Start Builder.cmd"
+    paths["builder/assets/asset-hashes.json"] = HOME / "assets/asset-hashes.json"
+    assets = decode((HOME / "assets/asset-hashes.json").read_bytes(), "builder assets")
+    for name in assets:
+        require(Path(name).name == name, "Invalid builder asset name.")
+        paths["builder/assets/" + name] = HOME / "assets" / name
+    return root.resolve(), paths
+
+
+class ProjectSnapshot:
+    """Retain real project inputs and reject edits or additions during packaging."""
+    def __init__(self, root):
+        self.root, paths = project_inputs(root)
+        self.snapshots = {self.root: Snapshot(self.root), HOME: Snapshot(HOME)}
+        self.files = {}
+        self.inputs = {}
+        for name, path in paths.items():
+            owner = HOME if name.startswith("builder/") else self.root
+            data = self.snapshots[owner].read(path)
+            self.files[path] = data
+            self.inputs[name] = sha(data)
+
+    def check_unchanged(self):
+        """Check both the input inventory and the bytes originally read."""
+        _, paths = project_inputs(self.root)
+        require(set(paths) == set(self.inputs), "Project inputs changed during the build. Build again.")
+        for snapshot in self.snapshots.values():
+            snapshot.check_unchanged()
+
+
+def project_revision(root, tree_hash):
+    """Describe Git revision and edits, retaining packaged provenance without Git."""
+    revision = {"kind": "project-source", "commit": None, "dirty": None, "sourceTreeSHA256": tree_hash}
+    try:
+        def git(*arguments):
+            return subprocess.run(["git", "-C", str(root), *arguments], check=True,
+                                  capture_output=True, text=True, timeout=10).stdout.strip()
+        if Path(git("rev-parse", "--show-toplevel")).resolve() == root:
+            revision["commit"] = git("rev-parse", "HEAD")
+            revision["dirty"] = bool(git("status", "--porcelain", "--untracked-files=normal"))
+            return revision
+    except (OSError, subprocess.SubprocessError):
+        pass
+    saved = root / "source/revision.json"
+    if saved.is_file():
+        record = decode(saved.read_bytes(), "packaged source revision")
+        commit = record.get("commit")
+        require(commit is None or re.fullmatch(r"[0-9a-f]{40,64}", str(commit)), "Invalid packaged source revision.")
+        revision["commit"] = commit
+        revision["dirty"] = record.get("dirty") if record.get("sourceTreeSHA256") == tree_hash else True
+    return revision
+
+
+def collect_project(selection, include_learning=True, log=lambda message: None):
+    """Collect checkout software through a disposable adapter to the validated packager."""
+    snapshot = ProjectSnapshot(selection)
+    root = snapshot.root
+    metadata = decode(snapshot.files[root / "source/baseline.json"], "source metadata")
+    roles = metadata.get("roles", {})
+    require(set(roles) == set(ROLES + ["core"]), "Project source must define all 16 computer roles.")
+    files = {}
+    for path, data in snapshot.files.items():
+        if not path.is_relative_to(root / "source") or path.name in ("baseline.json", "revision.json"):
+            continue
+        parts = path.relative_to(root / "source").parts
+        if parts[0] not in ("core", "library", "calibration"):
+            continue
+        destination = Path(*parts[1:]).as_posix()
+        require(destination not in files, "Project source path collision: " + destination)
+        files[destination] = data
+    for destination, asset in metadata.get("assetBackedModules", {}).items():
+        require(destination not in files and Path(asset).name == asset, "Invalid or duplicated asset-backed source.")
+        require(destination.startswith(("avionics/", "installer/")) and ".." not in Path(destination).parts,
+                "Unsafe project module destination.")
+        files[destination] = snapshot.files[HOME / "assets" / asset]
+    # The disposable role registry supplies the existing collector's source layout.
+    work = HOME / ".cache"
+    work.mkdir(exist_ok=True)
+    require(not linked(work) and work.resolve().is_relative_to(HOME.resolve()), "Unsafe source staging folder.")
+    with tempfile.TemporaryDirectory(prefix="source-", dir=work) as temporary:
+        computers = Path(temporary) / "computercraft/computer"
+        core = computers / "0"
+        core.mkdir(parents=True)
+        registry = {"schemaVersion": 1, "computers": {}}
+        for number, (role, entry) in enumerate(roles.items()):
+            registry["computers"][role] = {"id": number, "label": entry["label"]}
+        core_id = registry["computers"]["core"]["id"]
+        core = computers / str(core_id)
+        core.mkdir(exist_ok=True)
+        for name, data in files.items():
+            path = core / name
+            require(path.resolve().is_relative_to(core.resolve()), "Unsafe project source destination.")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        (core / "fleet.json").write_bytes(encode(registry))
+        source = collect(core, include_learning, lambda message: log(message) if not message.startswith("Found ") else None)
+    source.update(core=root, computers=root, snapshot=snapshot, mediaSnapshot=None,
+                  packageSource={"kind": "project-source"})
+    source["provenance"] = project_revision(root, sha(encode(snapshot.inputs)))
+    source["notes"] = [note for note in source["notes"] if not note.startswith("Package sources:")]
+    source["notes"].append("Programs and defaults were read from the maintained project source.")
+    log("Project source: " + str(root))
+    log("Source fingerprint: " + source["provenance"]["sourceTreeSHA256"])
+    return source
+
+
+def default_project():
+    """Find source beside the utility or at the repository root."""
+    return next((path for path in (HOME.parent, HOME) if (path / "source/baseline.json").is_file()), None)
 
 
 # Resolve the selected save or computer folder to its registered core.
@@ -849,7 +980,13 @@ def collect(selection, include_learning=True, log=lambda s: None, library=None):
 
 # Describe the generated media, setup procedure and update helper.
 def installer_readme(manifest, report):
+    state = report.get("source", {}).get("dirty")
+    edits = "yes" if state is True else "no" if state is False else "unknown"
     return (f"# Amaryllis installer {manifest['releaseId']}\n\n"
+            + ("Software source: maintained project\n"
+               f"Revision: {report['source']['commit'] or 'unversioned source snapshot'}\n"
+               f"Includes uncommitted changes: {edits}\n"
+               f"Source fingerprint: {report['source']['sourceTreeSHA256']}\n\n" if report.get("source") else "Software source: saved-ship export\n\n") +
             "Copy the contents of media/ to an empty, writable ComputerCraft installer disk.\n"
             f"Allow at least {report['minimumMediaCapacityBytes']:,} bytes of disk capacity and 4,000,000 bytes per computer.\n\n"
             "To prepare a Windows Minecraft instance, open windows-settings/Configure ComputerCraft.cmd.\n"
@@ -891,8 +1028,8 @@ def installer_readme(manifest, report):
 
 
 # Export, verify and package a new installer in a unique output folder.
-def build(selection, output_parent, include_learning=True, log=lambda s: None, library=None, bundle=True):
-    source = collect(selection, include_learning, log, library)
+def build(selection, output_parent, include_learning=True, log=lambda s: None, library=None, bundle=True, *, project_source=False):
+    source = collect_project(selection, include_learning, log) if project_source else collect(selection, include_learning, log, library)
     if bundle:
         try:
             source = bundling.prepare(source, FOLDERS)
@@ -920,8 +1057,11 @@ def build(selection, output_parent, include_learning=True, log=lambda s: None, l
     parent = Path(output_parent).expanduser().resolve()
     require(parent.is_dir(), "Choose an existing output folder.")
     # Protect the entire selected save, not just its core subfolder.
-    protected = source["computers"].parent.parent
-    require(not parent.is_relative_to(protected), "Output must be outside the selected Minecraft save.")
+    if not project_source:
+        protected = source["computers"].parent.parent
+        require(not parent.is_relative_to(protected), "Output must be outside the selected Minecraft save.")
+    else:
+        require(not parent.is_relative_to(source["core"] / "source"), "Output must be outside editable source folders.")
     require(not source["mediaSnapshot"] or not parent.is_relative_to(source["mediaSnapshot"].root),
             "Output must be outside the selected package media folder.")
     token = uuid.uuid4().hex[:8]
@@ -949,6 +1089,8 @@ def build(selection, output_parent, include_learning=True, log=lambda s: None, l
                 "capturedDate": datetime.now().date().isoformat(), "files": entries(source["calibration"])}
         # Bind commissioning scripts too, so changing the installer changes the release ID.
         manifest["installerScripts"] = {name: sha(source["assets"][name]) for name in ("setup.lua", "startup.lua")}
+        if project_source:
+            manifest["source"] = source["provenance"]
         manifest["releaseId"] = "amaryllis-" + sha(json.dumps(manifest, sort_keys=True).encode())[:12]
         (media / "release.json").write_bytes(encode(manifest))
         (media / "library.json").write_bytes(encode(source["catalog"]))
@@ -963,14 +1105,17 @@ def build(selection, output_parent, include_learning=True, log=lambda s: None, l
                   "libraryBytes": sum(len(d) for d in source["library"].values()),
                   "mediaBytes": media_bytes, "minimumMediaCapacityBytes": media_bytes + 16384,
                   "packageVersions": source["versions"], "learningFiles": len(source["calibration"]),
-                  "notes": source["notes"], "packageSource": source["packageSource"], "sourceFiles": {str(p.relative_to(source["computers"])): sha(d)
-                                                               for p, d in source["snapshot"].files.items()},
+                  "notes": source["notes"], "packageSource": source["packageSource"],
+                  "sourceFiles": source["snapshot"].inputs if project_source else {
+                      str(p.relative_to(source["computers"])): sha(d) for p, d in source["snapshot"].files.items()},
                   "builderOverrides": {path: sha(source["payload"][path]) for path in
                       ("/installer/progress.lua", "/installer/server.lua", "/installer/media.lua", "/avionics/io.lua",
                        "/avionics/main.lua", "/avionics/identity_watch.lua", "/startup.lua") if path in source["payload"]},
                   "bundling": source.get("bundleCounts"),
                   "validation": {"objects": True, "sourceStable": True, "archive": True,
                                  "luaCompiled": False, "inGameAcceptance": False}}
+        if project_source:
+            report["source"] = source["provenance"]
         if not bundle:
             report["builderOverrides"]["/packages/navigation/ui.lua"] = sha(source["library"]["/packages/navigation/ui.lua"])
         (staging / "README.md").write_text(installer_readme(manifest, report), encoding="utf-8")
@@ -1065,7 +1210,7 @@ def build_error_details(error):
 def gui():
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
-    root = tk.Tk();root.title("Amaryllis Disk Builder "+VERSION);root.geometry("800x710");root.minsize(700, 660)
+    root = tk.Tk();root.title("Amaryllis Disk Builder "+VERSION);root.geometry("800x780");root.minsize(700, 720)
     style = ttk.Style(root);style.theme_use("clam")
     style.configure("TLabel", font=("Segoe UI", 10));style.configure("TButton", font=("Segoe UI", 10), padding=7)
     style.configure("Title.TLabel", font=("Segoe UI", 19, "bold"))
@@ -1074,17 +1219,36 @@ def gui():
     description=ttk.Label(frame, text="Creates an installation disk from an existing Amaryllis to be used to commission a future blueprint.", wraplength=740, justify="left")
     description.pack(anchor="w", fill="x", pady=(4, 20))
     description.bind("<Configure>", lambda event: description.configure(wraplength=max(1,event.width)))
-    source = tk.StringVar();learning = tk.BooleanVar(value=True)
+    project = default_project()
+    mode = tk.StringVar(value="Project source" if project else "Saved ship export")
+    source = tk.StringVar(value=str(project) if project else "");learning = tk.BooleanVar(value=True)
+    ttk.Label(frame, text="Software source").pack(anchor="w")
+    mode_box = ttk.Combobox(frame, textvariable=mode, values=("Project source", "Saved ship export"), state="readonly")
+    mode_box.pack(fill="x", pady=(5, 12))
+    source_label = tk.StringVar()
     def choose(variable):
         value = filedialog.askdirectory(parent=root, initialdir=variable.get() or str(Path.home()))
         if value:variable.set(value)
     def field(label, variable):
-        ttk.Label(frame, text=label).pack(anchor="w")
+        ttk.Label(frame, textvariable=label).pack(anchor="w")
         row = ttk.Frame(frame);row.pack(fill="x", pady=(5, 15))
         ttk.Entry(row, textvariable=variable).pack(side="left", fill="x", expand=True)
         ttk.Button(row, text="Browse…", command=lambda: choose(variable)).pack(side="right", padx=(8, 0))
-    field("Select a save with an extant and configured A.E.V Amaryllis", source)
-    ttk.Checkbutton(frame, text="Include this ship’s saved hover and leveling corrections", variable=learning).pack(anchor="w")
+    field(source_label, source)
+    learning_button = ttk.Checkbutton(frame, variable=learning)
+    learning_button.pack(anchor="w")
+    def source_mode_changed(event=None):
+        """Explain whether programs come from the project or a saved installation."""
+        authoritative = mode.get() == "Project source"
+        source_label.set("Amaryllis project folder" if authoritative else "Select a save with an extant and configured A.E.V Amaryllis")
+        description.configure(text="Builds an installation disk or an existing-ship update from the maintained project source." if authoritative else
+                              "Creates an installation disk from an existing Amaryllis to be used to commission a future blueprint.")
+        learning_button.configure(text="Include shipped hover and leveling defaults" if authoritative else
+                                  "Include this ship’s saved hover and leveling corrections")
+        if event is not None:
+            source.set(str(project) if authoritative and project else "")
+    mode_box.bind("<<ComboboxSelected>>", source_mode_changed)
+    source_mode_changed()
     status = tk.StringVar(value="Ready")
     row = ttk.Frame(frame);row.pack(fill="x", pady=(0, 10))
     button = ttk.Button(row, text="Build installer");button.pack(side="left")
@@ -1095,6 +1259,9 @@ def gui():
     settings_button = ttk.Button(row, text="ComputerCraft settings…", command=settings);settings_button.pack(side="right")
     update_row = ttk.Frame(frame); update_row.pack(fill="x", pady=(0, 8))
     def update_ship():
+        if mode.get() == "Project source":
+            start(for_update=True)
+            return
         import updater
         updater.open_dialog(root, source.get())
     update_button = ttk.Button(update_row, text="Update existing ship…", command=update_ship)
@@ -1106,13 +1273,14 @@ def gui():
     events = queue.Queue();last_result = [None];busy = [False]
     def append(message):
         text.configure(state="normal");text.insert("end", message + "\n");text.see("end");text.configure(state="disabled")
-    def worker(selected, destination, include):
-        try:events.put(("done", build(selected, destination, include, lambda line: events.put(("log", line)))))
+    def worker(selected, destination, include, authoritative, for_update):
+        try:events.put(("update" if for_update else "done", build(selected, destination, include,
+                         lambda line: events.put(("log", line)), project_source=authoritative)))
         except Exception as error:events.put(("error", build_error_details(error)))
     # Validate the selected paths and launch a single background build.
-    def start():
+    def start(for_update=False):
         if busy[0]:return
-        if not source.get().strip():messagebox.showerror("Choose a source", "Select the source save or core folder first.", parent=root);return
+        if not source.get().strip():messagebox.showerror("Choose a source", "Select the project folder or source save first.", parent=root);return
         destination = DEFAULT_OUTPUT
         try:
             # Only create the utility's default output folder automatically.
@@ -1121,19 +1289,29 @@ def gui():
         busy[0] = True;button.configure(state="disabled");open_button.configure(state="disabled");settings_button.configure(state="disabled");update_button.configure(state="disabled");status.set("Reading and validating…")
         text.configure(state="normal");text.delete("1.0", "end");text.configure(state="disabled")
         append("Builder "+VERSION+" | Python "+sys.version.split()[0]+" | "+sys.executable)
-        threading.Thread(target=worker, args=(source.get(), str(destination), learning.get()), daemon=True).start()
+        mode_box.configure(state="disabled")
+        threading.Thread(target=worker, args=(source.get(), str(destination), learning.get(), mode.get()=="Project source", for_update), daemon=True).start()
     # Deliver worker progress and completion results to the Tk interface.
     def poll():
         while not events.empty():
             kind, value = events.get_nowait()
             if kind == "log":append(value)
-            elif kind == "done":
+            elif kind in ("done", "update"):
                 result, report = value;last_result[0] = result;busy[0] = False;button.configure(state="normal");open_button.configure(state="normal");settings_button.configure(state="normal");update_button.configure(state="normal")
                 status.set("Installation disk created and verified")
                 append(f"Saved to: {result}");append(f"Share: amaryllis-installer.zip | Required disk space: {report['minimumMediaCapacityBytes']:,} bytes")
+                mode_box.configure(state="readonly")
+                if report.get("source"):
+                    revision=report["source"]
+                    append("Source revision: " + (revision["commit"] or "unversioned source snapshot") +
+                           (" (includes uncommitted changes)" if revision["dirty"] else ""))
+                if kind == "update":
+                    import updater
+                    updater.open_dialog(root, media=str(result / "media"))
             else:
                 busy[0] = False;button.configure(state="normal");settings_button.configure(state="normal");update_button.configure(state="normal");status.set("Build could not be completed");append(value)
                 messagebox.showerror("Build could not be completed", value, parent=root)
+                mode_box.configure(state="readonly")
         root.after(100, poll)
     button.configure(command=start)
     open_button.configure(command=lambda: os.startfile(str(last_result[0])))
@@ -1149,15 +1327,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gui", action="store_true")
     parser.add_argument("--source", type=Path, help="Minecraft save, computercraft/computer folder, or core computer folder")
+    parser.add_argument("--project", type=Path, help="Build maintained source from this Amaryllis project folder")
     parser.add_argument("--output", type=Path, help="Existing parent folder for a new installer")
     parser.add_argument("--without-learning", action="store_true")
     parser.add_argument("--loose", action="store_true", help="Export separate Lua source files instead of runtime bundles")
     parser.add_argument("--library", type=Path, help="Optional matching installer media override; otherwise recover from the ship or discover media automatically")
     args = parser.parse_args()
-    if args.gui or (args.source is None and args.output is None):gui();return
-    if args.source is None or args.output is None:
-        parser.error("--source and --output are both required")
-    path, report = build(args.source, args.output, not args.without_learning, print, args.library, bundle=not args.loose)
+    if args.gui or (args.source is None and args.project is None and args.output is None):gui();return
+    if (args.source is None) == (args.project is None) or args.output is None:
+        parser.error("Choose exactly one of --project or --source, and supply --output")
+    if args.project and args.library:
+        parser.error("--library applies to saved-ship exports only")
+    path, report = build(args.project or args.source, args.output, not args.without_learning, print, args.library,
+                         bundle=not args.loose, project_source=args.project is not None)
     print(path);print(json.dumps({"releaseId": report["releaseId"], "mediaBytes": report["mediaBytes"]}))
 
 

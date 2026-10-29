@@ -399,6 +399,9 @@ class ExportTests(unittest.TestCase):
             entries = [w for w in widgets if w.winfo_class() == "TEntry"]
             self.assertEqual(len(entries), 1)
             self.assertEqual(root.title(), "Amaryllis Disk Builder " + b.VERSION)
+            modes = [w for w in widgets if w.winfo_class() == "TCombobox"]
+            modes[0].set("Saved ship export")
+            modes[0].event_generate("<<ComboboxSelected>>")
             root.setvar(entries[0].cget("textvariable"), str(self.save))
             buttons = {str(w.cget("text")): w for w in widgets if w.winfo_class() == "TButton"}
             buttons["Build installer"].invoke()
@@ -416,6 +419,8 @@ class ExportTests(unittest.TestCase):
                 b.gui()
                 error.assert_not_called()
         finally:
+            for timer in root.tk.call("after", "info"):
+                root.after_cancel(timer)
             root.destroy()
 
 

@@ -157,6 +157,12 @@ def read_media(selection):
     need(release.get("schemaVersion") == 1 and set(release.get("roles", {})) == ROLES, "Unsupported release roles/schema")
     identity = dict(release); identity.pop("releaseId", None)
     need(release.get("releaseId") == "amaryllis-" + sha(json.dumps(identity, sort_keys=True).encode())[:12], "Release identity mismatch")
+    source = release.get("source")
+    if source is not None:
+        need(isinstance(source, dict) and source.get("kind") == "project-source" and
+             re.fullmatch(r"[0-9a-f]{64}", str(source.get("sourceTreeSHA256"))) and
+             (source.get("commit") is None or re.fullmatch(r"[0-9a-f]{40,64}", str(source["commit"]))) and
+             (source.get("dirty") is None or type(source["dirty"]) is bool), "Invalid project-source provenance")
     groups = {}
     for group in ("core", "state", "bootstrap", "library"):
         entries = release.get(group)
@@ -259,8 +265,16 @@ class Plan:
         rows += [f"Add     #{key}" for key in sorted(self.after.keys() - self.before.keys())]
         counts = {k: sum(row.startswith(k) for row in rows) for k in ("Add", "Replace", "Remove", "Keep")}
         heading = "Startup launcher repair" if self.operation == "repair-startup" else "Existing ship update"
+        source = self.release.get("source", {})
+        provenance = ""
+        if source.get("kind") == "project-source":
+            provenance = "\nSoftware: project source | Revision: " + (source.get("commit") or "unversioned source snapshot")
+            if source.get("dirty"):
+                provenance += " (includes uncommitted changes)"
+            provenance += "\nSource fingerprint: " + source["sourceTreeSHA256"]
         return (f"{heading}: {self.release['releaseId']}\nTarget: {self.computers}\n"
                 f"Computers: {len(self.roles)} | " + " | ".join(f"{k}: {v}" for k, v in counts.items()) +
+                provenance +
                 "\nStored settings and all avionics/data files are retained.\n"
                 "Old program files are backed up outside the save, then replaced/removed.\n\n" + "\n".join(rows))
 
@@ -337,6 +351,10 @@ def preview(selection, media_selection):
         for path, data in replacements.items():
             after[path[1:]] = data
         journal.update(releaseId=release["releaseId"])
+        if release.get("source"):
+            journal["source"] = release["source"]
+        else:
+            journal.pop("source", None)
         after["amaryllis-install.json"] = encode(journal)
         # Local learning, recovery files and arbitrary user files remain byte-for-byte.
         plan.before.update({f"{computer_id}/{p}": d for p, d in before.items()})

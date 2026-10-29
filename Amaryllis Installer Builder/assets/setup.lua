@@ -223,7 +223,7 @@ local function finish(media,entries,journalPath,release,role,id,retained)
     if not retained then
         for _,entry in ipairs(entries) do if entry.path=="/startup.lua" then write(entry.path,payload(media,entry)) end end
     end
-    json(journalPath,{releaseId=release.releaseId,role=role,id=id,pending=false})
+    json(journalPath,{releaseId=release.releaseId,role=role,id=id,pending=false,source=release.source})
 end
 function Setup.installCore(media,release,id)
     assert(not os.__amaryllisFleetRegistry,"Close core's runtime before installing core")

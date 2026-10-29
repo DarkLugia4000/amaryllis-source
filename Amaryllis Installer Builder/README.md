@@ -1,4 +1,33 @@
-# Amaryllis Disk Builder 2.9.0
+# Amaryllis Disk Builder
+
+## Project-source workflow (3.0.0)
+
+**Project source** builds maintained Lua, configuration defaults and optional
+shipped hover/level defaults. A Minecraft save is not required for this mode.
+The repository and packaged utility locate their source automatically.
+
+1. Open **Start Builder.cmd** using Python 3.11+ with Tcl/Tk.
+2. Leave **Software source** set to **Project source**.
+3. Check the selected Amaryllis project folder.
+4. Choose **Build installer** to create a new commissioning package, or
+   **Update existing ship…** to build it and open the existing-ship updater.
+5. For an update, select the destination save and external backup folder,
+   preview the file changes, close Minecraft and apply the reviewed replacement.
+
+Results are written to the utility's local `Installers` folder. **Open result**
+and **Saved to** give the output location. The distributable file is
+`amaryllis-installer.zip`; its media is used by the same installer and updater.
+
+Project releases include the source commit, uncommitted-change status and input
+fingerprint in their metadata and README. A standalone utility ZIP includes a
+snapshot of that source and its revision record, so Git is optional. Updates
+retain each destination ship's stored settings, PID configuration, learning,
+computer IDs and restart records, with the previous installation backed up
+outside the save. New installs use project defaults and optional shipped learning.
+
+**Saved ship export** explicitly captures an installed ship's software and
+portable data. Select that mode to use the saved-ship export instructions below.
+
 
 Creates an installation disk from an existing Amaryllis to be used to commission a future blueprint.
 
