@@ -411,3 +411,14 @@ acknowledged command queue. Menu navigation is local, active-view refresh is up
 to 2 Hz, repeated reads can reuse a bounded-age reply, and rate-limit replies
 from older cores no longer show OFFLINE. Direct Reboot and expanded vessel
 Overview remain pending.
+
+## Disk Builder and commissioning reset: 29 October 2026
+
+- Product title: Amaryllis Disk Builder, with its version in the window title.
+- Description: Creates an installation disk from an existing Amaryllis to be used to commission a future blueprint.
+- Source label: Select a save with an extant and configured A.E.V Amaryllis.
+- Package recovery is automatic in the graphical interface. Output uses the utility’s local Installers directory; the completed result shows its full path.
+- Learning checkbox, Ready status and Build installer button retain their agreed wording.
+- Once core is assigned, its installation action becomes red Unassign core. Reset defaults to CANCEL and explicitly clears the full fleet’s commissioning assignments.
+- Reset runs on the registered core, clears its registry recovery copies, and preserves programs, configuration and learned operating records for recommissioning. Interrupted reset remains resumable.
+- Screenshot galleries are delivered as PDFs for mobile viewing.

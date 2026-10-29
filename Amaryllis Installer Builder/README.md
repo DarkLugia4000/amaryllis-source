@@ -1,7 +1,8 @@
-# Amaryllis Installer Builder 2.8.0
+# Amaryllis Disk Builder 2.9.0
 
-A standalone Windows utility for exporting fresh Amaryllis installers from a
-Minecraft save. It works offline, independently of this chat and the Codex app.
+Creates an installation disk from an existing Amaryllis to be used to commission a future blueprint.
+
+A standalone Windows utility that exports installation media from a Minecraft save. It works offline, independently of this chat and the Codex app.
 Build installer reads the chosen save and writes a separate installer folder.
 Update existing ship replaces programs in an existing save after a file preview
 and a verified external backup. Minecraft must be fully closed for that action.
@@ -202,8 +203,8 @@ stored settings and learned values are retained.
 
 ## Automatic package recovery
 
-Select the saved ship and an output folder, then click **Build installer**.
-Leave **Package library override** blank. The builder recovers the auxiliary
+Select the saved ship, then click **Build installer**.
+Builds are saved under `Installers` beside the utility. The result shows its full path. The builder recovers the auxiliary
 package sources automatically from the registered computers and verifies every
 program against core's saved package catalog. It checks each computer's role,
 ID, committed installation receipt and package version before accepting it.
@@ -225,8 +226,8 @@ If a registered computer is missing, incomplete or does not match the catalog,
 the builder searches the save's ComputerCraft disk folders and the utility's
 usual Installers folders for a verified matching library. It checks catalog
 identity and all object hashes; folder dates do not decide which release to use.
-You may select a library manually in **Package library override** when it lives
-elsewhere. An explicit incompatible override produces an error.
+The command-line `--library` option accepts matching media outside these search locations.
+The graphical interface uses automatic recovery.
 
 A partial or damaged ship with no complete matching source cannot be rebuilt
 by guessing. Restore its missing source from backup or provide matching media.
@@ -398,21 +399,36 @@ reviews and correction plans: `chamber-fr/fl/br/bl`, `thrust-rs/ls/rb/lb`,
 `primary-l` and `primary-r`. Select names with Up/Down and Enter. These names map to the existing
 internal roles and fleet labels.
 
+## Commissioning reset
+
+After core is assigned, **Install core** becomes a red **Unassign core** action.
+Run it on the registered core. On another computer, the installer displays the
+core ID to visit. Interrupted core installation instead offers **Resume core installation**.
+
+The reset confirmation defaults to **CANCEL**. Select **RESET INSTALLATION**
+and confirm to clear the disk’s assignments, import status and correction plan,
+and remove core’s fleet registry and its automatic recovery copies.
+
+The disk retains the previous roster as recommissioning metadata. Registering
+those same computers again preserves their installed programs, configuration
+and learned data. Reuse the original core for retained auxiliary installations.
+The core program must be closed before resetting. This action makes no actuator calls.
+A reset interrupted during record cleanup is resumed from **Resume installation reset**.
+
+Register all 16 computers and import the assignments to complete commissioning again.
+
 ## Run it
 
 1. Extract the whole utility ZIP to a normal writable folder. Keep `builder.py`,
    `bundling.py`, `presentation.py`, `updater.py`, `Start Builder.cmd`, `cc_settings.py` and the `assets` folder together.
 2. Double-click **Start Builder.cmd**.
-3. Browse to your Minecraft save, its `computercraft/computer` folder, or the
-   exact numeric core computer folder.
-   Leave **Package library override** blank for automatic recovery. Select a
-   matching media folder there only when the builder cannot recover all sources
-   and your media is outside its automatic search locations.
-4. Choose an output folder outside the save. The default is `Installers` beside
-   the utility.
-5. Leave **Include this ship’s saved hover and leveling corrections** checked
+3. Select a save with an extant and configured A.E.V Amaryllis. The source chooser
+   also accepts its ComputerCraft folder or numeric core folder.
+4. Leave **Include this ship’s saved hover and leveling corrections** checked
    to export its current saved learning.
-6. Click **Build installer**. When verification completes, use **Open result**.
+5. Click **Build installer**. The disk builder recovers package sources automatically
+   and creates the result in its local `Installers` directory.
+6. Read **Saved to** for the full output path, or use **Open result**.
 
 The utility needs Python **3.11 or newer with Tcl/Tk**, included with the normal
 Windows Python installer. No pip packages, network connection or account are

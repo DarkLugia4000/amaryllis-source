@@ -11,7 +11,7 @@ software. The Git baseline imports the delivered 2.8.0 behavior on 29 October 20
 | source/library/ | Editable navigator, heading, chamber and propulsion packages. |
 | source/calibration/ | The two explicitly shipped numeric hover/level default records. |
 | source/baseline.json | Source fingerprints, role labels, asset ownership and migration evidence. |
-| Amaryllis Installer Builder/ | Windows builder, updater and checked installer/UI assets. |
+| Amaryllis Installer Builder/ | Windows Disk Builder, updater and checked installer/UI assets. |
 | tests/ | Maintained Python regression suites, Java harness and isolated fixtures. |
 | tools/ | Maintained development utilities, including builder ZIP packaging. |
 | releases/builders/ | Versioned builder ZIPs, preserved locally; future builder packages are written here. |
@@ -56,7 +56,7 @@ a new installer folder under output/installers/. It uses the existing builder,
 bundle format and installer verification. Program payload counts remain five
 on core and three on state and each auxiliary.
 
-The Windows builder's existing save-export workflow remains available. For
+The Windows Disk Builder exports saved ships into its local Installers directory. For
 software edited in this repository, use project.py build so that the current
 source tree supplies the programs. An existing ship receives a generated
 release through the normal Update existing ship workflow and external backup.

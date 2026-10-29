@@ -18,8 +18,9 @@ import uuid
 import zipfile
 import zlib
 
-VERSION = "2.8.0"
+VERSION = "2.9.0"
 HOME = Path(__file__).resolve().parent
+DEFAULT_OUTPUT = HOME / "Installers"
 _bundle_spec = importlib.util.spec_from_file_location("amaryllis_bundling", HOME / "bundling.py")
 bundling = importlib.util.module_from_spec(_bundle_spec)
 _bundle_spec.loader.exec_module(bundling)
@@ -1064,15 +1065,16 @@ def build_error_details(error):
 def gui():
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
-    root = tk.Tk();root.title("Amaryllis Installer Builder "+VERSION);root.geometry("800x710");root.minsize(700, 660)
+    root = tk.Tk();root.title("Amaryllis Disk Builder "+VERSION);root.geometry("800x710");root.minsize(700, 660)
     style = ttk.Style(root);style.theme_use("clam")
     style.configure("TLabel", font=("Segoe UI", 10));style.configure("TButton", font=("Segoe UI", 10), padding=7)
     style.configure("Title.TLabel", font=("Segoe UI", 19, "bold"))
     frame = ttk.Frame(root, padding=24);frame.pack(fill="both", expand=True)
-    ttk.Label(frame, text="Amaryllis Installer Builder", style="Title.TLabel").pack(anchor="w")
-    ttk.Label(frame, text="Create a fresh installer from a saved Amaryllis installation.").pack(anchor="w", pady=(4, 20))
-    source = tk.StringVar();output = tk.StringVar(value=str(HOME / "Installers"));learning = tk.BooleanVar(value=True)
-    library = tk.StringVar()
+    ttk.Label(frame, text="Amaryllis Disk Builder", style="Title.TLabel").pack(anchor="w")
+    description=ttk.Label(frame, text="Creates an installation disk from an existing Amaryllis to be used to commission a future blueprint.", wraplength=740, justify="left")
+    description.pack(anchor="w", fill="x", pady=(4, 20))
+    description.bind("<Configure>", lambda event: description.configure(wraplength=max(1,event.width)))
+    source = tk.StringVar();learning = tk.BooleanVar(value=True)
     def choose(variable):
         value = filedialog.askdirectory(parent=root, initialdir=variable.get() or str(Path.home()))
         if value:variable.set(value)
@@ -1081,11 +1083,8 @@ def gui():
         row = ttk.Frame(frame);row.pack(fill="x", pady=(5, 15))
         ttk.Entry(row, textvariable=variable).pack(side="left", fill="x", expand=True)
         ttk.Button(row, text="Browse…", command=lambda: choose(variable)).pack(side="right", padx=(8, 0))
-    field("Source Minecraft save or core computer folder", source)
-    field("Package library override (optional; leave blank for automatic recovery)", library)
-    field("Create installers in", output)
+    field("Select a save with an extant and configured A.E.V Amaryllis", source)
     ttk.Checkbutton(frame, text="Include this ship’s saved hover and leveling corrections", variable=learning).pack(anchor="w")
-    ttk.Label(frame, text="Source files are read only. Each build creates a new folder and ZIP.").pack(anchor="w", pady=(8, 14))
     status = tk.StringVar(value="Ready")
     row = ttk.Frame(frame);row.pack(fill="x", pady=(0, 10))
     button = ttk.Button(row, text="Build installer");button.pack(side="left")
@@ -1107,22 +1106,22 @@ def gui():
     events = queue.Queue();last_result = [None];busy = [False]
     def append(message):
         text.configure(state="normal");text.insert("end", message + "\n");text.see("end");text.configure(state="disabled")
-    def worker(selected, destination, include, media):
-        try:events.put(("done", build(selected, destination, include, lambda line: events.put(("log", line)), media or None)))
+    def worker(selected, destination, include):
+        try:events.put(("done", build(selected, destination, include, lambda line: events.put(("log", line)))))
         except Exception as error:events.put(("error", build_error_details(error)))
     # Validate the selected paths and launch a single background build.
     def start():
         if busy[0]:return
         if not source.get().strip():messagebox.showerror("Choose a source", "Select the source save or core folder first.", parent=root);return
-        destination = Path(output.get()).expanduser()
+        destination = DEFAULT_OUTPUT
         try:
             # Only create the utility's default output folder automatically.
-            if destination == HOME / "Installers" and not destination.exists():destination.mkdir()
+            destination.mkdir(exist_ok=True)
         except OSError as error:messagebox.showerror("Output folder", str(error), parent=root);return
         busy[0] = True;button.configure(state="disabled");open_button.configure(state="disabled");settings_button.configure(state="disabled");update_button.configure(state="disabled");status.set("Reading and validating…")
         text.configure(state="normal");text.delete("1.0", "end");text.configure(state="disabled")
         append("Builder "+VERSION+" | Python "+sys.version.split()[0]+" | "+sys.executable)
-        threading.Thread(target=worker, args=(source.get(), str(destination), learning.get(), library.get()), daemon=True).start()
+        threading.Thread(target=worker, args=(source.get(), str(destination), learning.get()), daemon=True).start()
     # Deliver worker progress and completion results to the Tk interface.
     def poll():
         while not events.empty():
@@ -1130,8 +1129,8 @@ def gui():
             if kind == "log":append(value)
             elif kind == "done":
                 result, report = value;last_result[0] = result;busy[0] = False;button.configure(state="normal");open_button.configure(state="normal");settings_button.configure(state="normal");update_button.configure(state="normal")
-                status.set("Installer created and verified")
-                append(f"Result: {result}");append(f"Share: amaryllis-installer.zip | Required disk space: {report['minimumMediaCapacityBytes']:,} bytes")
+                status.set("Installation disk created and verified")
+                append(f"Saved to: {result}");append(f"Share: amaryllis-installer.zip | Required disk space: {report['minimumMediaCapacityBytes']:,} bytes")
             else:
                 busy[0] = False;button.configure(state="normal");settings_button.configure(state="normal");update_button.configure(state="normal");status.set("Build could not be completed");append(value)
                 messagebox.showerror("Build could not be completed", value, parent=root)
@@ -1170,7 +1169,7 @@ if __name__ == "__main__":
         if "--gui" in sys.argv or len(sys.argv) == 1:
             try:
                 import ctypes
-                ctypes.windll.user32.MessageBoxW(0, str(error) + "\n\nInstall Python 3.11+ with Tcl/Tk if the window cannot start.", "Amaryllis Installer Builder", 16)
+                ctypes.windll.user32.MessageBoxW(0, str(error) + "\n\nInstall Python 3.11+ with Tcl/Tk if the window cannot start.", "Amaryllis Disk Builder", 16)
             except Exception:
                 pass
         else:

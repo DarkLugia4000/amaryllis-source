@@ -1,5 +1,5 @@
--- Portable commissioning disk. Run on fresh computers, while disassembled.
--- No modem command or propulsion/lift command is issued by this installer.
+-- Commission computers and reset their registered commissioning assignments.
+-- Installation updates local program files and disk assignment records.
 local Setup={}
 local TITLES={core="Core controller",state="State reader",navigator="Bridge navigator",
     ["heading-left"]="Left heading display",["heading-right"]="Right heading display",["heading-main"]="Main heading display",
@@ -140,6 +140,18 @@ local function deployment(media,release)
         assert(release.roles[role] and integer(entry.id) and entry.label==release.roles[role].label,"Invalid deployment role")
         assert(not ids[entry.id],"Duplicate computer ID in deployment");ids[entry.id]=true
     end
+    if state.reset then
+        local reset=state.reset
+        assert(type(reset)=="table" and integer(reset.coreID) and type(reset.previous)=="table"
+            and type(reset.pending)=="boolean","Invalid installation reset record")
+        assert(reset.previous.core and reset.previous.core.id==reset.coreID,"Reset core identity differs")
+        local previousIDs={}
+        for role,entry in pairs(reset.previous) do
+            assert(release.roles[role] and integer(entry.id) and entry.label==release.roles[role].label
+                and not previousIDs[entry.id],"Invalid previous installation assignment")
+            previousIDs[entry.id]=true
+        end
+    end
     return state
 end
 local function repair(media)
@@ -165,8 +177,17 @@ end
 local function preflight(media,release,entries,role,id)
     local journalPath="/amaryllis-install.json"
     local journal=fs.exists(journalPath) and readJSON(journalPath) or nil
+    local state=deployment(media,release)
+    assert(not state.reset or not state.reset.pending,"Finish resetting installation on core #"..tostring(state.reset and state.reset.coreID).." first")
+    local previous=state.reset and state.reset.previous[role]
+    local retained=previous and previous.id==id and journal and journal.releaseId==release.releaseId
+        and journal.role==role and journal.id==id
+    if retained and role~="core" then
+        assert(state.computers.core and state.computers.core.id==state.reset.coreID,
+            "Register the original core #"..state.reset.coreID.." to retain this computer's installation")
+    end
     if fs.exists("/startup.lua") or fs.exists("/avionics") or fs.exists("/fleet.json") or fs.exists("/config.json") then
-        assert(journal and journal.pending and journal.releaseId==release.releaseId and journal.role==role and journal.id==id,
+        assert(retained or journal and journal.pending and journal.releaseId==release.releaseId and journal.role==role and journal.id==id,
             "Fresh computers only. Existing installations are not overwritten.")
     end
     local total,largest=16384,0;local seen={}
@@ -188,7 +209,7 @@ local function preflight(media,release,entries,role,id)
     end
     local free=fs.getFreeSpace("/")
     assert(free=="unlimited" or (type(free)=="number" and free>=total+largest),"Not enough computer space for installation and verified writes")
-    return journalPath
+    return journalPath,retained
 end
 local function installFiles(media,entries)
     -- Startup is last: interruption cannot boot a partially copied application.
@@ -198,59 +219,73 @@ local function installFiles(media,entries)
         end
     end
 end
-local function finish(media,entries,journalPath,release,role,id)
-    for _,entry in ipairs(entries) do if entry.path=="/startup.lua" then write(entry.path,payload(media,entry)) end end
+local function finish(media,entries,journalPath,release,role,id,retained)
+    if not retained then
+        for _,entry in ipairs(entries) do if entry.path=="/startup.lua" then write(entry.path,payload(media,entry)) end end
+    end
     json(journalPath,{releaseId=release.releaseId,role=role,id=id,pending=false})
 end
 function Setup.installCore(media,release,id)
-    local entries=coreEntries(media,release)
-    local journal=preflight(media,release,entries,"core",id)
+    assert(not os.__amaryllisFleetRegistry,"Close core's runtime before installing core")
     local state=deployment(media,release)
+    local assigned=state.computers.core
+    local existing=recordExists("/amaryllis-install.json") and readJSON("/amaryllis-install.json") or nil
+    assert(not assigned or assigned.id==id and existing and existing.pending==true
+        and existing.role=="core" and existing.id==id and existing.releaseId==release.releaseId,
+        "Core is already assigned. Use Unassign core to reset installation.")
+    local entries=coreEntries(media,release)
+    local journal,retained=preflight(media,release,entries,"core",id)
     register(media,release,state,"core",id)
     json(journal,{releaseId=release.releaseId,role="core",id=id,pending=true})
-    installFiles(media,entries)
-    local config=readJSON("/avionics/config.json")
-    config.computer_id=id;config.label=release.roles.core.label
-    config.thrust.enabled=false
-    json("/avionics/config.json",config)
+    if not retained then
+        installFiles(media,entries)
+        local config=readJSON("/avionics/config.json")
+        config.computer_id=id;config.label=release.roles.core.label
+        config.thrust.enabled=false
+        json("/avionics/config.json",config)
+    end
     local computers={}
     for role,entry in pairs(release.roles) do computers[role]={label=entry.label} end
     computers.core={id=id,label=release.roles.core.label}
     json("/fleet.json",{schemaVersion=1,computers=computers})
     os.setComputerLabel(release.roles.core.label)
-    finish(media,release.core,journal,release,"core",id)
-    print("Core installed, propulsion disabled. Register auxiliaries using this disk.")
+    finish(media,release.core,journal,release,"core",id,retained)
+    print(retained and "Core registered. Existing programs and settings retained." or "Core installed, propulsion disabled. Register auxiliaries using this disk.")
     print("Then return the disk here and IMPORT ROLE ASSIGNMENTS before starting core.")
 end
 function Setup.installAuxiliary(media,release,role,id)
     assert(role~="core" and release.roles[role],"Select an auxiliary role")
     if role=="state" then
         assert(type(release.state)=="table","State reader payload missing")
-        local journal=preflight(media,release,release.state,role,id)
+        local journal,retained=preflight(media,release,release.state,role,id)
         local state=deployment(media,release)
         assert(state.computers.core,"Install core on this disk first")
         register(media,release,state,role,id)
         json(journal,{releaseId=release.releaseId,role=role,id=id,pending=true})
-        installFiles(media,release.state)
-        json("/avionics/config.json",{schemaVersion=1,role="state",label=release.roles.state.label,
-            computerID=id,coreID=state.computers.core.id})
+        if not retained then
+            installFiles(media,release.state)
+            json("/avionics/config.json",{schemaVersion=1,role="state",label=release.roles.state.label,
+                computerID=id,coreID=state.computers.core.id})
+        end
         os.setComputerLabel(release.roles.state.label)
-        finish(media,release.state,journal,release,role,id)
+        finish(media,release.state,journal,release,role,id,retained)
         print("State reader installed. Connect it to core with wired modems.")
         print("Return disk to core and IMPORT ROLE ASSIGNMENTS, then reboot both.")
         return
     end
-    local journal=preflight(media,release,release.bootstrap,role,id)
+    local journal,retained=preflight(media,release,release.bootstrap,role,id)
     local state=deployment(media,release)
     assert(state.computers.core,"Install core on this disk first")
     register(media,release,state,role,id)
     json(journal,{releaseId=release.releaseId,role=role,id=id,pending=true})
-    installFiles(media,release.bootstrap)
-    json("/config.json",{protocol="amaryllis.install.v1",core_id=state.computers.core.id,
-        target_role="auto",chunkBytes=768,maxFileBytes=524288,maxTotalBytes=1048576,
-        retrySeconds=3,offerTimeoutSeconds=15,heartbeatSeconds=5})
+    if not retained then
+        installFiles(media,release.bootstrap)
+        json("/config.json",{protocol="amaryllis.install.v1",core_id=state.computers.core.id,
+            target_role="auto",chunkBytes=768,maxFileBytes=524288,maxTotalBytes=1048576,
+            retrySeconds=3,offerTimeoutSeconds=15,heartbeatSeconds=5})
+    end
     os.setComputerLabel(release.roles[role].label)
-    finish(media,release.bootstrap,journal,release,role,id)
+    finish(media,release.bootstrap,journal,release,role,id,retained)
     print(role.." registered as #"..id..". Remove disk and reboot to wait for core.")
 end
 function Setup.importFleet(media,release,id)
@@ -269,6 +304,7 @@ function Setup.importFleet(media,release,id)
     end
     -- Set the repair barrier before the fleet write, including if power fails.
     state.imported=true
+    state.reset=nil
     json(fs.combine(media,"deployment.json"),state)
     json("/fleet.json",{schemaVersion=1,computers=computers})
     print("Fleet imported. Remove disk and reboot core to distribute role packages.")
@@ -415,6 +451,43 @@ function Setup.overview(media,release)
         for _,step in ipairs(plan.steps) do print("#"..step.id.." -> "..title(step.newRole)..(step.applied and " [DONE]" or " [VISIT]")) end
     end
 end
+-- Clear commissioning assignments on the disk and registered core. The retained
+-- roster authorizes the same installed computers to register again with their
+-- programs, configuration and learned records preserved. A pending disk record
+-- keeps an interrupted reset resumable on its original core.
+function Setup.unassignCore(media,release,id)
+    assert(not os.__amaryllisFleetRegistry,"Close core's runtime before resetting installation")
+    local state=deployment(media,release)
+    local pending=state.reset and state.reset.pending
+    local core=pending and {id=state.reset.coreID} or state.computers.core
+    assert(core and core.id==id,"Insert this disk into core #"..tostring(core and core.id or "?").." to reset installation.")
+    local journal=readJSON("/amaryllis-install.json")
+    assert(journal.role=="core" and journal.id==id and journal.releaseId==release.releaseId,
+        "The core installation record does not match this disk")
+    assert(not fs.isReadOnly(media) and not fs.isReadOnly("/"),"Core and installer disk must be writable")
+    if recordExists("/fleet.json") then
+        local fleet=readJSON("/fleet.json")
+        assert(fleet.computers and fleet.computers.core and fleet.computers.core.id==id,
+            "Core fleet identity differs from this disk")
+    end
+    if not pending then
+        local previous=clone(state.computers)
+        state={schemaVersion=1,releaseId=release.releaseId,computers={},assignmentRevision=0,imported=false,
+            reset={coreID=id,previous=previous,pending=true}}
+        json(fs.combine(media,"deployment.json"),state)
+    end
+    for _,path in ipairs({"/fleet.json",fs.combine(media,"role-repair.json")}) do
+        for _,suffix in ipairs({"",".bak",".tmp",".amaryllis-tmp",".amaryllis-backup"}) do
+            local target=path..suffix
+            if fs.exists(target) then fs.delete(target) end
+        end
+    end
+    state.reset.pending=false
+    json(fs.combine(media,"deployment.json"),state)
+    local count=0;for _ in pairs(release.roles)do count=count+1 end
+    print("Installation assignments cleared.")
+    print("Install core, then register all "..count.." computers again.")
+end
 function Setup.adoptLibrary(media,release,id)
     assert(not os.__amaryllisFleetRegistry,"Stop core before adopting a package library")
     local fleet=readJSON("/fleet.json")
@@ -479,7 +552,7 @@ end
 -- Keyboard commissioning UI. Navigation changes no assignment records.
 local keyCodes=_ENV.keys
 local PAGES={"Setup","Chambers","Thrust","Displays","State","Assignments"}
-local WHITE,BLACK,GRAY,CYAN,MUTED,YELLOW=1,32768,128,512,256,16
+local WHITE,BLACK,GRAY,CYAN,MUTED,YELLOW,RED=1,32768,128,512,256,16,16384
 local function clean(value)return tostring(value or ""):gsub("[%c]"," ")end
 local function wrap(text,width)
     local rows={};text=clean(text);width=math.max(1,width)
@@ -506,12 +579,12 @@ local function key()
     end
 end
 local function enter(code)return code==keyCodes.enter or keyCodes.numPadEnter and code==keyCodes.numPadEnter end
-local function dialog(heading,messages,confirmation)
+local function dialog(heading,messages,confirmation,destructive)
     if type(messages)=="string"then messages={messages}end
     local yes=false;local offset=0
     while true do
         local w,h=term.getSize();clear()
-        put(2,2,heading,w-2,CYAN)
+        put(2,2,heading,w-2,destructive and RED or CYAN)
         local rows={}
         for _,text in ipairs(messages)do for _,part in ipairs(wrap(text,w-4))do rows[#rows+1]=part end end
         local capacity=math.max(1,h-8);local maximum=math.max(0,#rows-capacity)
@@ -519,9 +592,14 @@ local function dialog(heading,messages,confirmation)
         for i=1,capacity do put(3,4+i-1,rows[offset+i]or"",w-4)end
         if maximum>0 then put(w-16,h-4,(offset+1).."-"..math.min(#rows,offset+capacity).."/"..#rows,15,MUTED)end
         if confirmation then
-            local first=math.max(3,math.floor(w/2)-8)
-            put(first,h-3,yes and"> YES"or"  YES",7,WHITE)
-            put(first+9,h-3,yes and"  NO"or"> NO",6,WHITE)
+            local first=destructive and 3 or math.max(3,math.floor(w/2)-8)
+            if destructive then
+                put(first,h-3,yes and"> RESET INSTALLATION"or"  RESET INSTALLATION",21,RED)
+                put(first+22,h-3,yes and"  CANCEL"or"> CANCEL",9,WHITE)
+            else
+                put(first,h-3,yes and"> YES"or"  YES",7,WHITE)
+                put(first+9,h-3,yes and"  NO"or"> NO",6,WHITE)
+            end
             put(2,h-1,"Left/Right: choose  Enter: confirm",w-2,MUTED)
             put(2,h,"Esc: cancel  Up/Down: scroll",w-2,MUTED)
         else
@@ -572,9 +650,16 @@ end
 local function rowsFor(page,release,state,id,journal)
     if page==1 then
         local core=state.computers.core
+        local pendingReset=state.reset and state.reset.pending
+        local coreID=pendingReset and state.reset.coreID or core and core.id
+        local resume=core and core.id==id and journal and journal.pending==true
+            and journal.role=="core" and journal.releaseId==release.releaseId
+        local reset=coreID~=nil and not resume
         return{
-            {label="Register this computer",action="register",disabled=not core,reason=not core and"Install core first."or nil},
-            {label="Install core",action="core",disabled=core and core.id~=id,reason=core and("Already assigned to #"..core.id..".")or nil},
+            {label="Register this computer",action="register",disabled=not core or pendingReset,reason=not core and"Install core first."or nil},
+            {label=pendingReset and"Resume installation reset"or reset and"Unassign core"or resume and"Resume core installation"or"Install core",
+                action=reset and"unassign"or"core",danger=reset,disabled=coreID and coreID~=id,
+                reason=coreID and coreID~=id and("Insert this disk into core #"..coreID.." to reset installation.")or nil},
             {label="Assignments",action="assignments"},
             {label="Import assignments into core",action="import"},
             {label="Start core with disk",action="start"},
@@ -687,7 +772,7 @@ function Setup.main(media)
         end
         for i=offset+1,math.min(#rows,offset+capacity)do
             local item=rows[i];local y=first+i-offset-1
-            local fg=page==6 and item.assigned and item.assigned.id==id and YELLOW or item.disabled and GRAY or WHITE
+            local fg=page==6 and item.assigned and item.assigned.id==id and YELLOW or item.disabled and GRAY or item.danger and RED or WHITE
             put(2,y,i==selected and">"or" ",1,fg)
             if page==1 then put(4,y,item.label,w-4,fg)
             else
@@ -725,6 +810,13 @@ function Setup.main(media)
             elseif chosen.action=="assignments"then page=6
             elseif chosen.action=="core"then
                 if dialog("Install core","Install core on computer #"..id.."?",true)then operation("Core installed",function()Setup.installCore(media,release,id)end)end
+            elseif chosen.action=="unassign"then
+                local count=0;for _ in pairs(release.roles)do count=count+1 end
+                if dialog("Reset installation?",{
+                    "This will clear all computer assignments from this disk and core #"..id..".",
+                    "You will need to register all "..count.." computers again."},true,true)then
+                    operation("Installation reset",function()Setup.unassignCore(media,release,id)end)
+                end
             elseif chosen.action=="import"then
                 if dialog("Import assignments","Import this disk's assignments into core #"..id.."?",true)then operation("Assignments imported",function()Setup.importFleet(media,release,id)end)end
             elseif chosen.action=="library"then

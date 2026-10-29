@@ -397,8 +397,9 @@ class ExportTests(unittest.TestCase):
         def run_hidden():
             widgets = descendants(root)
             entries = [w for w in widgets if w.winfo_class() == "TEntry"]
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(root.title(), "Amaryllis Disk Builder " + b.VERSION)
             root.setvar(entries[0].cget("textvariable"), str(self.save))
-            root.setvar(entries[2].cget("textvariable"), str(self.output))
             buttons = {str(w.cget("text")): w for w in widgets if w.winfo_class() == "TButton"}
             buttons["Build installer"].invoke()
             deadline = time.monotonic() + 20
@@ -409,7 +410,8 @@ class ExportTests(unittest.TestCase):
             self.assertEqual(str(buttons["Build installer"].cget("state")), "normal")
             self.assertEqual(len(list(self.output.glob("Amaryllis-*"))), 1)
         try:
-            with patch.object(tk, "Tk", return_value=root), patch.object(root, "mainloop", side_effect=run_hidden), \
+            with patch.object(b, "DEFAULT_OUTPUT", self.output), \
+                 patch.object(tk, "Tk", return_value=root), patch.object(root, "mainloop", side_effect=run_hidden), \
                  patch.object(messagebox, "showerror") as error:
                 b.gui()
                 error.assert_not_called()

@@ -1297,3 +1297,10 @@ PURPOSES.update({"/disk/setup.lua":"Disk setup | Keyboard role assignment, revie
 
 # Keep migrated assembly documentation consistent across older source exports.
 REVISIONS.append(('-- A read that gives no answer (call failed, non-boolean, assembler briefly\n-- missing from the wired network) does NOT replace the last definite answer;\n-- a true answer loses verification after the assembly freshness window,\n-- but uncertainty keeps the gate open. A false answer stays blocking until\n-- a later true read. Failed reads do not change applied lift settings.', '-- Successful boolean responses carry their getter completion time.\n-- Read errors retain the last definite response and its original timestamp.\n-- assemblyGate checks fresh Sable association before fresh assembler evidence.\n-- Unresolved verification keeps the gate open and warns after five minutes.\n-- Applied lift settings remain retained through verification uncertainty.'))
+
+# Commissioning reset preserves installed programs and retained operating records.
+SUMMARIES.update({
+    "/disk/setup.lua#Setup.unassignCore": "Clear disk and core fleet assignments and retain the roster for recommissioning.",
+    "/disk/setup.lua#Setup.installCore": "Install a fresh core or register its retained installation after an assignment reset.",
+    "/disk/setup.lua#preflight": "Validate payloads and authorize a fresh, interrupted or explicitly reset registration.",
+})

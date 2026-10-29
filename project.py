@@ -13,7 +13,8 @@ import zipfile
 ROOT = Path(__file__).resolve().parent
 HOME = ROOT / "Amaryllis Installer Builder"
 SUITES = ("tests.test_windows_builder", "tests.test_runtime_bundling", "tests.test_bundling_compatibility",
-          "tests.test_information", "tests.test_bridge_presentation", "tests.test_persistent_modes", "tests.test_repository")
+          "tests.test_information", "tests.test_bridge_presentation", "tests.test_persistent_modes", "tests.test_repository",
+          "tests.test_disk_setup")
 
 
 def digest(data):
