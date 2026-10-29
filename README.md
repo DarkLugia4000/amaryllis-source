@@ -14,6 +14,7 @@ software. The Git baseline imports the delivered 2.8.0 behavior on 29 October 20
 | Amaryllis Installer Builder/ | Windows builder, updater and checked installer/UI assets. |
 | tests/ | Maintained Python regression suites, Java harness and isolated fixtures. |
 | tools/ | Maintained development utilities, including builder ZIP packaging. |
+| releases/builders/ | Versioned builder ZIPs, preserved locally; future builder packages are written here. |
 | archive/scripts/ | Historical Python, Lua and PowerShell scripts, preserved locally. |
 | project.py | Source verification, source builds, tests and Cobalt validation. |
 | docs/ | Migration notes and preserved pre-Git history. |

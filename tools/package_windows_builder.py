@@ -18,7 +18,9 @@ for name, digest in hashes.items():
 names = ['builder.py', 'bundling.py', 'presentation.py', 'information.py', 'source_notes.py', 'updater.py', 'cc_settings.py', 'Start Builder.cmd', 'README.md', 'assets/asset-hashes.json']
 names += ['assets/'+name for name in hashes]
 contents = {'Amaryllis Installer Builder/'+name: (UTILITY/name).read_bytes() for name in names}
-target = HERE/('Amaryllis-Installer-Builder-v'+builder.VERSION+'.zip')
+release_dir = HERE/'releases'/'builders'
+release_dir.mkdir(parents=True, exist_ok=True)
+target = release_dir/('Amaryllis-Installer-Builder-v'+builder.VERSION+'.zip')
 with zipfile.ZipFile(target, 'x', compression=zipfile.ZIP_DEFLATED) as bundle:
     for name, data in contents.items(): bundle.writestr(name, data)
 with zipfile.ZipFile(target) as bundle:
