@@ -63,7 +63,7 @@ took at most 2 ms. Installer pause improved the recorded distribution but left
 stalls near two seconds. A shell-operated pause/resume cycle worked without a
 tab restart; the earlier host-removal issue remains unexplained. Full findings
 are in diagnostics/2026-10-23/v143-cockpit-timing/findings.md. The collector and
-comparison procedure are in COCKPIT_TIMING_RUN.md.
+comparison procedure are in [COCKPIT_TIMING_RUN.md](../diagnostics/COCKPIT_TIMING_RUN.md).
 
 Previous package: **v142, 23 October 2026, cockpit processing priority**.
 This includes the current HOLD integral-learning changes, commanded

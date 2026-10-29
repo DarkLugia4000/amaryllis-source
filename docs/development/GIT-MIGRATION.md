@@ -40,7 +40,7 @@ and runs the real Lua information scenarios.
 
 Release ZIPs, exports, backups, diagnostics, recordings and one-off scripts
 remain on disk, ignored by Git. The former root README is preserved as
-LEGACY-HISTORY.md. Git history starts with this migration, rather than
+[LEGACY-HISTORY.md](../history/LEGACY-HISTORY.md). Git history starts with this migration, rather than
 reconstructing historical release commits.
 
 The repository uses main and the author identity supplied by the user.

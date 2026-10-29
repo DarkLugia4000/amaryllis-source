@@ -129,21 +129,21 @@ guarded. Duplicate identities require operator resolution.
 
 ## Source references
 
-- [Current builder documentation](Amaryllis%20Installer%20Builder/README.md)
-- [Disk setup](Amaryllis%20Installer%20Builder/assets/setup.lua)
-- [Receiver transactions](Amaryllis%20Installer%20Builder/assets/installer.lua)
-- [Commissioning helper](Amaryllis%20Installer%20Builder/assets/auxiliary-startup.lua)
-- [Core media adapter](Amaryllis%20Installer%20Builder/assets/core-media.lua)
-- [Panel UI/host](Amaryllis%20Installer%20Builder/assets/panel-console.lua)
-- [Identity advisory](Amaryllis%20Installer%20Builder/assets/identity-watch.lua)
-- [Windows updater](Amaryllis%20Installer%20Builder/updater.py)
-- [Bundler/source reconstruction](Amaryllis%20Installer%20Builder/bundling.py)
-- [Settings editor](Amaryllis%20Installer%20Builder/cc_settings.py)
-- [Lift recovery](diagnostics/2026-10-26/lift-handshake-recovery.md)
-- [Vessel recovery](diagnostics/2026-10-26/vessel-telemetry-recovery.md)
-- [Package reconstruction](diagnostics/2026-10-27/package-recovery/README.md)
-- [Updater report](diagnostics/2026-10-27/existing-install-update/README.md)
-- [Specific launcher fix](diagnostics/2026-10-27/bundled-startup-fault/README.md)
+- [Current builder documentation](../../Amaryllis%20Installer%20Builder/README.md)
+- [Disk setup](../../Amaryllis%20Installer%20Builder/assets/setup.lua)
+- [Receiver transactions](../../Amaryllis%20Installer%20Builder/assets/installer.lua)
+- [Commissioning helper](../../Amaryllis%20Installer%20Builder/assets/auxiliary-startup.lua)
+- [Core media adapter](../../Amaryllis%20Installer%20Builder/assets/core-media.lua)
+- [Panel UI/host](../../Amaryllis%20Installer%20Builder/assets/panel-console.lua)
+- [Identity advisory](../../Amaryllis%20Installer%20Builder/assets/identity-watch.lua)
+- [Windows updater](../../Amaryllis%20Installer%20Builder/updater.py)
+- [Bundler/source reconstruction](../../Amaryllis%20Installer%20Builder/bundling.py)
+- [Settings editor](../../Amaryllis%20Installer%20Builder/cc_settings.py)
+- [Lift recovery](../../diagnostics/2026-10-26/lift-handshake-recovery.md)
+- [Vessel recovery](../../diagnostics/2026-10-26/vessel-telemetry-recovery.md)
+- [Package reconstruction](../../diagnostics/2026-10-27/package-recovery/README.md)
+- [Updater report](../../diagnostics/2026-10-27/existing-install-update/README.md)
+- [Specific launcher fix](../../diagnostics/2026-10-27/bundled-startup-fault/README.md)
 
 Also checked installed core modules for sampling, vessel sources, failover,
 restart, watchdogs, remote management and console supervision, plus chamber-fl's

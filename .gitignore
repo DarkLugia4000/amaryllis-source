@@ -9,10 +9,6 @@
 !/tests/
 !/docs/
 !/Amaryllis Installer Builder/
-!/NAVIGATOR-INFORMATION-PLAN.md
-!/UI-PRESENTATION-PLAN.md
-!/Amaryllis-Maintenance-Catalogue.md
-!/Amaryllis-Core-File-Responsibilities.md
 
 __pycache__/
 *.py[cod]

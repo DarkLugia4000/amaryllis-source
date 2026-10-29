@@ -15,9 +15,9 @@ library. It supports migration from loose files and later bundled updates.
 Future installer ZIPs include the standalone Windows updater. The live save has
 not been updated by this task.
 
-- [Builder 2.2.0 ZIP](Amaryllis-Installer-Builder-v2.2.0.zip)
-- [Update validation report](diagnostics/2026-10-27/existing-install-update/README.md)
-- [Update instructions](Amaryllis%20Installer%20Builder/README.md)
+- [Builder 2.2.0 ZIP](../../releases/builders/Amaryllis-Installer-Builder-v2.2.0.zip)
+- [Update validation report](../../diagnostics/2026-10-27/existing-install-update/README.md)
+- [Update instructions](../../Amaryllis%20Installer%20Builder/README.md)
 
 Validation: 14 updater, 20 bundling, 30 builder, 13 bridge presentation and 23
 settings cases passed. The standalone GUI preview/apply/restore flow was also
@@ -26,7 +26,7 @@ rerun after its visibility fix. Implementation 2 is recorded below.
 Follow-up: in-game startup exposed an auxiliary launcher environment defect.
 Builder 2.2.1 corrects it, adds targeted startup repair and handles older media.
 The 14 affected launchers in Trial Journeys were repaired with a verified external
-backup after Minecraft was closed. [Repair and regression report](diagnostics/2026-10-27/bundled-startup-fault/README.md).
+backup after Minecraft was closed. [Repair and regression report](../../diagnostics/2026-10-27/bundled-startup-fault/README.md).
 
 ## Implementation 1: Systems dropdown and wording revamp
 
@@ -34,10 +34,10 @@ Status: completed 27 October 2026 in builder 2.1.0. The exported bundled bridge
 UI includes this group. No live save was changed and no installer was built
 for distribution.
 
-- [Updated builder ZIP](Amaryllis-Installer-Builder-v2.1.0.zip)
-- [Illustrated implementation report](diagnostics/2026-10-27/implementation-1/report.html)
-- [Menu overview images](diagnostics/2026-10-27/implementation-1/images/menu-overview.png)
-- [Validation results](diagnostics/2026-10-27/implementation-1/validation.json)
+- [Updated builder ZIP](../../releases/builders/Amaryllis-Installer-Builder-v2.1.0.zip)
+- [Illustrated implementation report](../../diagnostics/2026-10-27/implementation-1/report.html)
+- [Menu overview images](../../diagnostics/2026-10-27/implementation-1/images/menu-overview.png)
+- [Validation results](../../diagnostics/2026-10-27/implementation-1/validation.json)
 
 Validation passed: 13 presentation cases, 18 bundling regressions, 30 builder
 regressions and 2,052 assertions in the simulated bundled UI/core startup run.
@@ -111,9 +111,9 @@ control behavior is requested by this presentation change.
 
 ## Current visual baseline
 
-- [Illustrated UI simulation report](diagnostics/2026-10-26/bundled-ui-start/report.html)
-- [Startup overview image](diagnostics/2026-10-26/bundled-ui-start/images/startup-overview.png)
-- [Test results](diagnostics/2026-10-26/bundled-ui-start/results.json)
+- [Illustrated UI simulation report](../../diagnostics/2026-10-26/bundled-ui-start/report.html)
+- [Startup overview image](../../diagnostics/2026-10-26/bundled-ui-start/images/startup-overview.png)
+- [Test results](../../diagnostics/2026-10-26/bundled-ui-start/results.json)
 
 The baseline uses builder 2.0.0. Its images reproduce captured monitor cells and
 colours with a desktop monospace font. Hardware, network delivery and vessel
@@ -127,11 +127,11 @@ installation progress and on-demand tools are complete for core. Auxiliary
 consoles keep their existing presentation in this release. The live ship has
 not been updated for this UI change.
 
-- [Builder 2.3.0](Amaryllis-Installer-Builder-v2.3.0.zip)
-- [Illustrated report](diagnostics/2026-10-27/console-overhaul/report.html)
-- [Screen overview](diagnostics/2026-10-27/console-overhaul/images/overview.png)
-- [Validation](diagnostics/2026-10-27/console-overhaul/validation.json)
-- [Implementation report](diagnostics/2026-10-27/console-overhaul/README.md)
+- [Builder 2.3.0](../../releases/builders/Amaryllis-Installer-Builder-v2.3.0.zip)
+- [Illustrated report](../../diagnostics/2026-10-27/console-overhaul/report.html)
+- [Screen overview](../../diagnostics/2026-10-27/console-overhaul/images/overview.png)
+- [Validation](../../diagnostics/2026-10-27/console-overhaul/validation.json)
+- [Implementation report](../../diagnostics/2026-10-27/console-overhaul/README.md)
 
 Validation: 15 focused UI cases and 63 regression cases passed. Bundled startup
 integration passed 63 checks separately on Lua 5.2 and CC:Tweaked Cobalt. An
@@ -247,10 +247,10 @@ demonstrate presentation only; it is not connected to the ship.
 
 Approved screen references:
 
-- [Panel Home](diagnostics/2026-10-26/gray-console-mockup/panel-home.png)
-- [Individual computer list](diagnostics/2026-10-26/gray-console-mockup/computers.png)
-- [Computer status and timings](diagnostics/2026-10-26/gray-console-mockup/computer-detail.png)
-- [Computer errors](diagnostics/2026-10-26/gray-console-mockup/computer-errors.png)
+- [Panel Home](../../diagnostics/2026-10-26/gray-console-mockup/panel-home.png)
+- [Individual computer list](../../diagnostics/2026-10-26/gray-console-mockup/computers.png)
+- [Computer status and timings](../../diagnostics/2026-10-26/gray-console-mockup/computer-detail.png)
+- [Computer errors](../../diagnostics/2026-10-26/gray-console-mockup/computer-errors.png)
 
 Home's Computers panel opens the individual-computer list. Each row shows its
 ID, name, state, reply timing and error count. Pagination preserves access to
@@ -316,9 +316,9 @@ Core retains no auxiliary package library, and no extra ship file is installed.
 Identical program bundles retain object sharing on installer media. The current
 reference export remains below the existing 4 MB media capacity.
 
-- [Builder 2.4.0](Amaryllis-Installer-Builder-v2.4.0.zip)
-- [Recovery report](diagnostics/2026-10-27/package-recovery/README.md)
-- [Validation](diagnostics/2026-10-27/package-recovery/validation.json)
+- [Builder 2.4.0](../../releases/builders/Amaryllis-Installer-Builder-v2.4.0.zip)
+- [Recovery report](../../diagnostics/2026-10-27/package-recovery/README.md)
+- [Validation](../../diagnostics/2026-10-27/package-recovery/validation.json)
 
 Validation: 21 recovery and 92 regression cases passed. A copied installation
 was updated and rebuilt without previous media. Configuration and saved learning
@@ -332,8 +332,8 @@ line endings in CC:Tweaked Unicode Support's ROM override. Added 18-row fallback
 layouts and guarded upgrades from the previous embedded Panel revision. Only the
 core Panel module changes; flight and PID sources are unchanged.
 
-- [Builder 2.4.1](Amaryllis-Installer-Builder-v2.4.1.zip)
-- [Cause, fix and validation](diagnostics/2026-10-27/console-host-fix/README.md)
+- [Builder 2.4.1](../../releases/builders/Amaryllis-Installer-Builder-v2.4.1.zip)
+- [Cause, fix and validation](../../diagnostics/2026-10-27/console-host-fix/README.md)
 
 Validation: 17 UI/adapter and 54 regression cases passed. Full bundled startup
 passed 65 checks for each of three raw host variants on both Lua 5.2 and Cobalt.
@@ -348,8 +348,8 @@ Program is labelled REPORTING when there is no explicit running flag; catalog
 package identities are labelled Package (expected). Direct role-health faults
 retain precedence. No probes, hardware writes or additional installed files.
 
-- [Builder 2.4.2](Amaryllis-Installer-Builder-v2.4.2.zip)
-- [Observation, correction and validation](diagnostics/2026-10-27/computer-status-mapping/README.md)
+- [Builder 2.4.2](../../releases/builders/Amaryllis-Installer-Builder-v2.4.2.zip)
+- [Observation, correction and validation](../../diagnostics/2026-10-27/computer-status-mapping/README.md)
 
 23 UI cases and 41 regression cases passed; bundled startup passed 69 checks on
 each Lua engine using the real Unicode/CRLF host and a captured status layout.
@@ -367,9 +367,9 @@ showing all 16 expected computer names, roles and IDs or a dash. Corrections
 retain the pre-import/bootstrap-only restrictions and two-computer swap barrier.
 Interrupted installation remains resumable on its original computer.
 
-- [Builder 2.5.0](Amaryllis-Installer-Builder-v2.5.0.zip)
-- [Screen gallery](diagnostics/2026-10-27/keyboard-disk-installer/report.html)
-- [Report and validation](diagnostics/2026-10-27/keyboard-disk-installer/README.md)
+- [Builder 2.5.0](../../releases/builders/Amaryllis-Installer-Builder-v2.5.0.zip)
+- [Screen gallery](../../diagnostics/2026-10-27/keyboard-disk-installer/report.html)
+- [Report and validation](../../diagnostics/2026-10-27/keyboard-disk-installer/README.md)
 
 19 keyboard/transaction and 50 regression tests passed. The keyboard smoke
 fixture passed 18 checks on each Lua engine. The generated disk and instructions

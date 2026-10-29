@@ -17,7 +17,7 @@ software. The Git baseline imports the delivered 2.8.0 behavior on 29 October 20
 | releases/builders/ | Versioned builder ZIPs, preserved locally; future builder packages are written here. |
 | archive/scripts/ | Historical Python, Lua and PowerShell scripts, preserved locally. |
 | project.py | Source verification, source builds, tests and Cobalt validation. |
-| docs/ | Migration notes and preserved pre-Git history. |
+| docs/ | Topic folders and a documentation index in docs/README.md. |
 | output/ and .cache/ | Generated files and disposable test ships; ignored by Git. |
 
 Logs, recordings, installer exports, release ZIPs, backups and older one-off
@@ -25,6 +25,8 @@ scripts remain available locally and are excluded from the repository. The
 existing Windows builder folder keeps its current name and launcher. The
 top-level Git allowlist is explicit: add new maintained directories or root
 tools to .gitignore when extending the project layout.
+
+Browse the [documentation index](docs/README.md) for guides, architecture, plans and history.
 
 ## Development setup
 
@@ -87,7 +89,7 @@ Git. Upstream is https://codeberg.org/SquidDev/Cobalt.
 
 ## Git workflow
 
-The initial branch is main. No remote is configured by the migration.
+The main branch tracks origin/main at git@github.com:DarkLugia4000/amaryllis-source.git.
 
     git status
     git diff
@@ -96,7 +98,7 @@ The initial branch is main. No remote is configured by the migration.
 
 Keep generated outputs and private ship data outside commits. Preserve shipped
 ZIPs as immutable releases. Git source history starts at this migration; the
-older narrative remains in docs/LEGACY-HISTORY.md.
+older narrative remains in docs/history/LEGACY-HISTORY.md.
 
 ## Operating contracts
 
@@ -107,8 +109,8 @@ Assembly uncertainty continues checking and warns after five minutes.
 Computer names remain lowercase. Major functions receive concise purpose
 summaries, and source comments stay aligned with implemented behavior.
 
-See [the information plan](NAVIGATOR-INFORMATION-PLAN.md),
-[maintenance catalogue](Amaryllis-Maintenance-Catalogue.md) and
-[core responsibilities](Amaryllis-Core-File-Responsibilities.md).
+See [the information plan](docs/plans/NAVIGATOR-INFORMATION-PLAN.md),
+[maintenance catalogue](docs/maintenance/Amaryllis-Maintenance-Catalogue.md) and
+[core responsibilities](docs/architecture/Amaryllis-Core-File-Responsibilities.md).
 
-See [migration details](docs/GIT-MIGRATION.md) for source provenance and scope.
+See [migration details](docs/development/GIT-MIGRATION.md) for source provenance and scope.

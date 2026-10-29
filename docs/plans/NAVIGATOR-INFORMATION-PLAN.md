@@ -3,13 +3,13 @@
 Updated 28 October 2026, Europe/Berlin.
 
 Status: implemented in Installer Builder 2.8.0. Release verification and rendered evidence are recorded in the delivery report.
-The live installation is unchanged. See the [delivery report](diagnostics/2026-10-28/information-delivery/report.html)
+The live installation is unchanged. See the [delivery report](../../diagnostics/2026-10-28/information-delivery/report.html)
 for rendered screens, validation and application instructions.
 
 Related documents:
 
-- [Current navigator state inventory](diagnostics/2026-10-28/navigator-states/README.md)
-- [Inventory source expressions](diagnostics/2026-10-28/navigator-states/source-expressions.md)
+- [Current navigator state inventory](../../diagnostics/2026-10-28/navigator-states/README.md)
+- [Inventory source expressions](../../diagnostics/2026-10-28/navigator-states/source-expressions.md)
 - [Earlier UI presentation plan](UI-PRESENTATION-PLAN.md)
 
 The inventory describes existing behaviour at the time of inspection. This plan describes intended changes and takes precedence over earlier proposals in this discussion.
