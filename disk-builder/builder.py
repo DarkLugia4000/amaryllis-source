@@ -339,6 +339,8 @@ def read_package_media(selection, raw):
 def discover_package_media(computers):
     """Bounded search of saved disks and the builder's usual installer locations."""
     roots = [computers.parent / "disk", HOME / "Installers", HOME.parent / "Installers",
+             HOME.parent / "disk-builder" / "Installers",
+             # Search exports left in the utility's previous directory too.
              HOME.parent / "Amaryllis Installer Builder" / "Installers"]
     visited = set();budget = 2048
     for root in roots:

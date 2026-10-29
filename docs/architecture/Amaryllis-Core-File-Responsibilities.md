@@ -56,7 +56,7 @@ The tables account for every file found in this core folder. Program description
 | [avionics/recorder.lua](../../source/core/avionics/recorder.lua) | Older startup CSV flight recorder, with a size limit and previous-run rotation. The inspected current main.lua has no reference to this module; it uses debug_recorder.lua. |
 | [avionics/remote_ap.lua](../../source/core/avionics/remote_ap.lua) | Core-side remote AP request handling: permission/neutral-input checks, queued requests, duplicate-request handling and execution through the core supervisor. |
 | [avionics/remote_ap_client.lua](../../source/core/avionics/remote_ap_client.lua) | Remote-computer AP interface stored on core for provisioning: destination review, request submission, acknowledgements and progress display. Runs on the provisioned remote. |
-| [avionics/remote_client.lua](<../../Amaryllis Installer Builder/assets/remote-panel.lua>) | Remote-computer status interface stored on core for provisioning. Shows overview, fleet, lift, propulsion, navigation and logs on the paired remote. |
+| [avionics/remote_client.lua](<../../disk-builder/assets/remote-panel.lua>) | Remote-computer status interface stored on core for provisioning. Shows overview, fleet, lift, propulsion, navigation and logs on the paired remote. |
 | [avionics/remote_install.lua](../../source/core/avionics/remote_install.lua) | Core Utilities workflow for installing and pairing a docked remote, managing remote flight permissions and serving authenticated remote requests. |
 | [avionics/restart.lua](../../source/core/avionics/restart.lua) | Coordinates deliberate core/navigator restarts, writes a one-shot flight-intent checkpoint and restores it through telemetry recovery. |
 | [avionics/runtime_metrics.lua](../../source/core/avionics/runtime_metrics.lua) | Measures elapsed time for named runtime jobs and publishes bounded in-memory timing summaries. |
@@ -96,7 +96,7 @@ The tables account for every file found in this core folder. Program description
 | [installer/bundle_cache.lua](../../source/core/installer/bundle_cache.lua) | Keeps verified package bundles in bounded memory so repeated installer requests can reuse them. |
 | [installer/config.json](../../source/core/installer/config.json) | Package-transfer settings: protocol, chunk/file limits, retries, timeouts and polling/heartbeat intervals. |
 | [installer/install_status.json](../../source/core/installer/install_status.json) | Saved installer progress/status: target role, transfer totals, package identity, retries, errors and cache statistics. |
-| [installer/progress.lua](<../../Amaryllis Installer Builder/assets/core-progress.lua>) | Draws core's installer progress screen from cached transfer state. |
+| [installer/progress.lua](<../../disk-builder/assets/core-progress.lua>) | Draws core's installer progress screen from cached transfer state. |
 | [installer/server.lua](../../source/core/installer/server.lua) | Package distribution server: identifies registered clients, checks versions, builds offers, transfers files and verifies installation acknowledgements. |
 
 ## Shared package files (5 files)

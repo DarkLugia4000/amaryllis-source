@@ -1,7 +1,7 @@
 """Navigator information and assembly/identity regression scenarios."""
 from pathlib import Path
 import copy,json,sys,unittest
-ROOT=Path(__file__).resolve().parents[1];HOME=ROOT/'Amaryllis Installer Builder'
+ROOT=Path(__file__).resolve().parents[1];HOME=ROOT/'disk-builder'
 sys.path.insert(0,str(HOME))
 import builder
 from tests.test_runtime_bundling import LuaRuntime,table,python_value

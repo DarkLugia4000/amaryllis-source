@@ -7,7 +7,7 @@ import re
 import zipfile
 
 HERE = Path(__file__).resolve().parents[1]
-UTILITY = HERE/'Amaryllis Installer Builder'
+UTILITY = HERE/'disk-builder'
 spec = importlib.util.spec_from_file_location('builder', UTILITY/'builder.py')
 builder = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(builder)

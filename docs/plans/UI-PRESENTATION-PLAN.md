@@ -17,7 +17,7 @@ not been updated by this task.
 
 - [Builder 2.2.0 ZIP](../../releases/builders/Amaryllis-Installer-Builder-v2.2.0.zip)
 - [Update validation report](../../diagnostics/2026-10-27/existing-install-update/README.md)
-- [Update instructions](../../Amaryllis%20Installer%20Builder/README.md)
+- [Update instructions](../../disk-builder/README.md)
 
 Validation: 14 updater, 20 bundling, 30 builder, 13 bridge presentation and 23
 settings cases passed. The standalone GUI preview/apply/restore flow was also

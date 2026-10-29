@@ -8,7 +8,7 @@ import project
 from tests.test_runtime_bundling import native_runtime, table, python_value
 
 ROOT = Path(__file__).resolve().parents[1]
-HOME = ROOT / "Amaryllis Installer Builder"
+HOME = ROOT / "disk-builder"
 KEYS = {'left':203,'right':205,'up':200,'down':208,'enter':28,'escape':1,'numPadEnter':156}
 _CACHE = ROOT / '.cache'
 _CACHE.mkdir(exist_ok=True)

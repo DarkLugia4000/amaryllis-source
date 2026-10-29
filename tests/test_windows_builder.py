@@ -12,7 +12,7 @@ from unittest.mock import patch
 import zipfile
 
 HERE = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("windows_builder", HERE / "Amaryllis Installer Builder/builder.py")
+spec = importlib.util.spec_from_file_location("windows_builder", HERE / "disk-builder/builder.py")
 b = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(b)
 # These regression cases inspect the editable/loose export format explicitly.

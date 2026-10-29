@@ -8,7 +8,7 @@
 !/source/
 !/tests/
 !/docs/
-!/Amaryllis Installer Builder/
+!/disk-builder/
 
 __pycache__/
 *.py[cod]
@@ -19,8 +19,8 @@ __pycache__/
 **/.agents/
 **/.git/
 !/.gitignore
-/Amaryllis Installer Builder/Backups/
-/Amaryllis Installer Builder/Installers/
+/disk-builder/Backups/
+/disk-builder/Installers/
 
 
 !/tools/
@@ -28,4 +28,4 @@ __pycache__/
 /archive/*
 !/archive/README.md
 
-/Amaryllis Installer Builder/.cache/
+/disk-builder/.cache/

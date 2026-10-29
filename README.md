@@ -11,7 +11,7 @@ software. The Git baseline imports the delivered 2.8.0 behavior on 29 October 20
 | source/library/ | Editable navigator, heading, chamber and propulsion packages. |
 | source/calibration/ | The two explicitly shipped numeric hover/level default records. |
 | source/baseline.json | Source fingerprints, role labels, asset ownership and migration evidence. |
-| Amaryllis Installer Builder/ | Windows Disk Builder, updater and checked installer/UI assets. |
+| disk-builder/ | Windows Disk Builder, updater and checked installer/UI assets. |
 | tests/ | Maintained Python regression suites, Java harness and isolated fixtures. |
 | tools/ | Maintained development utilities, including builder ZIP packaging. |
 | releases/builders/ | Versioned builder ZIPs, preserved locally; future builder packages are written here. |
@@ -53,7 +53,7 @@ The migration fingerprints in that file are historical reference values.
 
 ### Windows interface
 
-Open `Amaryllis Installer Builder/Start Builder.cmd`. **Project source** is
+Open `disk-builder/Start Builder.cmd`. **Project source** is
 selected automatically when maintained source is present. Select the project
 folder and choose:
 
