@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "role": "heading-main",
+  "packageId": "amaryllis.heading.main",
+  "version": 3,
+  "files": [
+    "/avionics/main.lua",
+    "/avionics/config.json",
+    "/avionics/common/console.lua",
+    "/avionics/diagnostics.lua"
+  ]
+}

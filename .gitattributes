@@ -1,0 +1,12 @@
+* text=auto
+*.py text eol=lf
+*.md text eol=lf
+*.java text eol=lf
+*.json text eol=lf
+*.cmd text eol=crlf
+# Runtime and checked asset bytes participate in release checksums.
+source/** -text whitespace=cr-at-eol,-blank-at-eof
+"Amaryllis Installer Builder/assets/**" -text whitespace=cr-at-eol,-blank-at-eof
+*.zip binary
+*.png binary
+*.pdf binary

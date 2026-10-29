@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "role": "chamber_br",
+  "packageId": "amaryllis.chamber.br",
+  "version": 8,
+  "files": [
+    "/avionics/main.lua",
+    "/avionics/config.json",
+    "/avionics/hardware.lua",
+    "/avionics/lift.lua",
+    "/avionics/thrust.lua",
+    "/avionics/common/console.lua",
+    "/avionics/diagnostics.lua",
+    "/avionics/relay.lua",
+    "/avionics/chamber_link.lua"
+  ]
+}

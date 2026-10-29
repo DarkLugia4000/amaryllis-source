@@ -1,0 +1,15 @@
+{
+  "version": 3,
+  "role": "thrust-rb",
+  "packageId": "amaryllis.thrust.rb",
+  "files": [
+    "/avionics/main.lua",
+    "/avionics/config.json",
+    "/avionics/hardware.lua",
+    "/avionics/thrust.lua",
+    "/avionics/chamber_link.lua",
+    "/avionics/common/console.lua",
+    "/avionics/diagnostics.lua"
+  ],
+  "schemaVersion": 1
+}

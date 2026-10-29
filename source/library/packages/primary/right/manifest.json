@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "role": "primary_r",
+  "packageId": "amaryllis.primary.r",
+  "version": 2,
+  "files": [
+    "/avionics/main.lua",
+    "/avionics/config.json",
+    "/avionics/hardware.lua",
+    "/avionics/common/console.lua",
+    "/avionics/diagnostics.lua"
+  ]
+}

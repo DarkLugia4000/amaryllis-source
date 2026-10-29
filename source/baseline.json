@@ -1,0 +1,204 @@
+{
+  "assetBackedModules": {
+    "avionics/identity_watch.lua": "identity-watch.lua",
+    "avionics/panel_console.lua": "panel-console.lua",
+    "avionics/remote_client.lua": "remote-panel.lua",
+    "installer/media.lua": "core-media.lua",
+    "installer/progress.lua": "core-progress.lua"
+  },
+  "commentCorrections": [
+    {
+      "executableLuaTokensUnchanged": true,
+      "path": "core/avionics/io.lua",
+      "reason": "Sable-first assembly verification and five-minute uncertainty warning"
+    }
+  ],
+  "coreBundleSHA256": "a50d46a8596b811f727f0ad393e77d8f912bcfc4686ad69b2b96338b9d84235d",
+  "delivered280CoreBundleSHA256": "1d2191093fd63f27231534b0373258abb7a2d47eabe36ce18ea12f20f840b23e",
+  "files": {
+    "calibration/avionics/data/hover-offset.json": "ac312b9fa4691bc3002fc925e1961a8480c7fc5df5f2b0af9ff37fb0566c00a7",
+    "calibration/avionics/data/level-bias.json": "6b06bae118bd735aa66f3c7be2742f602274c844f138f3b7ecf3f0813a84a7f7",
+    "core/avionics/anchor.lua": "b1adf353a53f14b31260207d7afdee4b05b4b85d2b8fd0a6d61351c3618a63e9",
+    "core/avionics/autopilot.lua": "673a7b124d80dc5ed53c90e50d8dc3a673b73f0dc36f688aab7b376b7cfd394c",
+    "core/avionics/cockpit_timing.lua": "6f3cd22f5fc2579c03a2d45d856037c552764dcc58ffc55f5f9a1561b5824ba6",
+    "core/avionics/common/console.lua": "a6047459362e5c4bcd9934fc9c2f7e5b8720f3c534997542923b266d0a24231b",
+    "core/avionics/config.json": "b9fe78fb9a2909c552505fbe99429bf655e0d1959e396b9206120887b4e0c213",
+    "core/avionics/control_presets.lua": "5499d6c38536538d6050310461667b6539f7f5fa1d02659167660ef62aa51a98",
+    "core/avionics/controls.lua": "64df1d893a734d2f43469e60682612f3b437cec08651693790d11e35da806130",
+    "core/avionics/debug_recorder.lua": "4642b214f76f12ce94ab6e55d303e5f3589e2ea0e25cda9b86625da413ce274b",
+    "core/avionics/destinations.lua": "fbca2de5a96e214f4ac0bbc5bf5e040afc8bfd6e07872941316999cf6b0778da",
+    "core/avionics/diagnostics.lua": "ef9c6c43699e83859fc63b660b1ced59684a17cb2bd8dbdd5f206a0bf174f72d",
+    "core/avionics/display_payload.lua": "b60d93486e8b52f6d162761a57dacbefda103e9a72624e2b6bf48ceb2d653760",
+    "core/avionics/fleet.lua": "326b20007b5e54a6fe827b236ddc93b6556d33f8271b2ebb6fbcadd8716bd9dc",
+    "core/avionics/flight.lua": "e1aaa2fbe872bb1ac74befe5db11985eb88ee376ff77eaaa66f4c0c782da063b",
+    "core/avionics/input_tuning.lua": "903442b6fb0accb43fdcd841300701e2654d430a36e61aad087dc9ed76403fe4",
+    "core/avionics/io.lua": "14d7e51c7621a1a91ec6e443b5f86c52650b4412d4378e422638d5b3e429d0a6",
+    "core/avionics/lateral.lua": "2c14de3d5ef345f9c308001d035a342c422a96ad1f9a4996b36fa32914a8e186",
+    "core/avionics/main.lua": "c6c6a717923a595b7b219c06e7071ccf83fb0a882389c49ce8ffb6a0d4d1b54a",
+    "core/avionics/motion_warnings.lua": "775a03e59638532a67ce9a1f921068b372ec4f1f56c8828cdd606445667c6bcf",
+    "core/avionics/navigation_settings.lua": "88328758ec2b2e4a16064a3f6baa772ebcb45717b700ce89a2d13fdbf1cfdc43",
+    "core/avionics/physics_monitor.lua": "7d060661cddad61fdbe8343479c991c0c3fe8e73d0ccbecac4fee20c4ef82b78",
+    "core/avionics/pid.lua": "25399f52e13082a0588f0d62c10a90e623dc162f10b5328cc49e002234f97c26",
+    "core/avionics/progress_watchdog.lua": "ef7eee2d48fa0ee4daa19e8fd2e60b82fb24047987c20abd530996544a8db8f2",
+    "core/avionics/propulsion_worker.lua": "c9b28213061c6a0320c38b6fcf06f0cbda60e180fe771a01cdd35165fabc92e7",
+    "core/avionics/radio_inbox.lua": "4d18feae8035e9fa9c65447e16ee05fe1a09852c556ef6e2fc47a244e2d19601",
+    "core/avionics/reconnect-diagnostics.lua": "df8ca473cc0523f7eaf43bfbc891ad1332f07bb96b4a277745516002e2de1f0f",
+    "core/avionics/recorder.lua": "79f93ba5fd8bc738f46a9accfac661af6ff43f90640f33bbc0ee343ee45b00f3",
+    "core/avionics/remote_ap.lua": "bab8f39e4b1e03a998f41b09b98e70132e987b56873efb14216161adcb6752bb",
+    "core/avionics/remote_ap_client.lua": "0a0683178e83c09af7a4495b456d194a9c93bcdb93143e521f6dd976a2bcd8ec",
+    "core/avionics/remote_install.lua": "e716456ed0d46b931036f1b943e6ff82d53fdca0f8b5a4a3430555db66dedc5f",
+    "core/avionics/restart.lua": "225e7b59a4f8b91d2f2da6f578427e79a647225a372608532ff663fd2575b95f",
+    "core/avionics/runtime_metrics.lua": "6c57d2e9d2d3d20d660e25576e5005279a855f16e7219d21df45a03db8f9d4df",
+    "core/avionics/sampling.lua": "81862b6a0a0cf56eb654335d7128ff8ed657a01f89902fc0ac737831a92630a9",
+    "core/avionics/state_reader.lua": "ebd07ee5106a99e21ab9df0fb4edd62e636f3d000e7fcf6671fefb2a1e95ac96",
+    "core/avionics/state_wire.lua": "f65f015ed7722f3093af5394f26e081fc53f51f837dbb1734603d1b41852cb3e",
+    "core/avionics/storage.lua": "5ffb301af4fae7d7d5aedf801fe89abd95166fc29f673dd13126e4f93776a136",
+    "core/avionics/telemetry_recovery.lua": "22dd92461ad38785f9c77f3530a239015bc15753c212f1b0cc6f9535af4d875f",
+    "core/avionics/thrust.lua": "bf5923a2379b640580bf71b409519033eb81c1fc8795b0aeb001e61d2e49a6cf",
+    "core/avionics/vessel_sources.lua": "a24402891879bad7d960a1a9020bf891ca434cd76fb69e262912083f73210ba2",
+    "core/installer/bundle_cache.lua": "bb1168ff0aaee414d00b87ff572887b23bad73c28a61c473f40d4aa5c157769d",
+    "core/installer/config.json": "f22087acb76fdb7baa85b893b7a47223a0f81286b2758bd25f3dec20e85f909e",
+    "core/installer/server.lua": "f214481c193ed92ad6deba1314466a71cece67fdffbef63c9c88291363f0d38b",
+    "core/startup.lua": "3c15c11b4b64647e47f0479f8177ab9caf8c85d4cec042b0a6c5851724a637cb",
+    "library/packages/chamber/bl/chamber_link.lua": "8132c2f8d4a02f71d13cb15c87fc42fef25c086121f57695f2a456981cc10805",
+    "library/packages/chamber/bl/config.json": "fa96bf9ee61daf758b80750d6a7c06389b9d201c6a61581d45824da9fd5924a9",
+    "library/packages/chamber/bl/hardware.lua": "51f3e343f9725eed50330b65aa86a626f8a6e4c162e16d5f31d72a6848120918",
+    "library/packages/chamber/bl/lift.lua": "fad09a0480ff6367f6978bce8c743a2b823ffdc4f305004e5f0203bb6308c856",
+    "library/packages/chamber/bl/main.lua": "8a90c810a62ce482d2d23f1445ee132b30cad4a23ac4a8cdaaf4785d9ad30d74",
+    "library/packages/chamber/bl/manifest.json": "f65b3d83a27f0218181d7c5d35a4eda6443b619cc422f6feeb5b366ef20f24c2",
+    "library/packages/chamber/bl/relay.lua": "7d5314656c6cc1f7d7f1500659c61f86c9b2ce7a1b2a48f8a3467d972698d5a1",
+    "library/packages/chamber/bl/thrust.lua": "b0f4a0adc6cb95bbc8881cdf6ea04afba53dfee7388682fce9708ca7fc4496d1",
+    "library/packages/chamber/br/chamber_link.lua": "8132c2f8d4a02f71d13cb15c87fc42fef25c086121f57695f2a456981cc10805",
+    "library/packages/chamber/br/config.json": "b10708f4b877368e043c89451bc72e2bdc436866c1167527bf33196a4de4066a",
+    "library/packages/chamber/br/hardware.lua": "51f3e343f9725eed50330b65aa86a626f8a6e4c162e16d5f31d72a6848120918",
+    "library/packages/chamber/br/lift.lua": "fad09a0480ff6367f6978bce8c743a2b823ffdc4f305004e5f0203bb6308c856",
+    "library/packages/chamber/br/main.lua": "8a90c810a62ce482d2d23f1445ee132b30cad4a23ac4a8cdaaf4785d9ad30d74",
+    "library/packages/chamber/br/manifest.json": "b84ae1788eaa1b3dc416e2352bc0357750d566cad79b7734da5a82d6466ffcb5",
+    "library/packages/chamber/br/relay.lua": "7d5314656c6cc1f7d7f1500659c61f86c9b2ce7a1b2a48f8a3467d972698d5a1",
+    "library/packages/chamber/br/thrust.lua": "b0f4a0adc6cb95bbc8881cdf6ea04afba53dfee7388682fce9708ca7fc4496d1",
+    "library/packages/chamber/fl/chamber_link.lua": "8132c2f8d4a02f71d13cb15c87fc42fef25c086121f57695f2a456981cc10805",
+    "library/packages/chamber/fl/config.json": "5ebd7fd34cce88c6c1325391857df1b04b9dd9983a66e80f5ad2fc4a06c8536f",
+    "library/packages/chamber/fl/hardware.lua": "51f3e343f9725eed50330b65aa86a626f8a6e4c162e16d5f31d72a6848120918",
+    "library/packages/chamber/fl/lift.lua": "fad09a0480ff6367f6978bce8c743a2b823ffdc4f305004e5f0203bb6308c856",
+    "library/packages/chamber/fl/main.lua": "8a90c810a62ce482d2d23f1445ee132b30cad4a23ac4a8cdaaf4785d9ad30d74",
+    "library/packages/chamber/fl/manifest.json": "14949c55ea301ef997e51373f46e923afd85fc816f97a9b919267a03aecf2a44",
+    "library/packages/chamber/fl/relay.lua": "7d5314656c6cc1f7d7f1500659c61f86c9b2ce7a1b2a48f8a3467d972698d5a1",
+    "library/packages/chamber/fl/thrust.lua": "b0f4a0adc6cb95bbc8881cdf6ea04afba53dfee7388682fce9708ca7fc4496d1",
+    "library/packages/chamber/fr/chamber_link.lua": "8132c2f8d4a02f71d13cb15c87fc42fef25c086121f57695f2a456981cc10805",
+    "library/packages/chamber/fr/config.json": "b3e5695983fa216dbd1b5e148dbc43b950d7096cf56cb0234b32fdd470b0e47c",
+    "library/packages/chamber/fr/hardware.lua": "51f3e343f9725eed50330b65aa86a626f8a6e4c162e16d5f31d72a6848120918",
+    "library/packages/chamber/fr/lift.lua": "fad09a0480ff6367f6978bce8c743a2b823ffdc4f305004e5f0203bb6308c856",
+    "library/packages/chamber/fr/main.lua": "8a90c810a62ce482d2d23f1445ee132b30cad4a23ac4a8cdaaf4785d9ad30d74",
+    "library/packages/chamber/fr/manifest.json": "d28ebe9021155143415f768b9190c4cfc0785b20d7cd8fe01f2cfaa3edf4de3a",
+    "library/packages/chamber/fr/relay.lua": "7d5314656c6cc1f7d7f1500659c61f86c9b2ce7a1b2a48f8a3467d972698d5a1",
+    "library/packages/chamber/fr/thrust.lua": "b0f4a0adc6cb95bbc8881cdf6ea04afba53dfee7388682fce9708ca7fc4496d1",
+    "library/packages/common/chamber_link.lua": "11fc6dd3255685dfcef6fd93c2cdccb2346353b570d3313acccb1ff31e400627",
+    "library/packages/common/chamber_relay.lua": "5e5e4ba3b88d7991c684596bf8021e4d1ee83188c17289bb018e90a643f3d39a",
+    "library/packages/common/console.lua": "c87dbceeb61cf8675a31b1593fc85e54da2358a34f26219d8bdbae9629b9ed41",
+    "library/packages/common/diagnostics.lua": "63b18acc09d8d092147a1259c404d0495c1142e65249b3986586b5b8d2d50475",
+    "library/packages/common/thrust_main.lua": "0e825b65c420a88368fa6cedfea6dcb9a9e71692a3c0ed12b9e81d67cb1b111f",
+    "library/packages/heading/left/config.json": "13f82b10438202138f43294cd35ef9643b17d73a2db8ea0176d723043aab4c3b",
+    "library/packages/heading/left/main.lua": "9f2d9f2e07dff3634e819703e50e596818bd6314438581c141a1d0e3b03a4d2a",
+    "library/packages/heading/left/manifest.json": "0694e5c4232baa53b3e5a5e01b189e77f9e31ea0d93fb5fa97dd6dab8cc6ac23",
+    "library/packages/heading/main/config.json": "8ea6e1311cf309c50b3093e79583bc77939e93a19605d6bce9b648c3b39cd08a",
+    "library/packages/heading/main/main.lua": "9f2d9f2e07dff3634e819703e50e596818bd6314438581c141a1d0e3b03a4d2a",
+    "library/packages/heading/main/manifest.json": "0532ed7fd5920feac5002c53e135da8ec5c671e9a0979b8eb101a4f0d9ef21d3",
+    "library/packages/heading/right/config.json": "4d3001276d034510e476203cca7834d9017b43c5830c926ac3078ff0b77e9a5b",
+    "library/packages/heading/right/main.lua": "9f2d9f2e07dff3634e819703e50e596818bd6314438581c141a1d0e3b03a4d2a",
+    "library/packages/heading/right/manifest.json": "26125cfbb572649a88aa8ee05cd254567cf4353f97663dc619ca7dabb4b20b75",
+    "library/packages/navigation/config.json": "51a7c5ce4d5e2e1e09cb31fe6274647d47dd2b1ddf10b059d9abaaf7a59f7fd0",
+    "library/packages/navigation/main.lua": "83b7de71bf4b8d52fe9f39d63f76a6826233b5d2b30114437899cc6a47302f5b",
+    "library/packages/navigation/manifest.json": "7eb5beeebb91404392f3290683d0cdc61d5700272062a6528d5b03beb61a506b",
+    "library/packages/navigation/storage.lua": "fb96d2e990445c92652a1305985ac0fe88fb1656d6923ffbb361ff353a0d3af1",
+    "library/packages/navigation/ui.lua": "e413650f5d6cbfc8f1cc6e6d37906b3dedb8393cbe6363361a2fe0b227aa73af",
+    "library/packages/primary/left/config.json": "4f34aa6f19b4b9add7ce8f0a5163f8bb61d3db00bf35e6d5dcd54be8acf7af1d",
+    "library/packages/primary/left/hardware.lua": "2a1535ea4c51be8dd7b460af80fff00793706d21d8878c025bd241a01c78d01b",
+    "library/packages/primary/left/main.lua": "de916afba2b949c6232822bbf3c2af6f9635ece34347965e0ee36fb8f4db4dec",
+    "library/packages/primary/left/manifest.json": "fb88cfc1b00e9a8e38315bb31843296804597c27746f8bd8296832764f9b588e",
+    "library/packages/primary/right/config.json": "64912318e389d48b740d385cb372b3032e6cdbf95c44fd5cb7b46338602c4978",
+    "library/packages/primary/right/hardware.lua": "2a1535ea4c51be8dd7b460af80fff00793706d21d8878c025bd241a01c78d01b",
+    "library/packages/primary/right/main.lua": "de916afba2b949c6232822bbf3c2af6f9635ece34347965e0ee36fb8f4db4dec",
+    "library/packages/primary/right/manifest.json": "cf1476fdc89c8f577a894e4e999f33a845886bbe55bfa61eded6de156f5e3542",
+    "library/packages/thrust/lb/chamber_link.lua": "11fc6dd3255685dfcef6fd93c2cdccb2346353b570d3313acccb1ff31e400627",
+    "library/packages/thrust/lb/config.json": "403cfafbc80de8e1f0a6219041279c35ad5d3d7b04565757defa24546a06eaaf",
+    "library/packages/thrust/lb/hardware.lua": "f34c5bcbda6b83134bfe8f59f94b8ae3c2fae52df7ade20ecabaa5179956d7e3",
+    "library/packages/thrust/lb/main.lua": "6eeb5c06231f32e98961570f75639feb0b994aae2f3afe801b164dd3411bf33a",
+    "library/packages/thrust/lb/manifest.json": "04881822ce83a336af2bdb98b0c641d289a18c0d814737a361b68e93df0d81a2",
+    "library/packages/thrust/lb/thrust.lua": "6be3975a5f0a388aa5ed67e0c106d6990340bea82ef803d5a16b922e9b1632f5",
+    "library/packages/thrust/ls/chamber_link.lua": "11fc6dd3255685dfcef6fd93c2cdccb2346353b570d3313acccb1ff31e400627",
+    "library/packages/thrust/ls/config.json": "edceb4e6c5f877bed907862d88bfd76015dda7f6f778520f882752473d287457",
+    "library/packages/thrust/ls/hardware.lua": "f34c5bcbda6b83134bfe8f59f94b8ae3c2fae52df7ade20ecabaa5179956d7e3",
+    "library/packages/thrust/ls/main.lua": "6eeb5c06231f32e98961570f75639feb0b994aae2f3afe801b164dd3411bf33a",
+    "library/packages/thrust/ls/manifest.json": "0ecafe009c0f5ba425bc1597794673dfa010849827a666b324cbd17f7d87f1d4",
+    "library/packages/thrust/ls/thrust.lua": "6be3975a5f0a388aa5ed67e0c106d6990340bea82ef803d5a16b922e9b1632f5",
+    "library/packages/thrust/rb/chamber_link.lua": "11fc6dd3255685dfcef6fd93c2cdccb2346353b570d3313acccb1ff31e400627",
+    "library/packages/thrust/rb/config.json": "99d3ac6ab4f1258947725ffba0f2ffbd641a94070d2dcc902743dfc3db88cc5a",
+    "library/packages/thrust/rb/hardware.lua": "f34c5bcbda6b83134bfe8f59f94b8ae3c2fae52df7ade20ecabaa5179956d7e3",
+    "library/packages/thrust/rb/main.lua": "6eeb5c06231f32e98961570f75639feb0b994aae2f3afe801b164dd3411bf33a",
+    "library/packages/thrust/rb/manifest.json": "f48ff9df55290dce13a45f0dd3ade5b95423618d1588a36a19ed728b4841af58",
+    "library/packages/thrust/rb/thrust.lua": "6be3975a5f0a388aa5ed67e0c106d6990340bea82ef803d5a16b922e9b1632f5",
+    "library/packages/thrust/rs/chamber_link.lua": "11fc6dd3255685dfcef6fd93c2cdccb2346353b570d3313acccb1ff31e400627",
+    "library/packages/thrust/rs/config.json": "b30163b2c60913133c1ea3fa8fd497a7a447d4232b1b7c9388df1ec986cd0636",
+    "library/packages/thrust/rs/hardware.lua": "f34c5bcbda6b83134bfe8f59f94b8ae3c2fae52df7ade20ecabaa5179956d7e3",
+    "library/packages/thrust/rs/main.lua": "6eeb5c06231f32e98961570f75639feb0b994aae2f3afe801b164dd3411bf33a",
+    "library/packages/thrust/rs/manifest.json": "b3c6b9c23636ee0730b411c16eb38f64d46757f775e374ac915cb62bdef19760",
+    "library/packages/thrust/rs/thrust.lua": "6be3975a5f0a388aa5ed67e0c106d6990340bea82ef803d5a16b922e9b1632f5"
+  },
+  "functionalBaselineVerification": {
+    "executableLuaTokensMatchDelivered280": true,
+    "modules": 45
+  },
+  "roles": {
+    "chamber_bl": {
+      "label": "chamber_bl"
+    },
+    "chamber_br": {
+      "label": "chamber_br"
+    },
+    "chamber_fl": {
+      "label": "chamber_fl"
+    },
+    "chamber_fr": {
+      "label": "chamber_fr"
+    },
+    "core": {
+      "label": "ama-core"
+    },
+    "heading-left": {
+      "label": "ama-heading-left"
+    },
+    "heading-main": {
+      "label": "ama-heading-main"
+    },
+    "heading-right": {
+      "label": "ama-heading-right"
+    },
+    "navigator": {
+      "label": "ama-bridge"
+    },
+    "primary_l": {
+      "label": "primary_l"
+    },
+    "primary_r": {
+      "label": "primary_r"
+    },
+    "state": {
+      "label": "ama-state"
+    },
+    "thrust-lb": {
+      "label": "thrust-lb"
+    },
+    "thrust-ls": {
+      "label": "thrust-ls"
+    },
+    "thrust-rb": {
+      "label": "thrust-rb"
+    },
+    "thrust-rs": {
+      "label": "thrust-rs"
+    }
+  },
+  "schemaVersion": 1,
+  "scope": "Portable software and explicitly shipped hover/level defaults; synthetic fleet IDs are generated for tests.",
+  "softwareVersion": "2.8.0"
+}

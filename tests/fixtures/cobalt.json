@@ -1,0 +1,7 @@
+{
+  "version": "Cobalt 0.9.9",
+  "entry": "META-INF/jarjar/cobalt-0.9.9.jar",
+  "sha256": "aca9fe1a2cab3ea7e296a72a1a6f667e29ddfdbab7af7cee35420bc2cc6e6929",
+  "source": "Dependency bundled with the user-selected CC:Tweaked mod JAR",
+  "upstream": "https://codeberg.org/SquidDev/Cobalt"
+}

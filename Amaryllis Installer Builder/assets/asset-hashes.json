@@ -1,0 +1,15 @@
+{
+  "auxiliary-startup.lua": "47c745d7c8f60105eb6d0a3cd2ff27f753816d1eda5708559c65c880e5bc31bc",
+  "bootstrap-launcher.lua": "3bb8e6c0206d9e5142f3419533ec8c0fe5aa7950b28c79cf490e34321693b302",
+  "core-media.lua": "9528c93506732fab07453f3cf830bf1589cbe786b9aafb7ca8ac2ccad004fca6",
+  "core-progress.lua": "694bac7bbef9402cc699194282c3f6503ee61db59c2de7a5b284d0a0c72db7e3",
+  "identity-watch.lua": "c8a1abd8baae00aef4d3ec15a2e8c5b6ea204e608b3d4a67734fc6cd10a02839",
+  "installer.lua": "2f5d41c1d5f897bc3d4b448ce0201821448dc96cd0d4ae9410e1088a462f921d",
+  "legacy-package-metadata.json": "d6e6975d8922e146624876831559a15a6d9d9a9776945095a07ed2524a20c7d2",
+  "panel-console.lua": "172746180ee4fe86bd04bcc311afecbd3dcbf64692e285427f71544314f1cb9b",
+  "runtime-loader.lua": "f3834262c349b71151d8279c27370e589b1a75e1807e1d99c828ef752f856f82",
+  "setup.lua": "44bdabbeaa699e717ef7f3a7a98dcd43ad5d38bf12b81ae071ea1a0fd4bfed27",
+  "startup.lua": "9d8610008a9f73d503009c00bcfa851b0ee083ef68c45710d22679d69049e967",
+  "systems-menu.lua": "a8a7856ff1ac733ad5d9476c3fbb9ea5166720d9b426dd51cca8c0d510bb1d3d",
+  "remote-panel.lua": "c1aacf00d7495f3caa724a69ac9fb1d6380be80fb03c40018cd5d7cf3f21c7cd"
+}

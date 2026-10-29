@@ -1,0 +1,288 @@
+{
+  "altitude_control": {
+    "altitude_pid": {
+      "derivative_filter_seconds": 1,
+      "integral_limit": 20,
+      "kd": 0.05,
+      "ki": 0.001,
+      "kp": 0.06
+    },
+    "ceiling_fast_rate": 0.08,
+    "ceiling_rise_rate": 0.02,
+    "ceiling_soft_start_rate": 0.005,
+    "climb_trim_boost": 2,
+    "enabled": true,
+    "hover_capture_seconds": 5,
+    "hover_max_vertical_speed": 0.2,
+    "launch_settle_seconds": 10,
+    "level_damping_gain": 3,
+    "level_lead_seconds": 6,
+    "lift_balance_tolerance_fraction": 0.2,
+    "manual_fore_aft_trim_blocks": 0,
+    "max_feed_fraction": 0.15,
+    "max_trim_ceiling_change": 25,
+    "max_vertical_speed": 5,
+    "maximum_world_y": 314,
+    "minimum_world_y": 100,
+    "startup_acceleration_seconds": 20,
+    "startup_braking_lookahead_seconds": 15,
+    "startup_gas_target_m3_per_chamber": 12000,
+    "startup_max_vertical_speed": 5,
+    "startup_vertical_speed_limit": 20,
+    "target_rate_blocks_per_second": 1,
+    "trim_ceiling_per_block": 5,
+    "trim_deadband_blocks": 0.15,
+    "trim_pid": {
+      "derivative_filter_seconds": 2,
+      "integral_limit": 100,
+      "kd": 1,
+      "ki": 0.25
+    },
+    "trim_slew_ceiling_per_second": 1,
+    "tuning_confirmed": false,
+    "verified_gas_lift_strengths": {
+      "default": 1.5,
+      "steam": 1.5
+    },
+    "vertical_speed_pid": {
+      "derivative_filter_seconds": 1,
+      "integral_limit": 80,
+      "kd": 0,
+      "ki": 0.0015,
+      "kp": 0.012
+    }
+  },
+  "cockpit": {
+    "altitude_fast_after_seconds": 5,
+    "altitude_medium_after_seconds": 2,
+    "altitude_rate_fast": 10,
+    "altitude_rate_medium": 5,
+    "altitude_rate_slow": 1,
+    "coarse_heading_degrees": 1,
+    "fine_heading_degrees": 1,
+    "heading_repeat_seconds": 0.25,
+    "heading_selection_acceleration": 0,
+    "heading_selection_max_rate": 45,
+    "heading_selection_rate": 40,
+    "input_interval_seconds": 0.2,
+    "input_stale_seconds": 7,
+    "lateral_adjustment_blocks_per_second": 1,
+    "lateral_hold_delay_seconds": 0.5,
+    "lateral_offset_step_blocks": 0.5,
+    "lateral_strength_percent": 50,
+    "manual_yaw_sensitivity_percent": 65,
+    "maximum_input_gap_seconds": 7,
+    "maximum_selected_speed": 30,
+    "minimum_selected_speed": -20,
+    "repeat_delay_seconds": 0.5,
+    "speed_selection_acceleration": 0,
+    "speed_selection_blocks_per_second_per_second": 0.5,
+    "speed_selection_max_rate": 10
+  },
+  "commissioning": {
+    "confirm_supported": false,
+    "enabled": false
+  },
+  "geometry": {
+    "bow_forward": {
+      "x": 1,
+      "y": 0,
+      "z": 0
+    },
+    "orientation_verified": true,
+    "velocity_forward": {
+      "x": 1,
+      "y": 0,
+      "z": 0
+    },
+    "velocity_frame_verified": true,
+    "velocity_unit": "blocks_per_second"
+  },
+  "hardware": {
+    "discover": true,
+    "link_bridge": "",
+    "main_monitor": ""
+  },
+  "input_frequencies": {
+    "altitude_down": [
+      "minecraft:orange_concrete",
+      "minecraft:red_concrete"
+    ],
+    "altitude_up": [
+      "minecraft:red_concrete",
+      "minecraft:orange_concrete"
+    ],
+    "ap_disconnect": [
+      "minecraft:light_blue_concrete",
+      "minecraft:purple_concrete"
+    ],
+    "left_lift": [
+      "minecraft:purple_concrete",
+      "minecraft:orange_concrete"
+    ],
+    "left_press": [
+      "minecraft:orange_concrete",
+      "minecraft:purple_concrete"
+    ],
+    "prop_forward": [
+      "minecraft:yellow_concrete",
+      "minecraft:lime_concrete"
+    ],
+    "prop_reverse": [
+      "minecraft:lime_concrete",
+      "minecraft:yellow_concrete"
+    ],
+    "right_lift": [
+      "minecraft:purple_concrete",
+      "minecraft:green_concrete"
+    ],
+    "right_press": [
+      "minecraft:green_concrete",
+      "minecraft:purple_concrete"
+    ]
+  },
+  "label": "ama-core",
+  "maintenance": {
+    "confirmation_seconds": 30,
+    "reconnect_timeout_seconds": 20,
+    "restart_altitude_limit": 163
+  },
+  "navigation": {
+    "anchor": {
+      "maximum_speed": 0.5,
+      "output_slew": 0.25,
+      "position_gain": 0.15,
+      "position_tolerance": 0.5,
+      "settle_seconds": 2,
+      "speed_tolerance": 0.05,
+      "velocity_ki": 0.003,
+      "velocity_kp": 0.05
+    },
+    "autopilot": {
+      "arrival_radius": 12,
+      "cross_gain": 0.2,
+      "maximum_cross_speed": 1.5,
+      "output_slew": 0.25,
+      "speed_ramp": 0.5,
+      "velocity_gain": 0.35
+    }
+  },
+  "network": {
+    "broadcast_interval_seconds": 0.5,
+    "commission_ack_seconds": 4,
+    "commission_wait_seconds": 5,
+    "hello_interval_seconds": 1,
+    "max_providers": 64,
+    "max_sequence": 2147483647,
+    "node_stale_seconds": 6,
+    "sample_interval_seconds": 0.5,
+    "sensor_stale_seconds": 12
+  },
+  "protocol": "amaryllis.v1",
+  "role": "core",
+  "role_labels": {
+    "chamber_bl": "chamber_bl",
+    "chamber_br": "chamber_br",
+    "chamber_fl": "chamber_fl",
+    "chamber_fr": "chamber_fr",
+    "core": "ama-core",
+    "heading-left": "ama-heading-left",
+    "heading-main": "ama-heading-main",
+    "heading-right": "ama-heading-right",
+    "navigator": "ama-bridge",
+    "primary_l": "primary_l",
+    "primary_r": "primary_r",
+    "state": "ama-state",
+    "thrust-lb": "thrust-lb",
+    "thrust-ls": "thrust-ls",
+    "thrust-rb": "thrust-rb",
+    "thrust-rs": "thrust-rs"
+  },
+  "schema_version": 1,
+  "thrust": {
+    "command_ttl_seconds": 1,
+    "direct_max_request": 1,
+    "enabled": false,
+    "heading_control": {
+      "heading_rate_per_degree": 0.5,
+      "maximum_yaw_rate_degrees_per_second": 10,
+      "output_slew_per_second": 0.25,
+      "rate_filter_seconds": 0.5,
+      "rate_pid": {
+        "derivative_filter_seconds": 1,
+        "integral_limit": 20,
+        "kd": 0,
+        "ki": 0.005,
+        "kp": 0.05
+      }
+    },
+    "heading_control_enabled": true,
+    "heading_control_verified": false,
+    "lateral_max_rpm": 256,
+    "lateral_mixer": {
+      "lb": {
+        "side_gain": 0,
+        "side_sign": -1,
+        "yaw_gain": 1,
+        "yaw_sign": 1
+      },
+      "ls": {
+        "side_gain": 0,
+        "side_sign": -1,
+        "yaw_gain": 1,
+        "yaw_sign": -1
+      },
+      "rb": {
+        "side_gain": 0,
+        "side_sign": -1,
+        "yaw_gain": 1,
+        "yaw_sign": 1
+      },
+      "rs": {
+        "side_gain": 0,
+        "side_sign": -1,
+        "yaw_gain": 1,
+        "yaw_sign": -1
+      }
+    },
+    "limits_verified": true,
+    "manual_acceleration": {
+      "maximum": 0.1,
+      "minimum": -0.1
+    },
+    "manual_acceleration_enabled": true,
+    "manual_acceleration_pid": {
+      "derivative_filter_seconds": 1,
+      "integral_limit": 5,
+      "kd": 0,
+      "ki": 0.1,
+      "kp": 1
+    },
+    "manual_acceleration_verified": false,
+    "manual_speed_hold_gain": 0.5,
+    "mapping_verified": true,
+    "mixer_verified": true,
+    "primary_input_rpm": 256,
+    "primary_max_rpm": 256,
+    "speed_control_enabled": true,
+    "speed_control_verified": false,
+    "speed_output_slew_per_second": 0.25,
+    "speed_pid": {
+      "derivative_filter_seconds": 1,
+      "integral_limit": 100,
+      "kd": 0,
+      "ki": 0.004,
+      "kp": 0.03
+    },
+    "speed_target_rate_bps2": 0.5,
+    "status_stale_seconds": 10
+  },
+  "tuning": {
+    "altitude_step": 1,
+    "duration_seconds": 30,
+    "enabled": true,
+    "speed_step": 0.1
+  },
+  "vent_startup_ack_seconds": 18,
+  "vent_startup_enabled": true
+}

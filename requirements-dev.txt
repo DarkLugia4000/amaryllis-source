@@ -1,0 +1,2 @@
+# Lua 5.2 test runtime used by the validated development suite.
+lupa==2.6

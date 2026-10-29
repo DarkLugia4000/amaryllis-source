@@ -1,0 +1,36 @@
+# Track maintained project inputs; generated and historical local files stay outside Git.
+/*
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/project.py
+!/requirements-dev.txt
+!/source/
+!/tests/
+!/docs/
+!/Amaryllis Installer Builder/
+!/package_windows_builder.py
+!/test_windows_builder.py
+!/test_runtime_bundling.py
+!/test_bundling_compatibility.py
+!/test_information.py
+!/test_bridge_presentation.py
+!/test_persistent_modes.py
+!/NAVIGATOR-INFORMATION-PLAN.md
+!/UI-PRESENTATION-PLAN.md
+!/Amaryllis-Maintenance-Catalogue.md
+!/Amaryllis-Core-File-Responsibilities.md
+
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
+**/AGENTS.md
+**/.agents/
+**/.git/
+!/.gitignore
+/Amaryllis Installer Builder/Backups/
+/Amaryllis Installer Builder/Installers/
+
+!/test_repository.py
