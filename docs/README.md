@@ -39,6 +39,7 @@ Check their status sections and current source when assessing remaining work.
 
 ## History
 
+- [Disk Builder changelog](../disk-builder/CHANGELOG.md)
 These records describe earlier releases and implementation work.
 
 - [Pre-Git project history](history/LEGACY-HISTORY.md)

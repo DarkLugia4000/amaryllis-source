@@ -1,0 +1,545 @@
+# Amaryllis Disk Builder changelog
+
+Version entries describe the changes recorded for each release. See the
+[README](README.md) for current usage.
+
+## Unreleased
+
+- Refreshed the shipped hover and leveling defaults from Amaryllis's saved calibration.
+- Renamed the maintained utility directory to `disk-builder` and updated project commands, tests, packaging and documentation links.
+- Separated release history from the current-functionality README.
+
+## 3.0.0
+
+### Project-source builds and updates
+
+**Project source** builds maintained Lua, configuration defaults and optional
+shipped hover/level defaults. A Minecraft save is not required for this mode.
+The repository and packaged utility locate their source automatically.
+
+1. Open **Start Builder.cmd** using Python 3.11+ with Tcl/Tk.
+2. Leave **Software source** set to **Project source**.
+3. Check the selected Amaryllis project folder.
+4. Choose **Build installer** to create a new commissioning package, or
+   **Update existing ship…** to build it and open the existing-ship updater.
+5. For an update, select the destination save and external backup folder,
+   preview the file changes, close Minecraft and apply the reviewed replacement.
+
+Results are written to the utility's local `Installers` folder. **Open result**
+and **Saved to** give the output location. The distributable file is
+`amaryllis-installer.zip`; its media is used by the same installer and updater.
+
+Project releases include the source commit, uncommitted-change status and input
+fingerprint in their metadata and README. A standalone utility ZIP includes a
+snapshot of that source and its revision record, so Git is optional. Updates
+retain each destination ship's stored settings, PID configuration, learning,
+computer IDs and restart records, with the previous installation backed up
+outside the save. New installs use project defaults and optional shipped learning.
+
+**Saved ship export** explicitly captures an installed ship's software and
+portable data. Select that mode to use the saved-ship export instructions below.
+
+## 2.9.0
+
+### Disk Builder interface and commissioning reset
+
+- Renamed the product to Amaryllis Disk Builder.
+- Removed the library and output fields from the interface; exports use automatic package recovery and the local Installers directory.
+- Added the red Unassign core action with a confirmation that defaults to Cancel.
+- Added resumable commissioning reset and recommissioning of retained installations.
+
+After core is assigned, **Install core** becomes a red **Unassign core** action.
+Run it on the registered core. On another computer, the installer displays the
+core ID to visit. Interrupted core installation instead offers **Resume core installation**.
+
+The reset confirmation defaults to **CANCEL**. Select **RESET INSTALLATION**
+and confirm to clear the disk’s assignments, import status and correction plan,
+and remove core’s fleet registry and its automatic recovery copies.
+
+The disk retains the previous roster as recommissioning metadata. Registering
+those same computers again preserves their installed programs, configuration
+and learned data. Reuse the original core for retained auxiliary installations.
+The core program must be closed before resetting. This action makes no actuator calls.
+A reset interrupted during record cleanup is resumed from **Resume installation reset**.
+
+Register all 16 computers and import the assignments to complete commissioning again.
+
+## 2.8.0
+
+### Navigator information and assembly continuity
+
+Version 2.8.0 exports the agreed startup wording: OPENING STEAM VENTS,
+STATIC INFLATION, CAPTURING PITCH ZERO, ACQUIRING SEL ALT and READY.
+Acquisition describes the initial ascent. An accepted selected-altitude change
+ends that presentation for the current run. Airborne adoption displays READY.
+
+Lift, autopilot and anchor recovery show RETRYING (#) using attempt counts.
+The inactive altitude indicator reads ALT OFFLINE. Limits read MAX CLB and
+V/S DEMAND LIM. Kill Lift progress and disarming notices are yellow; the armed
+latch reads KILL LIFT ARMED; DISARM BEFORE START in red.
+
+Warnings of the highest active severity rotate every three seconds. Touch the
+displayed warning to open Current Issues, focused on that warning. Settings
+also opens Current Issues. It lists active notices, their source, available
+details and time visible, with four entries per page. Back restores the invoking
+view. These navigation actions use the current cached snapshot.
+
+State checks its fresh Sable association first, then the fresh physics-assembler
+result. Only an explicit current disassembled result, with Sable association
+unavailable, closes the assembly gate. Unresolved checks continue with available
+peripheral telemetry. After five minutes, navigator shows the yellow warning
+ASSEMBLY UNVERIFIED; OPERATOR CHECK REQUIRED. Successful verification clears it.
+Routine verification messages stay in state's logs.
+
+A fresh changed Sable vessel UUID is adopted during assembler uncertainty.
+Retained control references, selected modes, target values and saved control
+records follow that association. Source calibration is revalidated against fresh
+measurements. This UUID is the vessel identity; fleet computer IDs and protocol
+credentials retain their existing checks.
+
+The revised assembly gate and information pages preserve applied provider
+settings. Stop Systems and Kill Lift retain their existing operator-confirmed
+shutdown paths. The current confirmed-disassembly lifecycle remains in place.
+
+The export documentation pass adds section descriptions and short summaries to
+major runtime and installer functions. The builder's Python helpers also have
+function summaries. Lua token and Python syntax-tree comparisons check that
+documentation leaves executable behavior unchanged. Readable runtime bundles
+and installed file counts are retained.
+
+Cockpit input frequency pairs come from config.json. Each item is validated as
+namespace:item, including modded namespaces, while required inputs and duplicate
+ordered-pair checks remain enforced. Existing default pairs are retained.
+
+Build a fresh installer with this version, then use Update existing ship with
+that export's media folder to apply the release. The updater's file preview and
+external backup cover all registered computers and preserve stored ship data.
+
+## 2.7.1
+
+### Readable bundled source
+
+Version 2.7.1 writes embedded Lua modules as readable multiline source blocks.
+Original indentation, comments and line structure remain visible inside the
+single runtime bundle. Installed file counts stay the same.
+
+The builder reads both older escaped bundles and the new readable format.
+Source recovery remains byte-exact, including original line endings and Unicode.
+Unusual mixed line endings or control bytes use one escaped fragment per line.
+The existing runtime loader and module error locations are retained.
+
+Use this builder for subsequent builds and updates of readable bundles. The
+normal Build installer and Update existing ship workflow applies. Existing
+installed files change only when that update is applied.
+
+## 2.7.0
+
+### Persistent pilot modes
+
+Version 2.7.0 preserves explicit heading MANUAL/SEL and throttle MANUAL/SEL/DIRECT
+selections and their selected values across supported core/navigator restarts.
+The existing avionics/data/control-presets.json remains the only preset file.
+Successful mode selections invoke saving before their core acknowledgement;
+routine target adjustments retain the existing coalesced save cadence.
+
+AP cancellation and anchor release retain the underlying pilot selections and
+reset live demands through the neutral-input handover. They no longer force
+MANUAL or DIRECT, and the AP-disconnect sample is not reused as a throttle
+shortcut. Freshness, identity, neutral-input and lift-readiness gates remain.
+Preserving SEL does not itself start ship systems or grant actuator authority.
+
+Update the existing ship through the usual builder/updater path. The updater
+preserves existing presets and learned data. Core owns these selections;
+navigator displays them and does not need its own preset file. A fresh
+installation starts from its ordinary defaults when no saved presets exist.
+
+## 2.6.4
+
+### Remote refresh and command ordering
+
+Version 2.6.4 makes cached menu navigation local and refreshes the active view
+up to twice per second. Core reuses recent status replies instead of rejecting
+rapid reads; cached age is preserved. Older-core throttling does not mark the
+remote offline. Reads have no request queue. AP mutations retain the existing
+acknowledged command queue and core supervision. Ship-control and chamber
+processing order is unchanged. Update core and re-dock the remote to load both
+sides.
+
+## 2.6.3
+
+### Builder runtime and error details
+
+Version 2.6.3 makes Start Builder.cmd prefer the existing bundled workspace Python
+runtime when available. Other computers continue through the installed Python
+launcher/PATH fallbacks. No runtime is downloaded or installed. The window title
+shows the builder version, and each build log identifies its Python executable.
+GUI failures write a private traceback report under Logs beside the builder;
+the popup links that report. Source contents and pairing data are not logged.
+
+## 2.6.2
+
+### Python 3.14 bundling compatibility
+
+Version 2.6.2 replaces the Lua string encoder generator with an explicit byte
+loop. This fixes the Python 3.14.7 failure reporting a list is not an iterator
+after source validation. Encoded runtime objects remain identical on Python
+3.12 and 3.14. No Python downgrade or Minecraft configuration change is needed.
+
+## 2.6.1
+
+### One-off remote AP commands
+
+Version 2.6.1 names remote autopilot destinations Remote CMD on both client and
+core. They are one-off active targets: they never enter navigator destination
+memory, its AP > Destination selection, the saved destination library, or route
+restart checkpoints. The remote no longer loads or writes remote/destination.json.
+An existing file is left untouched and ignored. The active route target is
+cleared when the remote operation ends. Normal onboard destination editing,
+saving and ordinary route checkpoint behavior remain available.
+
+Update core and re-dock the remote through Install / pair remote to apply both
+sides. Core enforces the fixed name and preserves navigator's destination even
+for requests from older clients. An old client's own local file-writing behavior
+changes only when that remote receives the new software.
+
+## 2.6.0
+
+### Unified remote panel
+
+Version 2.6.0 gives the provisioned remote one gray Home interface: Status,
+Computers, Autopilot, Logs and Tools. It supports the 26 x 20 pocket screen,
+keyboard/mouse input and parent-level Back navigation. No shell is exposed.
+Computers includes all 16 roles, errors, report age and related core logs,
+including relayed thrust-controller reports. Stale readings remain labelled.
+Autopilot editing, review, result tracking and route progress stay in this app.
+Existing pairing, permissions and the core flight handlers are preserved.
+
+After updating core through the normal Windows updater, dock an existing remote
+and run core Tools > Install / pair remote again to load the new application.
+That provisioning path retains its existing pairing and flight-access setting.
+The fleet updater does not directly update pocket remotes. The UI replaces an
+existing embedded source and adds no installed core file or persistent UI file.
+
+## 2.5.0
+
+### Keyboard disk installer
+
+Version 2.5.0 replaces typed menu letters and computer names with keyboard lists.
+Left/Right changes pages: Setup, Chambers, Thrust, Displays, State and Assignments.
+Up/Down moves the cursor, Enter selects, and Escape goes back. A long Assignments
+list scrolls vertically so all 16 expected computers remain accessible.
+
+Confirmation dialogs use a YES/NO selector. Left selects YES, Right selects NO,
+and Enter confirms the selected choice. NO is selected initially. Escape cancels.
+
+Assigned roles are gray on registration pages. Focusing one shows its owner ID;
+Enter cannot register it again. A matching interrupted installation can resume
+on its original computer. No other completed assignment is overwritten.
+
+Assignments combines the old review and correction screens. It shows each
+computer name, role description and assigned ID, or a dash when unassigned.
+The current computer is highlighted in yellow. Read-only rows direct you to
+revisit the desired computer with this disk.
+Enter on a destination role previews a correction for the current computer.
+A swap lists both computers and must be completed on both before import.
+Core/state, imported assignments and installed packages retain their correction
+restrictions. Pending plans can be inspected and finished from Assignments.
+
+These changes stay within the existing disk setup.lua and temporary commissioning
+helper. No additional file is installed. Previously built disks keep their old
+interface; create a new installer with 2.5.0 to get the keyboard version.
+
+## 2.4.2
+
+### Relayed controller status
+
+Version 2.4.2 uses the existing propulsion-controller reports for computers whose
+status is relayed through a chamber. Their status page shows report age,
+controller binding availability, faults and the relay source. A fresh report
+without an explicit program-running flag is labelled REPORTING. Direct role
+health flags retain precedence. Stale reports remain stale.
+
+When only core's package catalog supplies a package identity, the page labels
+it Package (expected). A directly reported package remains labelled Package.
+Response time stays unavailable unless an actual request/reply measurement exists.
+No additional radio probes or hardware writes are introduced.
+
+## 2.4.1
+
+### Console host compatibility
+
+Version 2.4.1 handles Windows line endings in resource-pack overrides of
+CraftOS multishell, including CC:Tweaked Unicode Support 1.0.1. The adapter
+normalizes line endings before applying its guarded presentation changes.
+The native per-process event filtering and scheduling code remains intact.
+
+Normal startup provides the full 51 x 19 console without service tabs.
+If the host adapter cannot be used, Panel Home also fits a 51 x 18 tab window.
+This avoids a resize-only screen on the standard advanced computer.
+Older 2.3.0/2.4.0 Panel bundles upgrade through the normal build/update flow;
+stored settings and learned values are retained.
+
+## 2.4.0
+
+### Automatic package recovery
+
+Select the saved ship, then click **Build installer**.
+Builds are saved under `Installers` beside the utility. The result shows its full path. The builder recovers the auxiliary
+package sources automatically from the registered computers and verifies every
+program against core's saved package catalog. It checks each computer's role,
+ID, committed installation receipt and package version before accepting it.
+The build log and build-report.json identify the source that was used.
+
+A complete installation made with builder 2.4.0 or later contains everything
+needed to rebuild its package library. The original manifest and clean package
+configuration are stored inside each existing auxiliary runtime bundle. These
+are release defaults, without installed IDs, sessions or pairing credentials.
+No extra file is installed, and core keeps no duplicate package library.
+The source metadata does not execute at runtime.
+
+For the existing reference installation, the builder includes verified legacy
+JSON metadata for its earlier bundles. Actual executable code is recovered
+from the ship and must match core's catalog exactly. Unknown older bundles
+may still require their media if their original defaults cannot be recovered.
+
+If a registered computer is missing, incomplete or does not match the catalog,
+the builder searches the save's ComputerCraft disk folders and the utility's
+usual Installers folders for a verified matching library. It checks catalog
+identity and all object hashes; folder dates do not decide which release to use.
+The command-line `--library` option accepts matching media outside these search locations.
+The graphical interface uses automatic recovery.
+
+A partial or damaged ship with no complete matching source cannot be rebuilt
+by guessing. Restore its missing source from backup or provide matching media.
+Installer media remains useful for in-game installation, updates and repairs;
+you do not need to retain it solely to rebuild a complete 2.4.0+ installation.
+
+## 2.3.0
+
+### Core console: Panel Home
+
+Version 2.3.0 adds the gray Panel Home application to core. Home opens Status,
+Computers, Installation, Logs and Tools. Computers lists all 16 registered roles,
+with IDs, state, reply timing when measured and current error counts. Selecting a
+computer shows its reported program/hardware state, report age, package, component
+details, errors and related core log events. Stale values are labelled as last
+reported. Reply time remains `--` when telemetry has no measured request/reply
+duration; report age is shown separately. Opening these pages adds no probes.
+Computer names use lowercase throughout, such as `chamber-fl`, `bridge` and `hdg-l`.
+
+Every child page has a top-left **< Back** control. Back returns one level up and
+retains the selected computer, list page and diagnostic scroll position. Related
+logs return to the source computer. Installation shows cached transfer progress
+and the per-computer package roster within the application.
+
+Core's concurrent services use the CraftOS process scheduler inside the
+application host. Service tabs are concealed. Shell, Lua, diagnostics, the full
+core view/ID editor, remote pairing and remote flight access open from Tools.
+Tools have a top-left Back header; **F1** also returns to Tools. **F2** opens or
+focuses a recovery shell through the host, independently of UI drawing.
+The interface restarts after a drawing failure while healthy services keep
+running. Reopening startup focuses the existing application and reuses workers.
+
+The initial console target is 51 x 19; the renderer also supports larger grids.
+The host adapter validates the installed CraftOS scheduler's structure before
+using it. Its per-process event dispatch and filters are retained. Core's flight,
+PID and actuator source modules are unchanged by this presentation update.
+
+In the default bundled export, the UI module stays inside core's existing runtime bundle. Core's installed
+payload remains five files including its configuration and catalog. Existing
+learning and runtime records remain separate. This change adds no installed UI files or persistent UI data files.
+Navigation state stays in memory. Existing persistent data remains in its JSON
+files. Auxiliary consoles and their packages retain their current presentation.
+
+## 2.2.1
+
+### Auxiliary launcher environment
+
+Version 2.2.1 corrects the auxiliary startup launcher so it retains CraftOS's
+program environment, including shell.run and require. The missing environment
+could leave all auxiliary consoles repeatedly reporting an attempt to call a nil
+value while core continued to run.
+
+To repair an installation affected by this specific launcher bug, fully close
+Minecraft, open **Update existing ship…**, select the target save, and click
+**Preview startup repair**. A media folder is unnecessary for this action.
+Review the 14 auxiliary startup.lua replacements, choose an external backup
+folder, select the closed-game checkbox and click **Apply update**. Core, state,
+installed bundles, settings, PID learning and package receipts remain unchanged.
+The normal update path also corrects this known launcher when using older media.
+
+## 2.2.0
+
+### Offline existing-ship migration
+
+Version 2.2.0 adds offline migration of existing loose-file and bundled ships.
+Automated Lua 5.2, installation, rollback, worker-loader and rebuild checks cover
+the reference source. In-game flight acceptance remains a commissioning step.
+
+## 2.1.0
+
+### Bridge Systems menu
+
+Version 2.1.0 includes the bridge's Systems menu and presentation update.
+`SYSTEMS` / `Options [v]` offers Start Systems, Stop Systems, Restart Systems
+and Kill Lift. The kill option retains its confirmation dialog and becomes
+Disarm Kill when the existing latch requires disarming. Menu selections use
+fresh availability checks; an outside touch closes the menu without activating
+the control underneath. Existing Stop Systems confirmation remains in place.
+
+The flight readout uses `V/S`, chamber diagrams use `^ BOW ^`, debug disk/log
+instructions use the approved wording, and the display specification footer is
+removed. The bridge package version advances once; rebuilding the same source
+does not keep incrementing it. This update changes bridge presentation only.
+
+## 2.0.0
+
+### Bundled installations
+
+Version 2.0.0 bundles installed Lua modules by computer. Configuration, saved
+learning and recovery records remain separate writable files. The editable
+source files in the selected save are preserved.
+
+With the current reference source, core's payload is seven files including two
+learning files, STATE is three files, and each of the 14 wireless packages is
+three files. Startup/updater support and records created during operation add
+to those totals. The exported disk occupies approximately 3.3 MB; use the
+exact capacity in the build report.
+
+Bundles preserve named source modules, original error locations, worker entry
+points and task-local module caches. Workers continue using the existing
+supervision and restart logic. Core retains client source needed to provision
+remote computers inside its bundle. Auxiliary transfer destinations remain an
+exact allowlist and use the existing checksums, staging, commit and rollback.
+
+The builder verifies and extracts embedded sources when exporting a bundled
+ship again. Package recovery is automatic; a media override is optional. Rebuilding
+preserves package versions and does not nest bundles. Damaged sources, an
+unknown loader or conflicting loose/bundled files stop the export.
+
+## 1.7.1
+
+### Computer names in setup
+
+Version 1.7.1 uses computer names in setup choices, confirmations, assignment
+reviews and correction plans: `chamber-fr/fl/br/bl`, `thrust-rs/ls/rb/lb`,
+`bridge`, `hdg-l/r/m` and `state`. Core and primary computers use `core`,
+`primary-l` and `primary-r`. Select names with Up/Down and Enter. These names map to the existing
+internal roles and fleet labels.
+
+## 1.7.0
+
+### Vessel telemetry recovery
+
+Version 1.7.0 separates stale/incomplete vessel telemetry and unavailable vessel
+identity from a fresh, valid sample confirming another vessel. Missing data waits
+for revalidation and preserves lift. A confirmed identity change remains blocked.
+Aborted operations can recover partially applied commands by restoring core's
+retained absolute target map after identity, hardware and target-limit checks.
+
+## 1.6.0
+
+### Lift-handshake recovery
+
+Version 1.6.0 includes automatic lift-handshake recovery in exported core software.
+An expired control/probe lease or missed lift-command acknowledgement suspends
+feedback, retains the operation and applied lift, and retries after validating
+fresh identity, hardware and provider readbacks. During recovery, chambers that
+still own control renew their observed targets while expired peers re-probe.
+Altitude control resumes after verified acknowledgements. Operator stops, lift
+kill and incompatible identity or hardware changes retain their existing guards.
+This update does not change PID gains or export a new installer automatically.
+
+## Earlier documented additions
+
+The previous README recorded these additions without release numbers.
+
+### Duplicate computer identity warnings
+
+New exports include an onboard advisory for copied computers competing with the
+registered ship. It uses existing registry and status traffic, with no additional
+sensor polling or periodic network messages. The Windows diagnostic host is not
+required for detection.
+
+Core watches for a different active core session using its own computer ID, and
+for two boot identities that continue advancing within one assigned computer's
+status stream. It requires repeated observations over time. One changed boot,
+a burst, replayed sequence or ordinary reboot does not by itself raise a warning.
+Separate lift, relayed thrust and role-console identities are tracked separately.
+
+The bridge's Flight and Ship views display **POSSIBLE DUPLICATE ID #...**. Core's
+monitor shows the affected role and evidence, and its log records warning onset
+and clearance. The warning clears after competing traffic has remained quiet.
+Emergency lift and assembly warnings retain their existing Flight-row priority.
+
+This is advisory evidence, not proof of a second physical hull or an authentication
+mechanism. It does not shut down, reassign IDs, change sessions, extend leases,
+reset controllers or change PID behavior. A copy must be loaded, running and able
+to exchange relevant traffic to be detected. An offline or silent copy cannot
+be identified this way. A delayed legacy registry stream can warrant a possible-
+duplicate warning, so inspect the reported identities before making changes.
+
+When creating another independent Amaryllis, use distinct computer IDs and run
+its own role registration. A copied blueprint may retain the original IDs.
+This builder update does not install itself onto the running ship.
+
+### Core's installer tab
+
+New exports include the builder's progress display in core's existing installer
+tab. It shows all 14 expected wireless package roles, including missing IDs,
+waiting computers, sending, verification, completion and faults. The active
+transfer shows its acknowledged-byte percentage, file and retry count. A transfer
+at 100% is still waiting for commit verification. DONE requires the sender's
+validated installed acknowledgement or its existing strict up-to-date check.
+
+The roster retains faults when another computer becomes active, marks all-package
+completion explicitly, and rechecks results after identity/session changes.
+The state reader uses direct disk setup and is identified separately; this view
+does not claim to have verified its wired link or any hardware behavior.
+
+The display reads cached installer state only, redraws at most twice a second,
+and does not poll peripherals or add network messages. Existing server behavior
+isolates a display failure from the download process. The normal installer
+service checks for auxiliary updates while matching media is inserted. Without
+media, it idles and displays **Insert matching installer disk**.
+
+The builder overlays the progress display and a read-only disk package adapter,
+adds disk-presence checks to the existing sender's authority checkpoints, relocates
+core's console to `/avionics/common/console.lua`, and changes core's role-version
+lookup to local metadata. It records these overrides in the build report.
+The transfer protocol, strict receipts, fleet identity checks and flight controller
+come from the selected source save. Unknown sender layouts are refused.
+
+### Removable package library
+
+New cores receive their own flight software, console, installer service and a small
+trusted package catalog. They receive **no `/packages` directory**. All auxiliary
+program sources stay as verified objects on the installer disk. In our current
+source snapshot the core payload is about 1.19 MB and the library is 2.62 MB;
+actual figures are recorded in each build report. Objects shared between packages
+are stored once on disk.
+
+After installation you may remove the disk. Core's flight software, role health
+checks, remote operation and existing auxiliary programs continue without it.
+Removing the disk during a transfer retires the transfer before commit; existing
+receiver recovery records handle unfinished writes. Reinsert the matching disk
+to resume package checking and auxiliary repair. A damaged object, wrong catalog
+or several matching disks prevents installation rather than changing flight control.
+The package adapter yields while verifying large files and keeps the existing
+bounded RAM cache; it does not write a package cache onto core.
+
+For a newer **auxiliary** library, boot core from that disk so its flight runtime
+has not started. Choose
+**U Adopt auxiliary library**. This explicitly checks the registered fleet,
+core runtime compatibility, catalog and every library object before replacing
+the local version catalog. Then choose **S** to start core with that disk.
+Changing a core/state program is outside this action: a different core runtime
+is refused and needs an offline software upgrade. Saved calibration, flight
+settings, fleet IDs and pairings are preserved by library adoption.
+
+Keep media available when you need in-game installation or repair. Complete
+ships built with 2.4.0+ can be exported again without the old media. The builder
+checks all recovered source files and any media it used for changes during export. This change applies to
+new installations; exporting does not migrate or delete an existing ship's
+`/packages` folder. Do not delete that folder manually on an older core: its
+startup and version checks still depend on it.

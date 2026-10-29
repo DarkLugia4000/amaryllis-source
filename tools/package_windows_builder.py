@@ -15,7 +15,7 @@ assert re.fullmatch(r'\d+\.\d+\.\d+', builder.VERSION)
 hashes = json.loads((UTILITY/'assets/asset-hashes.json').read_bytes())
 for name, digest in hashes.items():
     assert hashlib.sha256((UTILITY/'assets'/name).read_bytes()).hexdigest() == digest
-names = ['builder.py', 'bundling.py', 'presentation.py', 'information.py', 'source_notes.py', 'updater.py', 'cc_settings.py', 'Start Builder.cmd', 'README.md', 'assets/asset-hashes.json']
+names = ['builder.py', 'bundling.py', 'presentation.py', 'information.py', 'source_notes.py', 'updater.py', 'cc_settings.py', 'Start Builder.cmd', 'README.md', 'CHANGELOG.md', 'assets/asset-hashes.json']
 names += ['assets/'+name for name in hashes]
 contents = {'Amaryllis Disk Builder/'+name: (UTILITY/name).read_bytes() for name in names}
 # Include a release snapshot so the standalone utility can build without a save or Git.
