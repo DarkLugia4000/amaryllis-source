@@ -1,10 +1,10 @@
 """Persistent pilot modes against real Flight, Controls, AP and Presets modules."""
 from pathlib import Path
 import ast,copy,json,sys,unittest
-ROOT=Path(__file__).resolve().parent;HOME=ROOT/'Amaryllis Installer Builder'
+ROOT=Path(__file__).resolve().parents[1];HOME=ROOT/'Amaryllis Installer Builder'
 sys.path.insert(0,str(HOME))
 import builder,presentation
-from test_runtime_bundling import LuaRuntime,table
+from tests.test_runtime_bundling import LuaRuntime,table
 from project import fixture
 BASE=fixture("legacy")
 def sources():

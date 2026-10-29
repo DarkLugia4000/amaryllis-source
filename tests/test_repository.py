@@ -1,7 +1,7 @@
 """Repository portability and current-source packaging checks."""
 import unittest
 import project
-from test_runtime_bundling import LuaRuntime
+from tests.test_runtime_bundling import LuaRuntime
 
 class RepositoryTests(unittest.TestCase):
     @classmethod

@@ -12,7 +12,9 @@ software. The Git baseline imports the delivered 2.8.0 behavior on 29 October 20
 | source/calibration/ | The two explicitly shipped numeric hover/level default records. |
 | source/baseline.json | Source fingerprints, role labels, asset ownership and migration evidence. |
 | Amaryllis Installer Builder/ | Windows builder, updater and checked installer/UI assets. |
-| test_*.py and tests/ | Maintained regression suites and isolated fixture data. |
+| tests/ | Maintained Python regression suites, Java harness and isolated fixtures. |
+| tools/ | Maintained development utilities, including builder ZIP packaging. |
+| archive/scripts/ | Historical Python, Lua and PowerShell scripts, preserved locally. |
 | project.py | Source verification, source builds, tests and Cobalt validation. |
 | docs/ | Migration notes and preserved pre-Git history. |
 | output/ and .cache/ | Generated files and disposable test ships; ignored by Git. |
@@ -63,6 +65,10 @@ Simplifying those transformations is a separate development step.
 ## Validation
 
     .\.venv\Scripts\python.exe project.py test
+
+Run an individual maintained suite from the repository root with:
+
+    .\.venv\Scripts\python.exe -m unittest tests.test_information
 
 The full suite covers builder failure paths, bundle installation and recovery,
 legacy source formats, navigator presentation, information/assembly behavior,

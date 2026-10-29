@@ -13,7 +13,7 @@ import zlib
 
 from lupa.lua52 import LuaRuntime
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 HOME = ROOT / "Amaryllis Installer Builder"
 spec = importlib.util.spec_from_file_location("bundled_builder", HOME / "builder.py")
 b = importlib.util.module_from_spec(spec)

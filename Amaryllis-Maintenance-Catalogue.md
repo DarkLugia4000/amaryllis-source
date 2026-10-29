@@ -89,7 +89,7 @@ existing guards.
 | Preview startup repair | Owner / maintainer | Narrow replacement of known faulty auxiliary launchers from the earlier shell-environment defect. | Specific compatibility migration, closed game and external verified backup. Not a general corruption repair utility. |
 | ComputerCraft settings editor | Owner / maintainer | Preview/apply computer capacity, disk capacity and Lua execution threads, with backup/restore. | Selected TOML only, game closed, unrelated settings preserved. Does not change general task budgets. Available in distributed windows-settings helper. |
 | Saved-learning export | Maintainer build option | Validated hover-offset.json and level-bias.json defaults seed missing fresh-core files. | Existing learning wins. Updates preserve target data. No live PID history, sessions or credentials exported as learning defaults. |
-| package_windows_builder.py | Maintainer | Verifies asset hashes and packages a versioned builder ZIP. | Does not build an in-game installer or update a ship. |
+| tools/package_windows_builder.py | Maintainer | Verifies asset hashes and packages a versioned builder ZIP. | Does not build an in-game installer or update a ship. |
 | Tests, renderers and analysers | Maintainer | Simulated input, CC UI rendering, transaction/recovery validation and recording/performance analysis. | Historical stage/apply/incident scripts are not supported general owner entry points. |
 
 Recipients receive the installer ZIP and its Windows helpers. They do not need

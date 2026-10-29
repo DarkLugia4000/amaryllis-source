@@ -12,8 +12,8 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent
 HOME = ROOT / "Amaryllis Installer Builder"
-SUITES = ("test_windows_builder", "test_runtime_bundling", "test_bundling_compatibility",
-          "test_information", "test_bridge_presentation", "test_persistent_modes", "test_repository")
+SUITES = ("tests.test_windows_builder", "tests.test_runtime_bundling", "tests.test_bundling_compatibility",
+          "tests.test_information", "tests.test_bridge_presentation", "tests.test_persistent_modes", "tests.test_repository")
 
 
 def digest(data):
@@ -122,7 +122,7 @@ def check():
 
 def tests(quick=False):
     """Run the maintained regression suites against isolated portable fixtures."""
-    suites = ("test_information", "test_bundling_compatibility", "test_repository") if quick else SUITES
+    suites = ("tests.test_information", "tests.test_bundling_compatibility", "tests.test_repository") if quick else SUITES
     output = ROOT / "output/tests"
     output.mkdir(parents=True, exist_ok=True)
     suite = unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromName(name) for name in suites)
@@ -152,7 +152,7 @@ def cobalt(mod, java):
     """Run actual information scenarios using the engine extracted from a selected CC mod."""
     import ast
     import shutil
-    import test_information as cases
+    from tests import test_information as cases
     builder = builder_module()
     output = ROOT / "output/tests/cobalt"
     output.mkdir(parents=True, exist_ok=True)
@@ -186,7 +186,7 @@ def cobalt(mod, java):
     sources = {p: d.decode() for p, d in current["payload"].items() if p.endswith(".lua")}
     sources["/packages/navigation/ui.lua"] = ui
     config = json.loads((fixture("legacy") / "avionics/config.json").read_bytes())
-    tree = ast.parse((ROOT / "test_information.py").read_text(encoding="utf-8"))
+    tree = ast.parse((ROOT / "tests/test_information.py").read_text(encoding="utf-8"))
     fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "runtime")
     bootstrap = next(n.args[0].value for n in ast.walk(fn) if isinstance(n, ast.Call)
                      and isinstance(n.func, ast.Attribute) and n.func.attr == "execute"

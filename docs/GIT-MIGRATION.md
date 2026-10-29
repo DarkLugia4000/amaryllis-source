@@ -69,3 +69,20 @@ with dependencies supplied separately from the checkout.
 
 The migration tag identifies this verified starting point. Detailed machine
 results are retained locally under output/git-migration/verification.json.
+
+
+## Script organization
+
+The maintained Python tests now live in tests/ and use package-qualified imports.
+The builder packaging tool lives in tools/. project.py remains the root command
+entry point.
+
+The 143 older root-level Python, Lua and PowerShell scripts were moved into
+archive/scripts/ with their original bytes preserved. This local archive stays
+ignored by Git; archive/README.md explains its purpose. The earlier import and
+migration verification counts above describe the original baseline.
+
+Current test, Cobalt and source-build commands retain their documented names.
+
+After the folder changes, all 104 maintained tests and all 14 Cobalt scenarios
+passed. Standard unittest discovery also found the complete 104-test suite.

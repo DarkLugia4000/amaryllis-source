@@ -4,9 +4,9 @@ import json
 from pathlib import Path
 import unittest
 
-import test_runtime_bundling as support
+from tests import test_runtime_bundling as support
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 REPORT = ROOT / 'output/tests/bridge-presentation'
 
 HARNESS = r'''
