@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "role": "primary_r",
+  "label": "primary_r",
+  "protocol": "amaryllis.v1",
+  "telemetryRole": "primary-right",
+  "endpointKind": "sensor",
+  "statusIntervalSeconds": 0.5
+}

@@ -1,0 +1,28 @@
+{
+  "files": [
+    "/avionics/main.lua",
+    "/avionics/config.json",
+    "/avionics/common/console.lua"
+  ],
+  "packageId": "amaryllis.chamber.br",
+  "role": "chamber_br",
+  "schemaVersion": 1,
+  "sourceManifest": {
+    "files": [
+      "/avionics/main.lua",
+      "/avionics/config.json",
+      "/avionics/hardware.lua",
+      "/avionics/lift.lua",
+      "/avionics/thrust.lua",
+      "/avionics/common/console.lua",
+      "/avionics/diagnostics.lua",
+      "/avionics/relay.lua",
+      "/avionics/chamber_link.lua"
+    ],
+    "packageId": "amaryllis.chamber.br",
+    "role": "chamber_br",
+    "schemaVersion": 1,
+    "version": 8
+  },
+  "version": 9
+}

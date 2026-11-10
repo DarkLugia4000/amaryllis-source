@@ -1,0 +1,97 @@
+{
+  "activationFrequency": {
+    "first": "minecraft:orange_wool",
+    "second": "minecraft:red_wool"
+  },
+  "altitudeSensor": {
+    "lowestPointOffsetBlocks": 4,
+    "name": ""
+  },
+  "bindingFingerprint": "thrust-rs|lateral-rs-p=@left|lateral-rs-s=@right|primary-right=top",
+  "bindings": {
+    "lateral-rs-p": {
+      "networkSide": "left"
+    },
+    "lateral-rs-s": {
+      "networkSide": "right"
+    },
+    "primary-right": {
+      "networkSide": "back"
+    }
+  },
+  "bindingsVerified": true,
+  "commandTimeoutSeconds": 2,
+  "commissionZeroOnStartup": false,
+  "compositionProbeEnabled": true,
+  "controlIntervalSeconds": 0.1,
+  "drives": {
+    "lateral-rs-p": {
+      "maxLevel": 256,
+      "rampPerSecond": 0.25
+    },
+    "lateral-rs-s": {
+      "maxLevel": 256,
+      "rampPerSecond": 0.25
+    },
+    "primary-right": {
+      "maxLevel": 256,
+      "rampPerSecond": 0.25
+    }
+  },
+  "enabled": true,
+  "endpointKind": "controller",
+  "label": "chamber_br",
+  "liftRole": "lift",
+  "maintenanceEnabled": true,
+  "maxCommandTtlSeconds": 1.0,
+  "networks": {
+    "gas": "back",
+    "left": "left",
+    "primary": "top",
+    "right": "right"
+  },
+  "primaryDirection": {
+    "forwardSignal": 0,
+    "link": {
+      "itemID1": "minecraft:hopper",
+      "itemID2": "minecraft:dropper",
+      "side": "back"
+    },
+    "reverseSignal": 15,
+    "speedZeroRequired": true,
+    "zeroDwellSeconds": 1.0
+  },
+  "protocol": "amaryllis.v1",
+  "providerDiscovery": {
+    "bulk": {
+      "maxTarget": 5000,
+      "minTarget": 0,
+      "minimumNonzeroTarget": 50,
+      "step": 1
+    },
+    "fine": {
+      "maxTarget": 500,
+      "minTarget": 0,
+      "minimumNonzeroTarget": 5,
+      "step": 1
+    },
+    "networkSide": "back",
+    "steamCount": 32,
+    "trimCount": 1
+  },
+  "providers": [],
+  "quadrant": "BR",
+  "readbackStaleSeconds": 1.0,
+  "relayChildRole": "thrust-rs",
+  "role": "chamber_br",
+  "statusIntervalSeconds": 0.5,
+  "thrustRole": "thrust-rs",
+  "trimActivationFrequency": {
+    "first": "minecraft:feather",
+    "second": "minecraft:purple_wool"
+  },
+  "tuningEnabled": true,
+  "ventStartupEnabled": true,
+  "ventStartupTimeoutSeconds": 15,
+  "version": 1
+}

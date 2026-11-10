@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "role": "thrust-rb",
+  "label": "thrust-rb",
+  "protocol": "amaryllis.v1",
+  "endpointKind": "controller",
+  "coordinatorRole": "chamber_fr",
+  "statusIntervalSeconds": 0.5,
+  "enabled": true,
+  "bindingsVerified": true,
+  "bindingFingerprint": "thrust-rb|lateral-rb-p=@left|lateral-rb-s=@right",
+  "maxCommandTtlSeconds": 1,
+  "readbackStaleSeconds": 1,
+  "controlIntervalSeconds": 0.1,
+  "drives": {
+    "lateral-rb-p": {
+      "maxLevel": 256,
+      "rampPerSecond": 0.25
+    },
+    "lateral-rb-s": {
+      "maxLevel": 256,
+      "rampPerSecond": 0.25
+    }
+  },
+  "bindings": {
+    "lateral-rb-p": {
+      "networkSide": "left"
+    },
+    "lateral-rb-s": {
+      "networkSide": "right"
+    }
+  },
+  "networks": {
+    "primary": "back",
+    "gas": "back",
+    "right": "right",
+    "left": "left"
+  },
+  "commissionZeroOnStartup": false
+}

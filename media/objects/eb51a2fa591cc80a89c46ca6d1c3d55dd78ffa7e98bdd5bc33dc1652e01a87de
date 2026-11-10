@@ -1,0 +1,12 @@
+{
+  "chunk_bytes": 768,
+  "heartbeat_timeout_seconds": 15,
+  "max_file_bytes": 524288,
+  "max_retries": 5,
+  "max_total_bytes": 1048576,
+  "poll_seconds": 2,
+  "protocol": "amaryllis.install.v1",
+  "retry_delay_seconds": 2,
+  "timeout_seconds": 3,
+  "version": 2
+}

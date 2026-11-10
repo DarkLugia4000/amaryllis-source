@@ -1,0 +1,24 @@
+{
+  "files": [
+    "/avionics/main.lua",
+    "/avionics/config.json",
+    "/avionics/common/console.lua"
+  ],
+  "packageId": "amaryllis.primary.l",
+  "role": "primary_l",
+  "schemaVersion": 1,
+  "sourceManifest": {
+    "files": [
+      "/avionics/main.lua",
+      "/avionics/config.json",
+      "/avionics/hardware.lua",
+      "/avionics/common/console.lua",
+      "/avionics/diagnostics.lua"
+    ],
+    "packageId": "amaryllis.primary.l",
+    "role": "primary_l",
+    "schemaVersion": 1,
+    "version": 2
+  },
+  "version": 3
+}

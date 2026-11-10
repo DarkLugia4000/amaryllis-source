@@ -1,0 +1,25 @@
+{
+  "files": [
+    "/avionics/main.lua",
+    "/avionics/config.json",
+    "/avionics/common/console.lua"
+  ],
+  "packageId": "amaryllis.navigator",
+  "role": "navigator",
+  "schemaVersion": 1,
+  "sourceManifest": {
+    "files": [
+      "/avionics/main.lua",
+      "/avionics/config.json",
+      "/avionics/storage.lua",
+      "/avionics/ui.lua",
+      "/avionics/common/console.lua",
+      "/avionics/diagnostics.lua"
+    ],
+    "packageId": "amaryllis.navigator",
+    "role": "navigator",
+    "schemaVersion": 1,
+    "version": 12
+  },
+  "version": 13
+}

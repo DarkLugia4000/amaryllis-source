@@ -1,0 +1,2 @@
+-- Amaryllis bundled entry v1
+return assert(loadfile("/avionics/main.lua",nil,_ENV))("__amaryllis_bundle_entry_v1","/avionics/common/console.lua",...)

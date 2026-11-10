@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "role": "chamber_fr",
+  "label": "chamber_fr",
+  "protocol": "amaryllis.v1",
+  "liftRole": "lift",
+  "thrustRole": "thrust-rb",
+  "endpointKind": "controller",
+  "quadrant": "FR",
+  "activationFrequency": {
+    "first": "minecraft:red_wool",
+    "second": "minecraft:orange_wool"
+  },
+  "trimActivationFrequency": {
+    "first": "minecraft:feather",
+    "second": "minecraft:blue_wool"
+  },
+  "commandTimeoutSeconds": 2,
+  "statusIntervalSeconds": 0.5,
+  "providers": [],
+  "altitudeSensor": {
+    "name": "",
+    "lowestPointOffsetBlocks": 4
+  },
+  "compositionProbeEnabled": true,
+  "ventStartupEnabled": true,
+  "ventStartupTimeoutSeconds": 15,
+  "providerDiscovery": {
+    "fine": {
+      "minimumNonzeroTarget": 5,
+      "minTarget": 0,
+      "step": 1,
+      "maxTarget": 500
+    },
+    "bulk": {
+      "minimumNonzeroTarget": 50,
+      "minTarget": 0,
+      "step": 1,
+      "maxTarget": 5000
+    },
+    "trimCount": 1,
+    "steamCount": 32,
+    "networkSide": "back"
+  },
+  "maintenanceEnabled": true,
+  "tuningEnabled": true,
+  "enabled": true,
+  "bindingsVerified": true,
+  "bindingFingerprint": "thrust-rb|lateral-rb-p=@left|lateral-rb-s=@right",
+  "maxCommandTtlSeconds": 1.0,
+  "readbackStaleSeconds": 1.0,
+  "controlIntervalSeconds": 0.1,
+  "drives": {
+    "lateral-rb-p": {
+      "maxLevel": 256,
+      "rampPerSecond": 0.25
+    },
+    "lateral-rb-s": {
+      "maxLevel": 256,
+      "rampPerSecond": 0.25
+    }
+  },
+  "bindings": {
+    "lateral-rb-p": {
+      "networkSide": "left"
+    },
+    "lateral-rb-s": {
+      "networkSide": "right"
+    }
+  },
+  "commissionZeroOnStartup": false,
+  "networks": {
+    "gas": "back",
+    "left": "left",
+    "right": "right",
+    "primary": "top"
+  },
+  "relayChildRole": "thrust-rb"
+}

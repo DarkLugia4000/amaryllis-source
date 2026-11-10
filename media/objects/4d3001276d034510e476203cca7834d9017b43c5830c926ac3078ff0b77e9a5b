@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "role": "heading-right",
+  "display": "right",
+  "protocol": "amaryllis.v1",
+  "statusTimeoutSeconds": 2.0,
+  "refreshIntervalSeconds": 0.25,
+  "textScale": 0.5
+}

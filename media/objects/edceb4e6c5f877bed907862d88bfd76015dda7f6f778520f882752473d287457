@@ -1,0 +1,58 @@
+{
+  "bindingFingerprint": "thrust-ls|lateral-ls-p=@left|lateral-ls-s=@right|primary-left=@back",
+  "bindings": {
+    "lateral-ls-p": {
+      "networkSide": "left"
+    },
+    "lateral-ls-s": {
+      "networkSide": "right"
+    },
+    "primary-left": {
+      "networkSide": "back"
+    }
+  },
+  "bindingsVerified": true,
+  "commissionZeroOnStartup": false,
+  "controlIntervalSeconds": 0.1,
+  "coordinatorRole": "chamber_bl",
+  "drives": {
+    "lateral-ls-p": {
+      "maxLevel": 256,
+      "rampPerSecond": 0.25
+    },
+    "lateral-ls-s": {
+      "maxLevel": 256,
+      "rampPerSecond": 0.25
+    },
+    "primary-left": {
+      "maxLevel": 256,
+      "rampPerSecond": 0.25
+    }
+  },
+  "enabled": true,
+  "endpointKind": "controller",
+  "label": "thrust-ls",
+  "maxCommandTtlSeconds": 1,
+  "networks": {
+    "gas": "back",
+    "left": "left",
+    "primary": "back",
+    "right": "right"
+  },
+  "primaryDirection": {
+    "forwardSignal": 0,
+    "link": {
+      "itemID1": "minecraft:dropper",
+      "itemID2": "minecraft:hopper",
+      "side": "back"
+    },
+    "reverseSignal": 15,
+    "speedZeroRequired": true,
+    "zeroDwellSeconds": 1.0
+  },
+  "protocol": "amaryllis.v1",
+  "readbackStaleSeconds": 1,
+  "role": "thrust-ls",
+  "statusIntervalSeconds": 0.5,
+  "version": 1
+}
