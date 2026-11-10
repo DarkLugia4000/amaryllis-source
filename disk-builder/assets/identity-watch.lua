@@ -1,4 +1,4 @@
--- Advisory only. Observes existing traffic; never grants or removes authority.
+-- Examines received traffic for conflicting core identities and publishes diagnostic observations.
 local Watch={};Watch.__index=Watch
 local MAX=2147483647
 local function finite(v)return type(v)=="number" and v==v and math.abs(v)<math.huge end
@@ -13,6 +13,7 @@ end
 function Watch.new()
     return setmetatable({streams={},count=0,lastNow=nil},Watch)
 end
+-- Summary: Expire old identity claims and enforce the bounded observation history.
 function Watch:prune(now)
     if not finite(now) then return false end
     if self.lastNow and now<self.lastNow then self.streams={};self.count=0 end
@@ -27,6 +28,7 @@ function Watch:prune(now)
     end
     return true
 end
+-- Summary: Validate the received identity claim and extract its bounded comparison fields.
 local function shape(io,sender,message)
     if message.v~=1 then return nil end
     local role,entry=registered(io,sender)
@@ -66,6 +68,7 @@ local function shape(io,sender,message)
         return "display:"..role,message.boot,message.seq,role
     end
 end
+-- Summary: Compare competing registered identity claims and update advisory evidence.
 function Watch:observe(io,sender,message,protocol,now,epochMs)
     if not io or io.identityReady~=true or not io.config or protocol~=io.config.protocol or
         not integer(sender,0,65535) or type(message)~="table" or not self:prune(now) then return false end
@@ -114,6 +117,7 @@ function Watch:observe(io,sender,message,protocol,now,epochMs)
     elseif row.count>=3 and row.last-row.first>=2 then stream.conflictAt=now end
     return true
 end
+-- Summary: Return the current bounded operation state and available status details.
 function Watch:snapshot(now)
     local result={active=false,alerts={},advisory=true}
     if not self:prune(now) then return result end

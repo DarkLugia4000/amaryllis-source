@@ -3,7 +3,7 @@ local Mathx = require("avionics.mathx")
 -- START SYSTEMS flight recorder. Appends one CSV row per published core
 -- snapshot while a systems run is active, so launch behaviour (attitude,
 -- leveling, lift per chamber, climb control) can be analysed afterwards.
--- Read-only with respect to flight: it never changes control state.
+-- Writes selected flight observations and controller state for offline analysis.
 local Recorder={}
 Recorder.__index=Recorder
 local QUADS={"FL","FR","BL","BR"}

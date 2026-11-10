@@ -256,9 +256,8 @@ function Hardware.saveDiscovered(config,resolved,fingerprint)
     return ok,why
 end
 
--- Returns all configuration problems so a beginner can correct the JSON in
--- one pass. Empty provider allowlists are valid for read-only inspection, but
--- they can never make a node ready to apply commands.
+-- Collect every configuration problem for one review. An empty provider
+-- allowlist permits inspection; command readiness requires configured providers.
 -- Summary: Validate role configuration, provider/drive definitions and their bounds.
 function Hardware.validateConfig(config, actualComputerId)
     local errors = {}
@@ -672,8 +671,8 @@ local function value(api, name, method, expectedType)
     return result, true
 end
 
--- Samples only the explicitly configured allowlist. Unknown gas providers are
--- reported by inspect mode and never become actuators through auto-discovery.
+-- Sample providers from the configured allowlist. Inspection reports additional
+-- discovered providers separately from the configured actuator list.
 -- Section: Readbacks | Timestamped physical observations and status.
 -- Summary: Read the configured providers and retain each getter's validity and result.
 function Hardware.sampleConfigured(config, api)
@@ -1403,10 +1402,8 @@ function Hardware.validateVentStartup(config,targets,snapshot)
     return true
 end
 
--- Explicitly authorized bootstrap for envelope telemetry. This narrow path
--- can only start the one pinned hot-air burner at its five-unit floor. It
--- never enables steam, accepts network demand, or grants flight authority.
--- Preserve an already operating burner on restart instead of dropping trim.
+-- Establish envelope telemetry with the pinned hot-air burner at its
+-- five-unit floor. Preserve the current target when that burner is already active.
 -- Summary: Establish the configured low-probe composition observation.
 function Hardware.startCompositionProbe(config, api, isCurrent)
     if config.compositionProbeEnabled ~= true then return true, "DISABLED" end

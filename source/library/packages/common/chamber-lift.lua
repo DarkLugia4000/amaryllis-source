@@ -44,7 +44,7 @@ local EMERGENCY_LATCH_PATH = "/avionics/data/emergency-stop.json"
 local EMERGENCY_LATCH_TEMP = EMERGENCY_LATCH_PATH .. ".new"
 local EMERGENCY_STOP_MODE = "BULK_OFF_PROBE_ON"
 
--- Diagnostic wall-clock stamps never participate in command authority.
+-- Record wall-clock timing for correlating lift command and application events.
 local function diagnosticEpoch()
     if type(os.epoch)~="function" then return nil end
     local ok,value=pcall(os.epoch,"utc")
@@ -1201,9 +1201,8 @@ local function refreshSnapshot(state, peripheralApi, now)
         now - state.lastCommandAt > state.config.commandTimeoutSeconds then
         addFault(faults, "COMMAND_LINK_TIMEOUT_HOLDING_LAST_TARGETS")
     end
-    -- Commissioning gates are separate from read-only hardware readiness.
-    -- A hello establishes identity, not flight authority. Timeout retains caps;
-    -- coordinated PID fallback remains pending and must never be claimed here.
+    -- Use the hello session to identify core and the command timestamp to
+    -- detect an expired ordinary demand. Expiry retains the applied ceilings.
     local expired = not state.systemsLease and state.lastCommandAt and
         now - state.lastCommandAt > state.config.commandTimeoutSeconds
     if handoverPending then state.phase = "SYSTEMS CONTROL / WAITING FOR STEAM ENVELOPE"
@@ -1360,7 +1359,7 @@ end
 
 -- Use the same single writer and expiry guards for demand-driven activation.
 -- Ceilings are set first, preventing old settings from producing an initial surge.
--- Delayed attachment is reported as pending, never falsely acknowledged.
+-- Report pending while attachment is settling; acknowledge after target and activation readback.
 -- Summary: Validate live authority, apply provider targets and verify activation/readbacks.
 local function applyManagedCommand(state, command, peripheralApi, rednetApi)
     local function validCommand()
@@ -1501,8 +1500,8 @@ local function applyManagedCommand(state, command, peripheralApi, rednetApi)
     sendStatus(state, rednetApi, peripheralApi, os.clock())
 end
 
--- Test writes never activate redstone or alter burner trim. They use the same
--- sole writer and pre/post-yield cancellation guards as normal lift commands.
+-- Apply tuning ceilings through the shared writer and check command validity
+-- around peripheral calls that can yield. Preserve existing activation and trim.
 -- Summary: Apply and verify the bounded tuning target map under its current lease.
 local function applyTuningCommand(state,command,peripheralApi,rednetApi)
  local function current()
@@ -1604,7 +1603,7 @@ local function applySystemsCommand(state,command,peripheralApi,rednetApi,handove
         end
         local target=command.targets[definition.name]
         if command.systems=="probe" and definition.controlRole=="bulk" then
-            -- Probe never changes a bulk ceiling or its existing link state.
+            -- Require each probe bulk target to equal the live ceiling.
             if target~=provider.targetAmount then
                 fail("SYSTEMS_PROBE_BULK_CHANGED:"..definition.name);return
             end
@@ -1925,8 +1924,8 @@ local function applyCommand(state, command, peripheralApi, rednetApi, handoverTe
 
         -- peripheral setters may yield for a game tick. A new session or a
         -- newer command can arrive during that yield, so check before touching
-        -- the next provider. Any completed write remains visible in telemetry,
-        -- but the superseded sequence is never acknowledged as fully applied.
+        -- the next provider. Report completed writes through telemetry and
+        -- reserve the applied acknowledgement for the still-current sequence.
         if not currentCommand(state, command) then
             state.commandInProgress = nil
             state.armed = false
@@ -2148,8 +2147,8 @@ local function processPendingSystemRestart(state, rednetApi, reboot, now)
     if state.systemRestartRetryAt and now < state.systemRestartRetryAt then return false end
 
     if not restartStillAuthorized(state, command, now) then
-        -- A stale request may receive a negative reply while its established
-        -- core session and this node boot are still present. It never reboots.
+        -- Reply with rejection when the expired request still identifies
+        -- the current core session and node boot.
         if state.session == command.session and state.boot == command.nodeBoot and
             installedCoreId(state.config) ~= nil then
             state.pendingSystemRestartAck = {
@@ -2367,8 +2366,7 @@ function Main.run()
     return true
 end
 
--- Worker entry points used by the host-side fake-hardware regression suite.
--- Normal startup and inspect mode never call applyCommand through this table.
+-- Expose worker entry points to the host-side fake-hardware regression suite.
 Main._test = {
     maintainIdleProbe=maintainIdleProbe,
     networkLoop=networkLoop,

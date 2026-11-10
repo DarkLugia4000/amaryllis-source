@@ -5,6 +5,27 @@ Version entries describe the changes recorded for each release. See the
 
 ## Unreleased
 
+### Web setup reads typed letters
+
+- `web-setup.lua`: the menu (1, 2, 3, Q), the y/n confirmations, and the core screen's Q, R and U read "char"
+  events, which carry the typed character. "key" events carry the physical key position named after the US
+  layout, so on a QWERTZ keyboard the key marked Y arrived as Z and the confirmation never accepted it. Arrows,
+  Enter and Backspace still read "key" events. Asset hash updated.
+- `test_installer`: the web fixture sends a "key" then a "char" event for printable keys, as ComputerCraft
+  does; a new case confirms with the QWERTZ Y key.
+
+### Lua comment pass
+
+- Revised maintained Lua comments to describe concrete inputs, checks, outputs
+  and recovery behavior. Examples include `Wire.inputFrame` and `commitInput`,
+  lift lease recovery and provider target bounds, sensor publication, and the
+  chamber thrust relay. Added missing major-function summaries across source
+  and the installer, display, and bundle-loader assets.
+- Regenerated the core console from the package console and refreshed hashes
+  for edited Lua assets. Compared executable tokens across 80 Lua files.
+  Tests: source integrity, presentation, loader, and runtime bundling
+  (34 passed). `project.py check` passed.
+
 ### Personal paths removed from the docs
 
 - `docs/history/STATE_MODULE_WORK.md` and `docs/architecture/Amaryllis-Core-File-Responsibilities.md` name the

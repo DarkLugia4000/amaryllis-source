@@ -21,6 +21,7 @@ local function validLabel(value)
         and value:match("^[%w%._%-]+$") ~= nil
 end
 
+-- Summary: Validate the core registry and bind the bootstrap to its assigned role.
 local function acceptRegistry(sender, message, protocol, role, localID, trustedCoreID)
     if not isInteger(trustedCoreID) or sender ~= trustedCoreID or protocol ~= PROTOCOL or type(message) ~= "table"
         or message.v ~= 1 or message.kind ~= "fleet_registry" or message.coreID ~= trustedCoreID
@@ -30,6 +31,7 @@ local function acceptRegistry(sender, message, protocol, role, localID, trustedC
     local previous = os.__amaryllisFleetRegistry
     local retired = os.__amaryllisRetiredCoreSessions or {}
     if type(retired) ~= "table" or retired[message.session] then return false end
+    -- Summary: Retire cached state associated with the previous core identity.
     local function clearPreviousIdentity()
         if type(previous) ~= "table" or previous.coreID ~= trustedCoreID then return end
         if validToken(previous.session) and previous.session ~= message.session then
@@ -98,6 +100,7 @@ end
 
 local installer=assert(loadfile("/installer.lua"))()
 local config=assert(installer.readJSON("/config.json"))
+-- Summary: Check the installed receipt and application binding for setup completion.
 local function completed()
     local status=installer.readJSON("/installer/status.json")
     local application=installer.readJSON("/avionics/config.json")
@@ -118,6 +121,7 @@ local function completed()
     end
     return fs.exists(console) and fs.exists("/avionics/main.lua")
 end
+-- Summary: Remove temporary commissioning state once installation is confirmed.
 local function finishIfComplete()
     if not completed() then return false end
     -- Preserve the updater, trust config, recovery records and receipt. Deleting

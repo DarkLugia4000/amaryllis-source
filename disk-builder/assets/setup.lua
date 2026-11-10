@@ -30,6 +30,7 @@ local function ownedRecord(path)
     return path=="/amaryllis-install.json" or path=="/fleet.json" or path=="/installer/library.json" or
         path:match("/deployment%.json$") or path:match("/role%-repair%.json$")
 end
+-- Summary: Read and decode the selected JSON record.
 local function readJSON(path)
     -- Only installer-owned records have recoverable companion names. Restore
     -- the last committed record, or finish a first write with valid staged JSON.
@@ -50,6 +51,7 @@ local function readJSON(path)
     end
     return assert(textutils.unserializeJSON(readFile(path)),"Invalid JSON: "..path)
 end
+-- Summary: Commit verified content through a temporary sibling and preserve its prior copy.
 local function write(path,data)
     fs.makeDir(fs.getDir(path))
     local temp=path..".amaryllis-tmp";local backup=path..".amaryllis-backup"
@@ -78,6 +80,7 @@ function Setup.load(media)
     assert(type(release.core)=="table" and type(release.bootstrap)=="table" and type(release.roles)=="table","Incomplete release")
     return release
 end
+-- Summary: Read one release object, from the disk or through Setup.readObject, and verify it.
 local function payload(media,entry)
     assert(validPath(entry.path),"Unsafe installation path")
     assert(type(entry.object)=="string" and #entry.object==64 and entry.object:match("^[0-9a-f]+$"),"Invalid object name")
@@ -92,6 +95,7 @@ local function keys(value,allowed)
     for k in pairs(value) do if not allowed[k] then return false end end
     return true
 end
+-- Summary: Select core payloads and merge retained configuration and learned defaults.
 local function coreEntries(media,release)
     local entries={};for _,entry in ipairs(release.core) do entries[#entries+1]=entry end
     local profile=release.calibration
@@ -129,6 +133,7 @@ end
 local function recordExists(path)
     return fs.exists(path) or fs.exists(path..".amaryllis-tmp") or fs.exists(path..".amaryllis-backup")
 end
+-- Summary: Load the disk deployment record and validate its fleet assignments.
 local function deployment(media,release)
     local path=fs.combine(media,"deployment.json")
     if not recordExists(path) then return {schemaVersion=1,releaseId=release.releaseId,computers={},assignmentRevision=0} end
@@ -163,6 +168,7 @@ local function noPendingRepair(media)
     local plan=repair(media)
     assert(not plan or plan.pending==false,"Assignment correction is unfinished. Open Assignments to finish it first.")
 end
+-- Summary: Store the computer ID assigned to a selected role on the disk.
 local function register(media,release,state,role,id)
     noPendingRepair(media)
     assert(integer(id) and release.roles[role],"Invalid installation identity")
@@ -175,6 +181,7 @@ local function register(media,release,state,role,id)
     state.computers[role]={id=id,label=release.roles[role].label}
     json(fs.combine(media,"deployment.json"),state)
 end
+-- Summary: Validate payloads and authorize a fresh, interrupted or explicitly reset registration.
 local function preflight(media,release,entries,role,id)
     local journalPath="/amaryllis-install.json"
     local journal=fs.exists(journalPath) and readJSON(journalPath) or nil
@@ -212,6 +219,7 @@ local function preflight(media,release,entries,role,id)
     assert(free=="unlimited" or (type(free)=="number" and free>=total+largest),"Not enough computer space for installation and verified writes")
     return journalPath,retained
 end
+-- Summary: Write the selected verified payload files and report installation progress.
 local function installFiles(media,entries)
     -- Startup is last: interruption cannot boot a partially copied application.
     for _,entry in ipairs(entries) do
@@ -226,6 +234,7 @@ local function finish(media,entries,journalPath,release,role,id,retained)
     end
     json(journalPath,{releaseId=release.releaseId,role=role,id=id,pending=false,source=release.source})
 end
+-- Summary: Install a fresh core or register its retained installation after an assignment reset.
 function Setup.installCore(media,release,id)
     assert(not os.__amaryllisFleetRegistry,"Close core's runtime before installing core")
     local state=deployment(media,release)
@@ -254,6 +263,7 @@ function Setup.installCore(media,release,id)
     print(retained and "Core registered. Existing programs and settings retained." or "Core installed, propulsion disabled. Register auxiliaries using this disk.")
     print("Then return the disk here and IMPORT ROLE ASSIGNMENTS before starting core.")
 end
+-- Summary: Write the state reader config, or the receiver config bound to core.
 local function writeRoleConfig(release,role,id,coreID)
     if role=="state" then
         json("/avionics/config.json",{schemaVersion=1,role="state",label=release.roles.state.label,
@@ -264,6 +274,7 @@ local function writeRoleConfig(release,role,id,coreID)
             retrySeconds=3,offerTimeoutSeconds=15,heartbeatSeconds=5})
     end
 end
+-- Summary: Register an auxiliary role and install its bootstrap receiver.
 function Setup.installAuxiliary(media,release,role,id)
     assert(role~="core" and release.roles[role],"Select an auxiliary role")
     if role=="state" then
@@ -296,6 +307,7 @@ function Setup.installAuxiliary(media,release,role,id)
     finish(media,release.bootstrap,journal,release,role,id,retained)
     print(role.." registered as #"..id..". Remove disk and reboot to wait for core.")
 end
+-- Summary: Import a compatible installed fleet into the disk assignment record.
 function Setup.importFleet(media,release,id)
     noPendingRepair(media)
     local state=deployment(media,release)
@@ -330,6 +342,7 @@ local function roleFor(state,id)
     for role,entry in pairs(state.computers) do if entry.id==id then return role end end
 end
 local function repairable(role) return role and role~="core" and role~="state" end
+-- Summary: Check the selected core and role metadata for the supported assignment operation.
 local function localRepairCheck(release,id,oldRole,newRole)
     assert(not os.__amaryllisFleetRegistry,"Restart from the setup disk with runtimes stopped before correcting assignments")
     assert(not fs.exists("/avionics/config.json") and not fs.exists("/avionics/main.lua"),
@@ -348,6 +361,7 @@ local function localRepairCheck(release,id,oldRole,newRole)
         (journal.role==oldRole or journal.role==newRole),"Local registration does not match this correction")
     return journal
 end
+-- Summary: Build a reviewed role-reassignment plan from current fleet records.
 function Setup.planRepair(media,release,id,newRole)
     noPendingRepair(media)
     local state=deployment(media,release)
@@ -372,6 +386,7 @@ function Setup.planRepair(media,release,id,newRole)
     json(fs.combine(media,"role-repair.json"),plan)
     return plan
 end
+-- Summary: Validate a stored assignment plan against the current disk and computer state.
 local function checkedPlan(media,release)
     local plan=repair(media)
     assert(type(plan)=="table" and plan.schemaVersion==1 and plan.releaseId==release.releaseId and
@@ -397,6 +412,7 @@ local function checkedPlan(media,release)
         "Correction snapshot does not match disk assignments")
     return plan,state
 end
+-- Summary: Resume the verified assignment operation and record its completion.
 function Setup.resumeRepair(media,release,id)
     local plan,state=checkedPlan(media,release)
     assert(plan.pending==true,"This correction is already complete")
@@ -429,6 +445,7 @@ function Setup.resumeRepair(media,release,id)
     end
     return plan
 end
+-- Summary: Cancel the pending assignment correction and preserve its recorded outcome.
 function Setup.cancelRepair(media,release)
     local plan=checkedPlan(media,release)
     assert(plan.pending==true,"No pending correction")
@@ -442,6 +459,7 @@ function Setup.cancelRepair(media,release)
     plan.pending=false;plan.cancelled=true
     json(fs.combine(media,"role-repair.json"),plan)
 end
+-- Summary: Collect assignment and installation progress for every expected computer.
 function Setup.overview(media,release)
     local state=deployment(media,release)
     local order={"core"};for _,r in ipairs(release.roleOrder) do order[#order+1]=r end
@@ -463,6 +481,7 @@ end
 -- roster authorizes the same installed computers to register again with their
 -- programs, configuration and learned records preserved. A pending disk record
 -- keeps an interrupted reset resumable on its original core.
+-- Summary: Clear disk and core fleet assignments and retain the roster for recommissioning.
 function Setup.unassignCore(media,release,id)
     assert(not os.__amaryllisFleetRegistry,"Close core's runtime before resetting installation")
     local state=deployment(media,release)
@@ -496,6 +515,7 @@ function Setup.unassignCore(media,release,id)
     print("Installation assignments cleared.")
     print("Install core, then register all "..count.." computers again.")
 end
+-- Summary: Verify the mounted library and publish its trusted metadata on core.
 function Setup.adoptLibrary(media,release,id)
     assert(not os.__amaryllisFleetRegistry,"Stop core before adopting a package library")
     local fleet=readJSON("/fleet.json")
@@ -542,6 +562,7 @@ function Setup.adoptLibrary(media,release,id)
     write("/installer/library.json",catalogRaw)
     print("Library adopted. Start core with this disk to install, update or repair auxiliaries.")
 end
+-- Summary: Launch installed core services after setup completes.
 function Setup.startCore(media,release,id)
     assert(not os.__amaryllisFleetRegistry,"Core is already running")
     local state=deployment(media,release)
@@ -562,6 +583,7 @@ local keyCodes=_ENV.keys
 local PAGES={"Setup","Chambers","Thrust","Displays","State","Assignments"}
 local WHITE,BLACK,GRAY,CYAN,MUTED,YELLOW,RED=1,32768,128,512,256,16,16384
 local function clean(value)return tostring(value or ""):gsub("[%c]"," ")end
+-- Summary: Wrap display text to the available character width.
 local function wrap(text,width)
     local rows={};text=clean(text);width=math.max(1,width)
     while #text>width do
@@ -587,6 +609,7 @@ local function key()
     end
 end
 local function enter(code)return code==keyCodes.enter or keyCodes.numPadEnter and code==keyCodes.numPadEnter end
+-- Summary: Render a bounded keyboard confirmation and return the selected response.
 local function dialog(heading,messages,confirmation,destructive)
     if type(messages)=="string"then messages={messages}end
     local yes=false;local offset=0
@@ -623,6 +646,7 @@ local function dialog(heading,messages,confirmation,destructive)
         elseif code==keyCodes.down then offset=math.min(maximum,offset+1)end
     end
 end
+-- Summary: Run a selected setup operation and display its progress and result.
 local function operation(heading,action)
     local messages={};local original,originalError=print,printError
     local function capture(...)
@@ -642,6 +666,7 @@ local function order(release)
     for _,role in ipairs(release.roleOrder)do if not seen[role]then roles[#roles+1]=role;seen[role]=true end end
     return roles
 end
+-- Summary: Resolve whether the current role selection is already assigned.
 local function registrationAvailability(state,release,role,id,journal)
     local assigned=state.computers[role]
     if assigned then
@@ -655,6 +680,7 @@ local function registrationAvailability(state,release,role,id,journal)
     if not state.computers.core then return true,"Install core first."end
     return false,nil
 end
+-- Summary: Build the role menu and assignment rows for the selected installer page.
 local function rowsFor(page,release,state,id,journal)
     if page==1 then
         local core=state.computers.core
@@ -689,6 +715,7 @@ local function rowsFor(page,release,state,id,journal)
     end
     return rows
 end
+-- Summary: Present the affected roles and computer IDs in a correction review.
 local function showPlanRows(plan)
     local rows={}
     for _,step in ipairs(plan.steps)do
@@ -697,6 +724,7 @@ local function showPlanRows(plan)
     end
     return rows
 end
+-- Summary: Display the stored correction plan and handle resume or cancellation.
 local function pendingCorrection(media,release,id)
     while true do
         local plan=repair(media)
@@ -732,6 +760,7 @@ local function pendingCorrection(media,release,id)
         end
     end
 end
+-- Summary: Review and submit an assignment change for the current computer.
 local function correctAssignment(media,release,state,id,newRole)
     local plan=repair(media)
     if plan and plan.pending then pendingCorrection(media,release,id);return end
@@ -759,6 +788,7 @@ local function correctAssignment(media,release,state,id,newRole)
         end
     end)
 end
+-- Summary: Run keyboard page navigation, role selection and installation review.
 function Setup.main(media)
     local release=Setup.load(media);local page=1;local selections={};local offsets={}
     while true do
@@ -841,6 +871,7 @@ end
 -- own registration payload after core accepts its role.
 -- A computer that already holds another auxiliary role moves to the new one when
 -- move is set; the computer checked locally that no role package is installed.
+-- Summary: Record a role for a computer in core's deployment record (web registration).
 function Setup.registerRole(media,release,role,id,move)
     assert(role~="core","Core registers itself")
     local state=deployment(media,release)
@@ -855,6 +886,7 @@ function Setup.registerRole(media,release,role,id,move)
     register(media,release,state,role,id)
     return state
 end
+-- Summary: Clear one role from core's deployment record before import (web registration).
 function Setup.clearRole(media,release,role)
     assert(role~="core","Core cannot be cleared here; use Reset installation")
     local state=deployment(media,release)
@@ -868,6 +900,7 @@ end
 -- A computer that core accepted installs its payload: the wireless receiver
 -- for auxiliaries, the state payload for the state reader. A computer whose
 -- earlier registration has no role package yet changes role in place.
+-- Summary: Install the payload for a role that core has accepted (web registration).
 function Setup.installRegistered(media,release,role,id,coreID)
     assert(role~="core" and release.roles[role] and integer(coreID) and coreID~=id,"Invalid registration")
     local journalPath="/amaryllis-install.json"

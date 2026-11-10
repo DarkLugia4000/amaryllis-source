@@ -243,7 +243,7 @@ function Controls:update(io,now)
         self.holds={};self:noteHandover();dt=0
     end
     self.lastSample=input.at
-    -- Stamp the first actual consumption, never a later duplicate check.
+    -- Record when the control loop first consumes this sample for the cockpit latency trace.
     io.cockpitProcessedAt=type(io.nowSeconds)=="function" and io:nowSeconds() or now
     io.cockpitProcessedSampleAt=input.at
     if io.cockpitTrace then pcall(io.cockpitTrace.consumedInput,io.cockpitTrace,input,io.cockpitProcessedAt) end
@@ -339,8 +339,7 @@ function Controls:update(io,now)
         (raw.prop_forward-raw.prop_reverse)/15
     if self.modes.throttle=="SEL" and disconnectHeld then self.request=0 end
     if anchorActive or apActive then self.request=0 end
-    -- Speed/RPM/acceleration mapping stays absent until physical limits are
-    -- verified. A percentage is a pilot request, never an applied throttle.
+    -- Apply the configured speed selector rate to the held input in SEL mode.
     local speedRate=self.config.speed_selection_blocks_per_second_per_second
     if self.modes.throttle=="SEL" and finite(speedRate) and finite(self.targets.speed) then
         local minimum=self.config.minimum_selected_speed or 0

@@ -15,7 +15,7 @@ function Link.peer(config,role)
     return peer.id,r.session
 end
 -- Section: Module operations | Configured inputs, cached state and operation results.
--- Summary: Resolve the underlying peripheral facade used by the chamber link.
+-- Summary: Validate a relayed core command and shorten its lease to the time remaining in transit.
 function Link.unwrap(config,sender,envelope,nowMs)
     if type(envelope)~="table" or envelope.v~=1 or envelope.kind~="chamber_forward" or
         envelope.role~=config.role or type(envelope.packet)~="table" then return nil end
@@ -40,7 +40,7 @@ function Link.parent(config)
     local boot,childLast,childSeq=nil,nil,-1
     local retired,order={},{}
     local altitudeSeq=-1
-    -- Summary: Publish the current cached component observations to the configured consumer.
+    -- Summary: Publish child thrust status and classify the link using the last reply and status timestamps.
     local function publish()
         local connection=os.__amaryllisCoreConnectionState
         local unreachable=type(connection)=="function" and connection(os.clock(),config.role)=="CORE UNREACHABLE"

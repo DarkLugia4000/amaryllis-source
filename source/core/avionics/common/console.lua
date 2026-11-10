@@ -1236,7 +1236,7 @@ function Console.dashboard()
                 for i,name in ipairs(pages) do if name=="LOGS" then choose(i);break end end
             end
         elseif event=="term_resize" then previous={} end
-        -- Ctrl+T returns from utilities but never closes the dashboard.
+        -- Keep the dashboard running while Ctrl+T returns from a utility.
         if refresh or event=="char" or event=="key" or
             event=="mouse_scroll" or event=="mouse_click" or event=="term_resize" or event=="terminate" then draw(refresh) end
     end
@@ -1486,7 +1486,7 @@ function Console.start(arguments)
     end
     if mode == "remote-install" then
         if not Console.isCore() then print("Remote installation is available on core only.");return end
-        -- Starts only the request-driven status service, never another flight runtime.
+        -- Launch the request-driven remote status service for this console mode.
         if type(shell.openTab)=="function" then
             local tabs=os.__amaryllisCoreWorkerTabs or {};os.__amaryllisCoreWorkerTabs=tabs
             local existing=tabs["remote-status"]

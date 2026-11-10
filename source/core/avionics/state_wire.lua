@@ -1,7 +1,7 @@
 local Mathx = require("avionics.mathx")
 -- Section: State transport | Correlated wired frames, source ages and core configuration.
 -- State assembly verification v1
--- Read-only sensor transport. Dedicated wired channels; never actuator RPC.
+-- Exchanges sensor and cockpit samples and core configuration on wired channels 45130 and 45131.
 local Wire={CORE_CHANNEL=45130,STATE_CHANNEL=45131,PROTOCOL="amaryllis.state.v1"}
 local Sources=require("avionics.vessel_sources")
 local SIDES={"top","bottom","left","right","front","back"}
@@ -32,16 +32,16 @@ local function copy(value,depth,budget)
 end
 Wire.copy=copy
 local function ageOK(at,now) return finite(at) and at<=now+.25 and now-at<=120 end
--- The pilot batch has a fixed shape. Copying it never traverses telemetry,
--- diagnostic tables or disk-backed calibration records.
--- Summary: Build a bounded cockpit input frame with observation timestamps.
+-- Summary: Copy the nine cockpit signals at levels 0 through 15 and attach the validated sample timestamps.
 function Wire.inputFrame(input)
     if type(input)~="table" or input.valid~=true or not finite(input.at) or type(input.raw)~="table" then return nil end
     local raw={}
     for _,key in ipairs(INPUTS) do if not integer(input.raw[key],0,15) then return nil end;raw[key]=input.raw[key] end
     local out={valid=true,at=input.at,raw=raw,errors={},
         sampleDurationSeconds=finite(input.sampleDurationSeconds) and input.sampleDurationSeconds>=0 and input.sampleDurationSeconds or nil}
-    -- Optional measurement metadata never participates in freshness/authority.
+    -- Attach timing for this sample when the boot ID and sequence are valid,
+    -- read completion equals input.at, and read start, completion and send attempt
+    -- are in chronological order. Timestamps are in seconds.
     local t=input.timing
     if type(t)=="table" and token(t.boot) and integer(t.seq,1,2147483647) and
         finite(t.readStartedAt) and t.readCompletedAt==input.at and
@@ -54,6 +54,8 @@ end
 -- Summary: Validate and apply the newest cockpit observations to core input state.
 local function commitInput(io,input,now,trace)
     local sample=Wire.inputFrame(input)
+    -- Accept samples up to 120 s old or 0.25 s ahead of the local clock.
+    -- The next comparison requires a newer timestamp than the installed sample.
     if not sample or not ageOK(sample.at,now) then return false end
     if io.inputs and finite(io.inputs.at) and sample.at<=io.inputs.at then return false end
     if trace and sample.timing and (sample.timing.boot~=trace.boot or

@@ -74,8 +74,7 @@ end
 
 -- A different node boot is adoptable only after the same registered node has
 -- answered a recent core Hello and reports the exact retained hardware and
--- provider identity. This check never authorizes writes by itself; callers
--- must still reconcile the physical target maps before issuing a fresh lease.
+-- provider identity. Reconcile live provider targets before issuing the fresh lease.
 -- An unavailable UUID is not evidence of another vessel. Do not
 -- authorize writes until a fresh complete sample confirms the retained UUID.
 -- Summary: Classify fresh vessel observations against the retained identity.
@@ -252,8 +251,7 @@ function Recovery.mapsEqual(left,right)
 end
 
 -- Core retains command authority across lost ACKs and partial application.
--- Validate live providers before returning the last intended absolute map;
--- never adopt an unexplained auxiliary target as a new control baseline.
+-- Validate the live provider identities and return core's last intended absolute target map.
 -- Summary: Resolve physical target maps suitable for retained-run reconciliation.
 function Recovery.authoritativeTargetMaps(s,nodes)
     local recovery=s.telemetryRecovery or {}

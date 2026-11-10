@@ -52,6 +52,7 @@ function Receiver:accept(sender, message, protocol, now)
     self.session,self.seq,self.state,self.at=message.session,message.seq,state,now
     return true
 end
+-- Summary: Copy the latest core snapshot and attach display freshness and receipt age in seconds.
 function Receiver:snapshot(now,page)
     local state={}
     for k,v in pairs(self.state or {}) do state[k]=v end

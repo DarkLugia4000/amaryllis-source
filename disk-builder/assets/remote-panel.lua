@@ -9,6 +9,7 @@ local function readJSON(path)
     local raw=h.readAll();h.close();return textutils.unserializeJSON(raw)
 end
 local function age(n)return finite(n)and string.format("%.1fs",math.max(0,n))or"--"end
+-- Purpose: Wrap display text to the available character width.
 local function wrap(text,width)
     text=clean(text);local out={}
     while #text>width do
@@ -25,6 +26,7 @@ function App.new(cfg)
     return setmetatable({cfg=cfg,page="home",focus={},offsets={},cache={},nav={},form=form,sequence=0,
         online=false,notice="Connecting...",links={},releaseAnchor=false},App)
 end
+-- Purpose: Discover and open the paired remote's network interfaces.
 function App:modems()
     local found=false
     for _,name in ipairs(peripheral.getNames())do if peripheral.hasType(name,"modem")then
@@ -33,6 +35,7 @@ function App:modems()
     end end
     return found
 end
+-- Purpose: Send a correlated authenticated packet to the paired core.
 function App:send(action,extra)
     if self.pending then return false end
     if (action=="status"or action=="ap_status")and self.readAfter and os.clock()<self.readAfter then
@@ -56,6 +59,7 @@ end
 function App:deferRead(delay)
     if not self.readTimer then self.readTimer=os.startTimer(math.max(.05,delay or .3))end
 end
+-- Purpose: Request the active cached status view at the allowed read cadence.
 function App:poll()
     if self.pending then return end
     if not self.boot then self:send("hello")
@@ -82,6 +86,7 @@ function App:back()
         errors="computer",details="computer",related="computer",destination="ap",review="ap",route="ap",connection="tools"}
     self:choose(parents[self.page]or"home")
 end
+-- Purpose: Validate entered destination fields and open the command review.
 function App:startReview(cancel)
     if self.command or self.pending then self.notice="Wait for current request";return end
     local n=self.nav
@@ -101,6 +106,7 @@ function App:startReview(cancel)
     self.review.destination.name="Remote CMD"
     self.focus.review=2;self:choose("review");self.notice="Review before confirming"
 end
+-- Purpose: Submit the confirmed remote command and track its result.
 function App:confirm()
     local r=self.review
     if not r or self.pending or self.command then self.notice="Wait for current request";return end
@@ -122,6 +128,7 @@ function App:reportAge(c)
     local cached=self.cache.FLEET
     return finite(c.age)and c.age+math.max(0,os.clock()-(cached and cached.at or os.clock()))or nil
 end
+-- Purpose: Handle the selected remote page entry or operation.
 function App:activate(action)
     if action:sub(1,3)=="go:"then self:choose(action:sub(4))
     elseif action:sub(1,9)=="computer:"then self.selected=action:sub(10);self:choose("computer")
@@ -143,6 +150,7 @@ function App:activate(action)
         self.pending=nil;self.boot=nil;self.online=false;self:poll()
     end
 end
+-- Purpose: Render the current remote page from cached core replies.
 function App:draw()
     local w,h=term.getSize();self.links={}
     term.setBackgroundColor(GRAY);term.setTextColor(WHITE);term.clear();term.setCursorBlink(false)
@@ -165,6 +173,7 @@ function App:draw()
     put(2,2,reachable and ("CONNECTED #"..self.cfg.coreID) or "CORE UNREACHABLE",w-2,reachable and WHITE or YELLOW)
     if self.page~="home"then put(2,3,"< Back",7,BLACK,LIGHT)end
     put(self.page=="home"and 2 or 10,3,titles[self.page]or"REMOTE",w-(self.page=="home"and 2 or 10))
+    -- Purpose: Render the visible entries for the current selection and scroll position.
     local function list(rows,first,last,key)
         first=first or 5;last=last or h-5;key=key or self.page
         local rendered={}
@@ -174,6 +183,7 @@ function App:draw()
         for i=1,cap do put(2,first+i-1,rendered[offset+i]or"",w-2)end
         if #rendered>cap then put(w-9,4,(offset+1).."/"..#rendered,8,LIGHT)end
     end
+    -- Purpose: Resolve the cached status page and its source age.
     local function cached(page)
         local entry=self.cache[page]
         if not entry then return{"Waiting for core..."}end
@@ -280,6 +290,7 @@ function App:draw()
     for i=1,2 do put(2,h-3+i-1,rows[i]or"",w-2,color)end
     put(2,h,self.editor and"Enter save / Esc cancel"or"Arrows / Enter / Back",w-2,LIGHT)
 end
+-- Purpose: Handle remote keyboard and mouse navigation or destination editing.
 function App:input(event,a,b,c)
     if event=="mouse_click"and a==1 and not self.editor then
         if self.page~="home"and c==3 and b>=2 and b<=8 then self:back();return end
@@ -310,6 +321,7 @@ function App:input(event,a,b,c)
         else self.offsets[self.page]=math.max(0,(self.offsets[self.page]or 0)+a)end
     end
 end
+-- Purpose: Process network replies, timers and operator input for the remote application.
 function App:event(event,a,b,c)
     if event=="rednet_message"and self.pending and a==self.cfg.coreID and c==self.cfg.protocol and type(b)=="table"and
         b.v==1 and b.coreID==self.cfg.coreID and b.requestID==self.pending.id and type(b.boot)=="string"then

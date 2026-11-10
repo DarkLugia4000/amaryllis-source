@@ -2355,7 +2355,7 @@ local function touchSystemsMenu(renderer,x,y,snapshot,width)
     for index,entry in ipairs(systemsMenuItems(snapshot)) do
         local row=layout.y+1+(index-1)*2
         if y==row and x>=layout.x+1 and x<=layout.x+layout.width-2 then
-            -- Recompute from this touch's raw snapshot, never cached draw state.
+            -- Recompute the action from the current touch snapshot before dispatch.
             if not entry.enabled then renderer.systemsMenuNotice=entry.reason;return true end
             renderer.systemsMenu=nil;renderer.systemsMenuNotice=nil;renderer.actionNotice=nil
             if entry.action.type=="emergency_kill_lift" then
@@ -2380,6 +2380,7 @@ Info={}
 -- Summary: Collect active notices from the same cached snapshot used by navigation.
 function Info.collect(renderer,snapshot)
     local live=isLive(snapshot);local items,seen={},{}
+    -- Summary: Add one issue per ID and combine lease failures into the core stall notice.
     local function add(id,message,tone,source,detail)
         -- Command and control lease problems are the core pausing; one notice covers all of them.
         if leaseText(message) or leaseText(detail) then
@@ -2781,7 +2782,7 @@ function UI:touch(x, y, snapshot)
                 if action.type=="settings_view" then self.settingsView=action.view;self.settingsOffset=0;self.settingsNotice=nil;return nil end
                 if not isLive(snapshot) then return nil end
                 if action.type=="settings_next" then
-                    -- Step whole pages and wrap to the first page, never to a partial offset.
+                    -- Advance by one page and wrap to the first page at the end of the list.
                     local nextOffset=(self.settingsOffset or 0)+9
                     if nextOffset>=action.count then nextOffset=0 end
                     self.settingsOffset=nextOffset;return nil

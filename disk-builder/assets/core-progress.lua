@@ -1,4 +1,4 @@
--- Installer-owned display. Reads cached transfer state; never touches hardware.
+-- Draws installer progress from cached transfer state.
 local Progress={}
 Progress.__index=Progress
 local titles={navigator="Bridge navigator",["heading-left"]="Left heading display",["heading-right"]="Right heading display",
@@ -22,6 +22,7 @@ local function finite(value) return type(value)=="number" and value==value and v
 function Progress.new(screen,now)
     return setmetatable({screen=screen,now=now,rows={},order={},lastDraw=-math.huge},Progress)
 end
+-- Summary: Set the expected role inventory for installer progress.
 function Progress:setFleet(fleet,roleFiles)
     local rows,order={},{}
     local computers=fleet and fleet.computers or {}
@@ -43,6 +44,7 @@ function Progress:setFleet(fleet,roleFiles)
     end)
     self.rows,self.order=rows,order
 end
+-- Summary: Update cached per-role installation progress from receiver status.
 function Progress:update(status)
     if status.coreSession and self.coreSession and status.coreSession~=self.coreSession then
         for _,row in pairs(self.rows) do row.state=row.id and "WAIT" or "NO ID";row.reason=nil end
@@ -58,6 +60,7 @@ function Progress:update(status)
         self.requestID=status.requestID;self.retryBase=status.retries or 0
     end
 end
+-- Summary: Build the terminal rows for the current installation progress.
 function Progress:frame(status,width,height)
     local lines,tones={},{}
     local function line(y,text,tone) if y>=1 and y<=height then lines[y]=clean(text):sub(1,width);tones[y]=tone end end
@@ -121,6 +124,7 @@ function Progress:frame(status,width,height)
     end
     return {lines=lines,tones=tones,cells=cells,installed=installed,total=#self.order,failed=failed,missing=missing,complete=complete}
 end
+-- Summary: Render cached installation progress on the installer terminal.
 function Progress:draw(status,force)
     local now=self.now()
     -- Configuration can fail before the first yielding loop. Leave the initial

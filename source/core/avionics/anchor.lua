@@ -157,8 +157,8 @@ function Anchor:update(io,now,controls)
         if self.velocityOnly or inside then return 0 end
         return clamp(e*tuning.position_gain,-tuning.maximum_speed,tuning.maximum_speed)
     end
-    -- Summary: Calculate a bounded axis correction from position and velocity error.
     self.braking=self.braking or {along=false,side=false}
+    -- Summary: Choose a bounded brake, coast or return demand for the vessel axis from its position and speed errors.
     local function axis(key,e,measured,feedForward)
         local wanted=returnSpeed(e)
         local excess=measured-wanted
@@ -211,6 +211,7 @@ function Anchor:checkpoint()
     if not self.active then return nil end
     return {point=copy(self.point),uuid=self.uuid}
 end
+-- Summary: Validate a saved anchor point and vessel UUID, then reset guidance into recovery.
 function Anchor:restore(state)
     if type(state)~="table" or type(state.point)~="table" or
         not finite(state.point.x) or not finite(state.point.z) or type(state.uuid)~="string" or state.uuid=="" then return false end

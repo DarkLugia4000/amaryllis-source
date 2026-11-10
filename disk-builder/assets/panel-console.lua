@@ -28,6 +28,7 @@ local function readJSON(path)
     if not ok or type(raw)~="string" or #raw>65536 then return nil end
     local good,object=pcall(textutils.unserializeJSON,raw);return good and object or nil
 end
+-- Summary: Wrap display text to the available character width.
 local function wrap(text,width)
     local rows={};text=clean(text);width=math.max(1,width)
     while #text>width do
@@ -36,6 +37,7 @@ local function wrap(text,width)
     end
     rows[#rows+1]=text;return rows
 end
+-- Summary: Convert nested cached status fields into bounded display rows.
 local function flatten(object,prefix,rows,seen,depth)
     if type(object)~="table" then rows[#rows+1]=prefix..": "..value(object);return end
     if seen[object] then return end;seen[object]=true
@@ -50,6 +52,7 @@ local function flatten(object,prefix,rows,seen,depth)
     end
 end
 
+-- Summary: Map registered computers and relayed thrust status into the fleet overview.
 function Panel.computers(context)
     local runtime=context.runtime or {};local snap=runtime.snapshot or {}
     local registry=(snap.fleetRegistry or {}).computers or runtime.computers or context.fleet or {}
@@ -120,6 +123,7 @@ function Panel.computers(context)
 end
 
 -- Bounded remote presentation data. Existing cached telemetry only.
+-- Summary: Bounded remote presentation data. Existing cached telemetry only.
 function Panel.remoteComputers(context)
     local result={}
     local function bounded(v,n)return clean(v):sub(1,n or 120)end
@@ -145,6 +149,7 @@ function Panel.remoteComputers(context)
 end
 
 
+-- Summary: Select bounded log entries associated with the chosen computer.
 function Panel.relatedLogs(context,computer)
     local rows={};local role,label=computer.role,computer.label
     for _,entry in ipairs((context.capture or {}).console or {})do
@@ -174,9 +179,11 @@ function Panel:back()
         overview="status",lift="status",propulsion="status",navigation="status",fleet="status"}
     self:choose(parent[self.page]or "home")
 end
+-- Summary: Build the current Panel Home page and its local action regions.
 function Panel:frame(context,width,height)
     local frame={width=width,height=height,text={},foreground={},background={},links={}}
     self.links={};self.maxScroll,self.scrollKey=0,nil
+    -- Summary: Write bounded text cells with the selected foreground colour.
     local function put(x,y,text,fg,bg,n)
         if y<1 or y>height or x>width then return end
         text=clean(text);n=n or #text;text=(text..string.rep(" ",math.max(0,n-#text))):sub(1,math.min(n,width-x+1))
@@ -218,6 +225,7 @@ function Panel:frame(context,width,height)
         put(2,y,label);put(math.max(#label+4,width-math.min(#data,room)),y,data:sub(1,room))
     end
     local half=math.floor((width-5)/2);local right=half+4
+    -- Summary: Write the page body into the bounded terminal frame.
     local function body(rows,first,last)
         first,last=first or 5,last or height-2
         local wrapped={};for _,line in ipairs(rows)do for _,part in ipairs(wrap(line,width-4))do wrapped[#wrapped+1]=part end end
@@ -345,6 +353,7 @@ function Panel:frame(context,width,height)
     self.links,self.firstIssue,self.computerCount,self.pageCapacity=frame.links,firstIssue,#computers,math.max(1,height-9)
     return frame
 end
+-- Summary: Handle the selected local panel navigation or utility action.
 function Panel:action(action)
     if action=="back"then self:back()
     elseif action=="next"then self.listPage=math.min(math.ceil((self.computerCount or 16)/(self.pageCapacity or 10)),self.listPage+1);self.previous={}
@@ -360,6 +369,7 @@ function Panel:action(action)
         os.queueEvent("amaryllis_core_action",{type="maintenance_probe_cycle",scope="ALL"})
     else self:choose(action)end
 end
+-- Summary: Interpret panel keyboard/mouse input against the displayed action regions.
 function Panel:input(event,a,b,c)
     if event=="mouse_click"and a==1 then for _,link in ipairs(self.links)do if b>=link.x and b<link.x+link.w and c>=link.y and c<link.y+link.h then self:action(link.action);return true end end
     elseif event=="key"then
@@ -372,6 +382,7 @@ function Panel:input(event,a,b,c)
     elseif event=="term_resize"then self.previous={}
     elseif event=="terminate"then self:choose("home")end
 end
+-- Summary: Render the current cached panel frame to the terminal.
 function Panel:draw(context,screen)
     local w,h=screen.getSize();local frame=self:frame(context,w,h)
     screen.setCursorBlink(false)
@@ -384,6 +395,7 @@ end
 
 -- Keep CraftOS's process scheduler and event filters. Adapt presentation only.
 -- No event dispatch is performed by the visible dashboard.
+-- Summary: Adapt the supported CraftOS host source for the panel workspace.
 function Panel.hostSource(source)
     -- Resource-pack ROM overrides may preserve Windows line endings.
     source=source:gsub("\r\n","\n"):gsub("\r","\n")
@@ -452,6 +464,7 @@ end
 ]=])
     return source
 end
+-- Summary: Run the adapted terminal host with the current panel and worker tasks.
 function Panel.host()
     local previous=os.__amaryllisPanelOwner
     if type(previous)=="table"and previous.active then
@@ -470,6 +483,7 @@ function Panel.host()
     if not ok then error(issue,0)end
 end
 
+-- Summary: Launch Panel Home and bind its shared runtime context.
 function Panel.start(console,openTab,reportError)
     os.__amaryllisPagedConsole=true
     local root=multishell and multishell.getCurrent and multishell.getCurrent()
@@ -503,6 +517,7 @@ function Panel.start(console,openTab,reportError)
     end
     local stored={}
     local cacheAt=-math.huge
+    -- Summary: Build or validate the runtime configuration context used by the current component.
     local function context()
         local now=os.clock()
         if owner and owner.returnToTools then app:choose("tools");owner.returnToTools=false end

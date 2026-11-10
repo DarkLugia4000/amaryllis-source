@@ -25,6 +25,7 @@ local function readFile(path)
 end
 
 -- Write through a temporary sibling so a failed write leaves no partial file.
+-- Summary: Write and reread a temporary download before replacing the destination file.
 local function writeFile(path,data)
     local temp=path..".tmp"
     if fs.exists(temp) then fs.delete(temp) end
@@ -36,6 +37,7 @@ local function writeFile(path,data)
 end
 
 -- Download one file as raw bytes, three attempts, refusing anything but HTTP 200.
+-- Summary: Download one file as raw bytes, three attempts, refusing anything but HTTP 200.
 local function fetch(url)
     local last
     for attempt=1,3 do
@@ -53,6 +55,7 @@ local function fetch(url)
 end
 
 -- Turn "user/repo[/branch]" or a full link into the address of the media folder.
+-- Summary: Turn "user/repo[/branch]" or a full link into the address of the media folder.
 local function baseAddress(text)
     if type(text)~="string" or text=="" then return nil end
     if text:match("^https?://") then return (text:gsub("/+$",""))..'/' end
@@ -66,6 +69,7 @@ local function ask(prompt)
 end
 
 -- Offer numbered choices and return the chosen key.
+-- Summary: Offer numbered choices and return the chosen key.
 local function choose(title,options)
     print(title)
     for i,option in ipairs(options) do print(" "..i.."  "..option[2]) end
@@ -77,6 +81,7 @@ end
 local function kb(bytes) return string.format("%d KB",math.ceil(bytes/1024)) end
 
 -- Find disk drives that hold a writable disk; ask when there are several.
+-- Summary: Find disk drives that hold a writable disk; ask when there are several.
 local function pickDisk()
     local found={}
     for _,name in ipairs(peripheral.getNames()) do
@@ -91,6 +96,7 @@ local function pickDisk()
     return found[choose("Several disks are attached. Which one becomes the installer disk?",options)]
 end
 
+-- Summary: Accept a version-one disk index with up to 1024 relative file paths and startup.lua last.
 local function validIndex(index)
     if type(index)~="table" or index.schemaVersion~=1 or type(index.releaseId)~="string" or type(index.files)~="table" then return false end
     if #index.files==0 or #index.files>1024 then return false end
@@ -114,6 +120,7 @@ local function erase(mount)
 end
 
 -- Describe what the disk holds and let the user decide how to treat it.
+-- Summary: Describe what the disk holds and let the user decide how to treat it.
 local function decide(mount,index)
     local entries=fs.list(mount)
     if #entries==0 then return "fresh" end
@@ -141,6 +148,7 @@ local function decide(mount,index)
 end
 
 -- Main flow: address, index, decision, space check, download, verify.
+-- Summary: Main flow: address, index, decision, space check, download, verify.
 local function main()
     if not http then error("HTTP is disabled in the ComputerCraft config (http.enabled).",0) end
     local target=pickDisk();local mount="/"..target.mount

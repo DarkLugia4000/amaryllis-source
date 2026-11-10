@@ -10,6 +10,7 @@ end
 local loadedAttributes=physicalAttributes()
 local env=setmetatable({},{__index=base})
 env._G=env
+-- Summary: Resolve relative paths from the shell directory and collapse dot segments.
 local function path(value)
     if type(value)~="string" then return nil end
     if value:sub(1,1)~="/" then
@@ -27,6 +28,7 @@ for name in pairs(sources) do
     local parent=name:match("^(.*)/[^/]+$")
     while parent and parent~="" do directories[parent]=true;parent=parent:match("^(.*)/[^/]+$") end
 end
+-- Summary: Expose embedded source bytes as a file handle with a read cursor and close state.
 local function memoryFile(data,binary)
     local offset,closed=1,false
     local function active() assert(not closed,"attempt to use a closed file") end
@@ -38,6 +40,7 @@ local function memoryFile(data,binary)
             count=count or 1;assert(type(count)=="number" and count>=0,"invalid read count")
             local value=data:sub(offset,offset+count-1);offset=offset+#value;return value
         end,
+        -- Summary: Return the next line from embedded bytes and optionally include its newline.
         readLine=function(trailing)
             active();if offset>#data then return nil end
             local ending=data:find("\n",offset,true)
@@ -59,6 +62,7 @@ env.fs={};for k,v in pairs(nativeFS) do env.fs[k]=v end
 env.fs.exists=function(name) local p=path(name);return sources[p]~=nil or directories[p]==true or nativeFS.exists(name) end
 env.fs.isDir=function(name) local p=path(name);if sources[p] then return false end;return directories[p]==true or nativeFS.isDir(name) end
 env.fs.isReadOnly=function(name) if sources[path(name)] then return true end;return nativeFS.isReadOnly(name) end
+-- Summary: Serve embedded modules as in-memory read handles and delegate other files to native storage.
 env.fs.open=function(name,mode)
     local data=sources[path(name)]
     if data then
@@ -86,6 +90,7 @@ for _,method in ipairs({"delete","move","copy"}) do
         return nativeFS[operation](first,second)
     end end
 end
+-- Summary: Compile embedded Lua with its original module path or delegate to the native loader.
 env.loadfile=function(name,mode,target)
     local p=path(name);local data=sources[p]
     -- A resident console may survive an application update. Its next runtime
@@ -108,6 +113,7 @@ env.dofile=function(name) return assert(env.loadfile(name))() end
 env.package={};for k,v in pairs(base.package or {}) do env.package[k]=v end
 env.package.loaded={};env.package.preload={}
 local loading={}
+-- Summary: Resolve modules through the bundle environment and cache their exports per execution environment.
 env.require=function(name)
     assert(type(name)=="string","module name must be a string")
     if env.package.loaded[name]~=nil then return env.package.loaded[name] end

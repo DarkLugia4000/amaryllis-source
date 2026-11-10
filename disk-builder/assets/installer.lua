@@ -71,6 +71,7 @@ local function validId(value)
   return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
 end
 
+-- Summary: Compute the Adler-32 checksum of the supplied byte string.
 function Installer.adler32(data)
   if type(data) ~= "string" then error("Adler-32 input must be a string") end
   local a, b = 1, 0
@@ -95,6 +96,7 @@ local function numberSetting(config, key, fallback, minimum, maximum)
   return value
 end
 
+-- Summary: Validate installer role, protocol, retry and package settings.
 local function normalizeConfig(raw)
   if type(raw) ~= "table" then return nil, "bootstrap config is missing" end
   local coreID = raw.core_id or raw.server_id or DEFAULT_CORE_ID
@@ -127,6 +129,7 @@ local function validToken(value)
   return type(value) == "string" and #value > 0 and #value <= 128 and value:match("^[%w_%.%-:]+$") ~= nil
 end
 
+-- Summary: Read the current installed role binding used for request authority.
 local function activeBinding(role, computerID, label, coreID, coreSession, deps)
   local system = (deps and deps.os) or os
   local registry = system and system.__amaryllisFleetRegistry
@@ -135,6 +138,7 @@ local function activeBinding(role, computerID, label, coreID, coreSession, deps)
     and registry.computers[role] or nil
   return type(entry) == "table" and entry.id == computerID and entry.label == label
 end
+-- Summary: Resolve the current computer role from its validated registration.
 local function assignedRole(registry, computerID)
   if type(registry) ~= "table" or type(registry.computers) ~= "table" then return nil end
   local found
@@ -152,6 +156,7 @@ local function ensureDirs(filesystem)
   end
 end
 
+-- Summary: Read a bounded installer file and return its content or read error.
 local function readFile(filesystem, path)
   if not filesystem.exists(path) then return nil end
   local handle = filesystem.open(path, "r")
@@ -176,6 +181,7 @@ local function jsonEncode(value, deps)
   return nil, "JSON encoder is unavailable"
 end
 
+-- Summary: Decode JSON through the selected runtime API with validation errors.
 local function jsonDecode(value, deps)
   if deps and type(deps.decodeJSON) == "function" then
     local ok, result, detail = pcall(deps.decodeJSON, value)
@@ -198,6 +204,7 @@ local function escapeJSON(value)
   end) .. '"'
 end
 
+-- Summary: Encode the small installer status record with supported JSON values.
 local function basicJSON(object)
   local keys, parts = {}, {}
   for key, value in pairs(object) do
@@ -212,6 +219,7 @@ local function basicJSON(object)
   return "{" .. table.concat(parts, ",") .. "}"
 end
 
+-- Summary: Obtain the runtime clock used for installer request timing.
 local function clockNow(deps)
   if deps and type(deps.now) == "function" then return deps.now() end
   if os and type(os.epoch) == "function" then
@@ -222,6 +230,7 @@ local function clockNow(deps)
   return 0
 end
 
+-- Summary: Persist bounded installation phase and progress metadata.
 local function writeStatus(filesystem, status, deps)
   status.updatedAt = clockNow(deps)
   local encoded = jsonEncode(status, deps)
@@ -250,6 +259,7 @@ local function reportStatus(filesystem, status, deps)
   return ok, err
 end
 
+-- Summary: Read and validate the installed status record.
 local function readStatus(filesystem, deps)
   for _, path in ipairs({ STATUS, STATUS .. ".tmp", STATUS .. ".bak" }) do
     local raw = readFile(filesystem, path)
@@ -261,6 +271,7 @@ local function readStatus(filesystem, deps)
   return nil
 end
 
+-- Summary: Retain verified installed progress when receiving a new service observation.
 local function preserveInstalledStatus(target, previous)
   if type(previous) ~= "table" then return target end
   local knownInstalled = previous.hasInstalled == true or previous.state == "installed"
@@ -288,6 +299,7 @@ local function preserveInstalledStatus(target, previous)
   return target
 end
 
+-- Summary: Advance the persistent correlation counter for an installation session.
 local function nextCounter(filesystem)
   local function readCounter(path)
     return tonumber(readFile(filesystem, path) or "") or 0
@@ -304,6 +316,7 @@ local function nextCounter(filesystem)
   return value
 end
 
+-- Summary: Construct the current computer installation session identifier.
 local function makeSession(filesystem, deps)
   if deps and type(deps.newSession) == "function" then
     local value = deps.newSession()
@@ -315,6 +328,7 @@ local function makeSession(filesystem, deps)
   return tostring(count) .. "-" .. tostring(clockNow(deps)) .. "-" .. tostring(math.random(0, 2147483646))
 end
 
+-- Summary: Read and validate the actual ComputerCraft ID.
 local function actualComputerId(config, deps)
   if deps and type(deps.getComputerID) == "function" then return deps.getComputerID() end
   local system = (deps and deps.os) or os
@@ -325,6 +339,7 @@ local function actualComputerId(config, deps)
   return nil
 end
 
+-- Summary: Open the configured modem network and report attachment errors.
 local function ensureNetwork(deps)
   if deps and type(deps.openNetwork) == "function" then return deps.openNetwork() end
   local network = (deps and deps.rednet) or rednet
@@ -350,6 +365,7 @@ local function ensureNetwork(deps)
   return opened
 end
 
+-- Summary: Send an installation protocol packet to its selected recipient.
 local function sendPacket(config, packet, deps)
   if deps and type(deps.send) == "function" then return deps.send(config.serverId, packet, config.protocol) end
   local network = (deps and deps.rednet) or rednet
@@ -359,6 +375,7 @@ local function sendPacket(config, packet, deps)
   return ok and result ~= false
 end
 
+-- Summary: Receive and validate the next protocol envelope.
 local function receivePacket(config, timeout, deps)
   if deps and type(deps.receive) == "function" then return deps.receive(config.protocol, timeout) end
   local network = (deps and deps.rednet) or rednet
@@ -377,6 +394,7 @@ local function stopping(deps)
   return deps and type(deps.shouldStop) == "function" and deps.shouldStop() == true
 end
 
+-- Summary: Validate offered package identity, paths, sizes and checksums.
 local function validateOffer(value, config, clientSession, computerID, deps)
   if type(value) ~= "table" or value.v ~= 1 or value.kind ~= "offer" then return nil, "not an offer" end
   local destinations = DESTINATIONS_BY_ROLE[config.role]
@@ -434,6 +452,7 @@ local function packet(kind, transaction, extra)
   return result
 end
 
+-- Summary: Check chunk identity, index and size against the accepted offer.
 local function validateChunk(value, transaction, config)
   if type(value) ~= "table" or value.kind ~= "chunk" or not matches(transaction, value) then return nil end
   if not integer(value.fileIndex) or not integer(value.chunkIndex) or not integer(value.chunkCount) then return nil end
@@ -450,6 +469,7 @@ local function deleteIfPresent(filesystem, path)
   if filesystem.exists(path) then filesystem.delete(path) end
 end
 
+-- Summary: Write a staged payload and verify its stored checksum.
 local function writeVerifiedStage(filesystem, file, bytes)
   local stagingPath = STAGE[file.path]
   if not stagingPath then return false, "destination is not allowlisted" end
@@ -462,6 +482,7 @@ local function writeVerifiedStage(filesystem, file, bytes)
   return true
 end
 
+-- Summary: Persist the replacement transaction and its rollback metadata.
 local function writeJournal(filesystem, journal, deps)
   local encoded, err = jsonEncode(journal, deps)
   if type(encoded) ~= "string" then return false, err or "could not encode commit journal" end
@@ -483,6 +504,7 @@ local function writeJournal(filesystem, journal, deps)
   return true
 end
 
+-- Summary: Read and validate a pending replacement journal.
 local function readJournal(filesystem, deps)
   for _, path in ipairs({ JOURNAL, JOURNAL .. ".bak", JOURNAL .. ".tmp" }) do
     local raw = readFile(filesystem, path)
@@ -494,6 +516,7 @@ local function readJournal(filesystem, deps)
   return nil
 end
 
+-- Summary: Remove the completed replacement journal and its bookkeeping.
 local function deleteJournal(filesystem)
   local errors = {}
   for _, path in ipairs({ JOURNAL .. ".tmp", JOURNAL, JOURNAL .. ".bak" }) do
@@ -505,6 +528,7 @@ local function deleteJournal(filesystem)
   return #errors == 0, table.concat(errors, "; ")
 end
 
+-- Summary: Read or create the verified package receipt for installation acknowledgement.
 local function installedReceipt(transaction, config)
   return {
     protocol = config.protocol,
@@ -524,6 +548,7 @@ local function installedReceipt(transaction, config)
   }
 end
 
+-- Summary: Prepare package files and retained configuration before commit.
 local function makePreparedFiles(transaction, config, deps)
   local filesystem = (deps and deps.fs) or fs
   local prepared = {}
@@ -558,6 +583,7 @@ end
 
 local restoreLabel
 
+-- Summary: Restore files and labels recorded by the replacement transaction.
 local function rollbackJournal(filesystem, journal, deps)
   if type(journal) ~= "table" or type(journal.files) ~= "table"
     or type(DESTINATIONS_BY_ROLE[journal.role]) ~= "table" then return false, "commit journal is invalid" end
@@ -590,6 +616,7 @@ local function rollbackJournal(filesystem, journal, deps)
   return true
 end
 
+-- Summary: Remove transaction staging and backup files after completion.
 local function cleanupJournalFiles(filesystem, journal)
   for _, item in ipairs(journal.files or {}) do
     if type(item) == "table" and STAGE[item.path] then
@@ -600,6 +627,7 @@ local function cleanupJournalFiles(filesystem, journal)
   return deleteJournal(filesystem)
 end
 
+-- Summary: Resume or roll back the recorded interrupted installation transaction.
 local function recoverPending(filesystem, status, deps)
   local journal = readJournal(filesystem, deps)
   if not journal then
@@ -647,6 +675,7 @@ local function recoverPending(filesystem, status, deps)
   return true
 end
 
+-- Summary: Replace staged program files under the current transaction journal.
 local function replaceFiles(filesystem, transaction, journal, deps)
   local states, journalFiles = {}, {}
   for _, file in ipairs(transaction.files) do
@@ -694,6 +723,7 @@ local function setLabel(label, deps)
   return ok and value ~= false, ok and "computer label was rejected" or tostring(value)
 end
 
+-- Summary: Restore the previous computer label from transaction metadata.
 restoreLabel = function(previous, deps)
   local setter
   if deps and type(deps.setLabel) == "function" then setter = deps.setLabel end
@@ -706,6 +736,7 @@ restoreLabel = function(previous, deps)
   return true
 end
 
+-- Summary: Restart the installed application after a successful replacement.
 local function reloadApp(transaction, deps)
   if deps and type(deps.onCommitted) == "function" then return pcall(deps.onCommitted, transaction) end
   local system = (deps and deps.os) or os
@@ -715,6 +746,7 @@ local function reloadApp(transaction, deps)
   return true
 end
 
+-- Summary: Verify staged files, replace programs and publish the installation receipt.
 local function commit(filesystem, transaction, config, status, deps)
   local prepared, err = makePreparedFiles(transaction, config, deps)
   if not prepared then return nil, err end
@@ -793,6 +825,7 @@ local function commit(filesystem, transaction, config, status, deps)
 end
 
 
+-- Summary: Receive verified package chunks and coordinate their staged installation.
 local function processOffer(filesystem, config, offer, clientSession, serverID, computerID, deps)
   local transaction = {
     config = config, requestID = offer.requestID, serverSession = offer.serverSession,
@@ -940,6 +973,7 @@ local function processOffer(filesystem, config, offer, clientSession, serverID, 
   return false
 end
 
+-- Summary: Read or create the verified package receipt for installation acknowledgement.
 local function installedReceipt(filesystem, config, computerID, status, deps)
   for _, path in ipairs({ JOURNAL, JOURNAL .. ".bak", JOURNAL .. ".tmp" }) do
     if filesystem.exists(path) then return nil end
@@ -966,6 +1000,7 @@ local function installedReceipt(filesystem, config, computerID, status, deps)
   return receipt
 end
 
+-- Summary: Ask the assigned core for the current fleet registry.
 local function sendRegistryRequest(config, session, deps)
   local request = { v = 1, kind = "registry_request", coreID = config.serverId, session = session }
   if deps and type(deps.sendRegistry) == "function" then return deps.sendRegistry(config.serverId, request, REGISTRY_PROTOCOL) end
@@ -979,6 +1014,7 @@ end
 -- Older fresh installs could reboot after local commit but before the final
 -- acknowledgement filled installedCoreID. Repair that one missing field only
 -- after all other receipt checks and the live core binding have passed.
+-- Summary: Older fresh installs could reboot after local commit but before the final acknowledgement filled installedCoreID. Repair that one missing field only after all other receipt checks and the live core binding have passed.
 local function recoverCommittedCoreID(filesystem,config,computerID,status,registry,deps)
   if status.installedCoreID~=nil or status.hasInstalled~=true or status.recoveryRequired==true
     or status.state=="committing" or status.state=="recovery_required" then return false end
@@ -995,6 +1031,7 @@ local function recoverCommittedCoreID(filesystem,config,computerID,status,regist
   return true
 end
 
+-- Summary: Verify that the installed application matches its expected package.
 local function validCurrent(value, config, session, computerID, receipt, status, deps)
   if type(value) ~= "table" or value.v ~= 1 or value.kind ~= "current"
     or value.clientSession ~= session or not validToken(value.serverSession)
@@ -1011,6 +1048,7 @@ local function validCurrent(value, config, session, computerID, receipt, status,
     and status.installedLabel == value.label and status.installedComputerID == computerID
 end
 
+-- Summary: Initialize the role and run its configured display/network service.
 function Installer.run(rawConfig, deps)
   local filesystem = (deps and deps.fs) or fs
   if not filesystem then error("ComputerCraft filesystem API is unavailable") end
@@ -1036,6 +1074,7 @@ function Installer.run(rawConfig, deps)
   status.state, status.role, status.clientID, status.serverID = "listening", config.role, computerID, config.serverId
   status.clientSession, status.label, status.version = tostring(session), status.installedLabel, status.installedVersion
   reportStatus(filesystem, status, deps)
+  -- Summary: Build a hello request with current role, package and session metadata.
   local function helloPacket()
     local force = filesystem.exists(REINSTALL)
     local installed = not force and installedReceipt(filesystem, config, computerID, status, deps) or nil

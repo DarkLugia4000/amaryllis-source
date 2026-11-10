@@ -3,7 +3,7 @@ local Registry = require("avionics.config_registry")
 -- Section: Persistent configuration | JSON validation, settings edits and file replacement.
 -- Navigator information frequency revision v1
 -- JSON configuration and persistent settings for core.
--- Keep disk access here so control and display code never silently invents defaults.
+-- Loads validated configuration and commits core state sections through verified JSON replacement.
 local Storage = {}
 local NavigationSettings=require("avionics.navigation_settings")
 local InputTuning=require("avionics.input_tuning")
@@ -29,6 +29,7 @@ function Storage.finite(value)
 end
 
 -- Section: Persistent configuration | JSON validation, settings edits and file replacement.
+-- Summary: Check required configuration fields, hardware bindings and control limits.
 function Storage.validateConfig(config)
     if not object(config) then return false, "configuration must be a JSON object" end
     local navOk,navReason=NavigationSettings.ensure(config)
@@ -570,6 +571,7 @@ function Storage.loadConfig(path, dependencies)
     return config
 end
 
+-- Summary: Validate the primary JSON record and try its retained backup after a read or validation failure.
 function Storage.readValidatedJson(path, validate, dependencies)
     local primary, primaryReason = Storage.readJson(path, dependencies)
     if primary then

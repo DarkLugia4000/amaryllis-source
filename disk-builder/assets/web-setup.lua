@@ -19,6 +19,7 @@ local RESET_MARKER=CORE_MEDIA.."/reset-pending.json"
 local REGISTRATION_STARTUP='assert(loadfile("/installer/web/web-setup.lua",nil,_ENV))()\n'
 local WHITE,GRAY,CYAN,YELLOW,RED,GREEN=colors.white,colors.gray,colors.cyan,colors.yellow,colors.red,colors.lime
 
+-- Summary: Compute the Adler-32 checksum, yielding on large files.
 local function adler(data)
     local a,b=1,0
     for i=1,#data do
@@ -29,6 +30,7 @@ local function adler(data)
 end
 
 -- Download one file as raw bytes, three attempts, refusing anything but HTTP 200.
+-- Summary: Download one file as raw bytes, three attempts, refusing anything but HTTP 200.
 local function fetch(url)
     local last
     for attempt=1,3 do
@@ -57,6 +59,7 @@ local function validBase(text)
 end
 
 -- Fetch the release index and the release files into dir, each checked against the index.
+-- Summary: Fetch the release index and the release files into dir, each checked against the index.
 local function loadRelease(releaseBase,dir)
     local index=textutils.unserializeJSON(fetch(releaseBase..INDEX))
     assert(type(index)=="table" and index.schemaVersion==1 and type(index.files)=="table","Release index unavailable")
@@ -93,11 +96,14 @@ local function screen(title)
     term.setBackgroundColor(colors.black);term.clear()
     line(1,title,CYAN)
 end
+-- Letter and digit commands read "char" events, which carry the typed character.
+-- "key" events carry the physical key position named after the US layout, so on
+-- a QWERTZ keyboard the key marked Y arrives as keys.z.
 local function confirm(prompt)
     local _,h=term.getSize();line(h,prompt.." (y/n)",YELLOW)
     while true do
-        local _,key=os.pullEvent("key")
-        if key==keys.y then return true elseif key==keys.n then return false end
+        local _,ch=os.pullEvent("char");ch=ch:lower()
+        if ch=="y" then return true elseif ch=="n" then return false end
     end
 end
 local function message(title,lines,color)
@@ -112,6 +118,7 @@ local function bootIntoRegistration()
     end
 end
 -- Remove every Amaryllis file from core: programs, records and learned data.
+-- Summary: Remove every Amaryllis file from core: programs, records and learned data.
 local function uninstallCore()
     for _,path in ipairs({"/startup.lua","/avionics","/installer","/fleet.json","/amaryllis-install.json"}) do
         if fs.exists(path) then fs.delete(path) end
@@ -128,6 +135,7 @@ end
 
 -- Core's registration screen: answers discovery, records registrations and
 -- imports the assignments once every role is held.
+-- Summary: Core's registration screen: answers discovery, records registrations and imports the assignments once every role is held.
 local function coreScreen(Setup,release,id,releaseBase)
     assert(openModems(),"Attach a modem to core: the other computers register over rednet")
     local order=roleOrder(release);local selected=1;local notice=""
@@ -162,27 +170,27 @@ local function coreScreen(Setup,release,id,releaseBase)
                     notice="#"..a.." removed its registration as "..b.role
                 end
             end
+        elseif event=="char" and a:lower()=="q" then return
+        elseif event=="char" and a:lower()=="r" then
+            if confirm("Reset installation? Every role registers again") then
+                writeFile(RESET_MARKER,"{}");bootIntoRegistration()
+                message("Resetting installation",{"Core restarts into registration and clears","every assignment. Programs and settings stay."},YELLOW)
+                os.reboot()
+            end
+        elseif event=="char" and a:lower()=="u" then
+            if state.imported==true then notice="Reset installation (R) before uninstalling core"
+            elseif confirm("Uninstall core from #"..id.."? Its files are deleted") then
+                uninstallCore()
+                return message("Core uninstalled",{"Remove the registration on every computer that","registered with this core, then install core again."},YELLOW)
+            end
         elseif event=="key" then
             if a==keys.up then selected=math.max(1,selected-1)
             elseif a==keys.down then selected=math.min(#order,selected+1)
-            elseif a==keys.q then return
             elseif a==keys.backspace and order[selected]~="core" and state.computers[order[selected]] then
                 local role=order[selected]
                 if confirm("Clear "..role.." (#"..state.computers[role].id..")?") then
                     local ok,issue=pcall(Setup.clearRole,CORE_MEDIA,release,role)
                     notice=ok and (role.." cleared; register that computer again") or tostring(issue)
-                end
-            elseif a==keys.r then
-                if confirm("Reset installation? Every role registers again") then
-                    writeFile(RESET_MARKER,"{}");bootIntoRegistration()
-                    message("Resetting installation",{"Core restarts into registration and clears","every assignment. Programs and settings stay."},YELLOW)
-                    os.reboot()
-                end
-            elseif a==keys.u then
-                if state.imported==true then notice="Reset installation (R) before uninstalling core"
-                elseif confirm("Uninstall core from #"..id.."? Its files are deleted") then
-                    uninstallCore()
-                    return message("Core uninstalled",{"Remove the registration on every computer that","registered with this core, then install core again."},YELLOW)
                 end
             elseif a==keys.enter and complete then
                 if confirm("Import assignments and start core?") then
@@ -201,6 +209,7 @@ local function coreScreen(Setup,release,id,releaseBase)
     end
 end
 
+-- Summary: Download the release into core, install core and open its registration screen.
 local function installCore(id)
     assert(validBase(base),"Run this through the Amaryllis loader")
     screen("AMARYLLIS WEB SETUP | CORE #"..id);line(3,"Downloading release...")
@@ -213,6 +222,7 @@ local function installCore(id)
 end
 
 -- Ask every reachable core to answer; returns their replies.
+-- Summary: Ask every reachable core to answer; returns their replies.
 local function discover()
     rednet.broadcast({v=1,kind="discover"},PROTOCOL)
     local found,deadline={},os.clock()+3
@@ -223,6 +233,7 @@ local function discover()
     end
     return found
 end
+-- Summary: Let the operator choose this computer's role from core's current assignments.
 local function pickRole(Setup,release,core,id)
     local order={};for _,role in ipairs(release.roleOrder) do order[#order+1]=role end
     local selected=1
@@ -236,10 +247,11 @@ local function pickRole(Setup,release,core,id)
                 holder and (holder.id==id and YELLOW or GRAY) or WHITE)
         end
         line(h,"Up/Down  Enter: register  Q: cancel",GRAY)
-        local _,key=os.pullEvent("key")
-        if key==keys.up then selected=math.max(1,selected-1)
+        local event,key=os.pullEvent()
+        if event=="char" and key:lower()=="q" then return nil
+        elseif event~="key" then
+        elseif key==keys.up then selected=math.max(1,selected-1)
         elseif key==keys.down then selected=math.min(#order,selected+1)
-        elseif key==keys.q then return nil
         elseif key==keys.enter then
             local holder=core.computers[order[selected]]
             if holder and holder.id~=id then
@@ -248,6 +260,7 @@ local function pickRole(Setup,release,core,id)
         end
     end
 end
+-- Summary: Find core, take its release, register the chosen role and install its payload.
 local function registerComputer(id)
     assert(openModems(),"Attach a modem: this computer registers with core over rednet")
     screen("AMARYLLIS WEB SETUP | #"..id);line(3,"Looking for core...")
@@ -295,6 +308,7 @@ end
 
 -- Remove this computer's registration payload, so it can register again: the
 -- wireless receiver before its role package arrives, or the state reader's programs.
+-- Summary: Remove this computer's registration payload, so it can register again: the wireless receiver before its role package arrives, or the state reader's programs.
 local function removeRegistration(id,journal)
     local role=journal.role
     if role~="state" and fs.exists("/avionics/main.lua") then
@@ -313,6 +327,7 @@ local function removeRegistration(id,journal)
         "Check core's screen, then register again."},GREEN)
 end
 
+-- Summary: Continue core registration, or offer core install and computer registration.
 local function main()
     assert(http,"HTTP is disabled in the ComputerCraft config (http.enabled)")
     local id=os.getComputerID()
@@ -337,12 +352,12 @@ local function main()
     if registered then line(5,"3  Remove this computer's registration ("..journal.role..")") end
     line(registered and 6 or 5,"Q  Cancel")
     while true do
-        local _,key=os.pullEvent("key")
-        if key==keys.one then
+        local _,ch=os.pullEvent("char");ch=ch:lower()
+        if ch=="1" then
             if confirm("Install core on computer #"..id.."?") then return installCore(id) end
-        elseif key==keys.two then return registerComputer(id)
-        elseif key==keys.three and registered then return removeRegistration(id,journal)
-        elseif key==keys.q then term.clear();term.setCursorPos(1,1);return end
+        elseif ch=="2" then return registerComputer(id)
+        elseif ch=="3" and registered then return removeRegistration(id,journal)
+        elseif ch=="q" then term.clear();term.setCursorPos(1,1);return end
     end
 end
 

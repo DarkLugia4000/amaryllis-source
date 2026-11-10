@@ -145,8 +145,8 @@ end
 
 -- Summary: Validate and timestamp a primary Sable observation.
 -- origin is "core" for core's own Sable reads and "reader" for readings relayed by the state reader.
--- Sable velocity is kept per origin, and the shared velocity slot takes core's own reading while it
--- is under 2 s old, so the two readers never alternate.
+-- Keep one Sable velocity sample per origin. Prefer core's sample for 2 s,
+-- then allow the state reader to supply the shared velocity slot.
 function Sources.acceptPrimary(io,key,value,at,origin)
     local checked
     if key=="uuid" and validID(value) then checked=value

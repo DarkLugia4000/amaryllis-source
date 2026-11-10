@@ -1245,7 +1245,7 @@ local function displaySnapshot(now, forceStale)
     local fresh = not forceStale and age >= 0 and age <= timeout
     local snapshot = {}
     for key, value in pairs(latestState) do snapshot[key] = value end
-    -- Freshness uses this computer's receipt time, never a remote clock.
+    -- Measure snapshot age in seconds from this display computer's receipt time.
     snapshot.displayStale = not fresh
     snapshot.dataFresh = fresh
     snapshot.stale = not fresh

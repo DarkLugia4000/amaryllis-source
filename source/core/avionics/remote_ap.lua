@@ -1,6 +1,6 @@
 local Mathx = require("avionics.mathx")
 -- Section: Remote command service | Authenticated requests serviced by core's supervisor.
--- Remote requests are serialized by core's supervisor, never executed in a radio worker.
+-- Core's supervisor executes queued remote requests in order.
 local Ops={}
 local INPUTS={"prop_forward","prop_reverse","left_press","left_lift","right_press","right_lift",
     "ap_disconnect","altitude_up","altitude_down"}
@@ -83,7 +83,7 @@ function Ops:request(sender,pair,p)
     if p.action=="ap_send" then
         local d=p.destination
         if type(d)~="table" then return {status="REJECTED",reason="DESTINATION MISSING"} end
-        -- Copy only the bounded, understood fields; never retain arbitrary radio tables.
+        -- Build a destination record from the request coordinates, altitude and cruise speed.
         d={name="Remote CMD",x=d.x,z=d.z,altitude=d.altitude,cruiseSpeed=d.cruiseSpeed}
         local ap=self.flight:ensureAutopilot(self.io)
         if not ap:validDraft(d,true) then return {status="REJECTED",reason="DESTINATION / SPEED / ALTITUDE INVALID"} end

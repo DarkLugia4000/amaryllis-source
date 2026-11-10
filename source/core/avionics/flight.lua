@@ -1582,7 +1582,7 @@ function Flight:emergencyKillLift(io,now)
     self.coreLogIssues=self.coreLogIssues or {}
     self.coreLogIssues[issueScope("flight","emergency lift kill")]=nil
     -- Persistence protects the explicit-restart interlock after a core reboot.
-    -- A disk error remains visible but never blocks the physical stop packets.
+    -- Record a persistence error and continue dispatching emergency stop packets.
     self:persistEmergencyLock(true)
     self.stopReview=nil;self.shutdownJob=nil
     -- Retire propulsion authority too. The main runtime also suppresses its
@@ -2880,9 +2880,7 @@ function Flight:systemsPreflight(io,now)
                 end
                 maps[q][name]=p.targetAmount
                 -- Inactive vents enter the control lease at the known minimum.
-                -- An active vent keeps its current ceiling: START SYSTEMS at
-                -- altitude must take over the existing lift, never drop it.
-                -- Only STOP SYSTEMS (or explicit control) lowers it.
+                -- Seed airborne START SYSTEMS from each active vent's current ceiling.
                 if p.signalStrength>0 and p.targetAmount>floor then
                     controlTargets[q][name]=p.targetAmount
                     retainedBulk[q]=retainedBulk[q] or {}
@@ -5018,9 +5016,8 @@ local function systemsRecoveryOperations(self,io,now,s,recovery,wait)
                     for _,nodeFault in ipairs(node.faults or {}) do
                         if type(nodeFault)=="string" and stage=="control" and
                             nodeFault:find("SYSTEMS_PROBE_REQUIRED",1,true) then
-                            -- The node's probe lease lapsed before control
-                            -- arrived. Resending control can never succeed;
-                            -- re-probe (keeping retained outputs), then restore.
+                            -- Renew the expired probe lease before restoring control.
+                            -- Keep the applied outputs during the probe.
                             leaseExpired=true
                         elseif type(nodeFault)=="string" and nodeFault:match("^SYSTEMS") then
                             recovery.sendFailure=q.." "..nodeFault
@@ -5279,8 +5276,8 @@ local function systemsAcknowledgeBatch(self,io,now,s)
         local pending=s.pending[q]
         local node=io.nodes[q]
         -- A fresh response for this sequence can explicitly reject the
-        -- command. Surface that reason instead of waiting for an ACK that
-        -- will never arrive. Historical faults cannot reject a new packet.
+        -- command. Report its rejection when the received sequence matches
+        -- this batch and the applied sequence still refers to an earlier command.
         if node.lastReceivedSeq==pending.seq and node.lastAppliedSeq~=pending.seq then
             for _,fault in ipairs(node.faults or {}) do
                 if type(fault)=="string" and fault:match("^SYSTEMS") then
@@ -6189,8 +6186,8 @@ function Flight:update(io,now)
             local value=self.baseline[q][name]
             if p.controlRole=="bulk" then value=value*(1+self.effort)
             else value=value+self.trim[q] end
-            -- Continuous control never requests zero: the burner must stay on
-            -- for envelope calculation, and provider zero clamping is untested.
+            -- Round to integer targets. Bulk providers retain their minimum
+            -- nonzero target; fine trim accepts zero or its minimum active target.
             local bounded=clamp(math.floor(value+0.5),p.controlRole=="fine" and 0 or p.minimumNonzeroTarget,p.maxTarget)
             if bounded>0 and bounded<p.minimumNonzeroTarget then bounded=p.minimumNonzeroTarget end
             if bounded~=math.floor(value+0.5) then

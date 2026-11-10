@@ -1,4 +1,4 @@
--- Read-only package source. Flight never reads removable media through this module.
+-- Supplies installer package files from the mounted release media.
 -- A web-installed core (/installer/web/source.json) fetches package objects from
 -- its pinned web release; otherwise they come from the matching installer disk.
 local Media={};Media.__index=Media
@@ -12,6 +12,7 @@ local function pathOK(path)
     return type(path)=="string" and path:match("^/packages/[A-Za-z0-9_./%-]+$") and
         not path:find("..",1,true) and not path:find("//",1,true)
 end
+-- Summary: Construct the removable package-media source and its verification cache.
 function Media.new(native,peripherals,disks,json,yield,web)
     local raw=assert(read(native,"/installer/library.json",65536) or
         read(native,"/installer/library.json.amaryllis-backup",65536),"Trusted package catalog unavailable")
@@ -49,6 +50,7 @@ function Media.new(native,peripherals,disks,json,yield,web)
     end
     return self
 end
+-- Summary: Verify the mounted media release and expected package catalog.
 function Media:valid(generation)
     if self.webBase then return self.http~=nil and generation==self.generation end
     local current=self.current
@@ -64,6 +66,7 @@ function Media:valid(generation)
     end
     return true
 end
+-- Summary: Rediscover matching mounted media and refresh its availability.
 function Media:refresh()
     if self.webBase then return self.http~=nil end
     local candidates={}
@@ -95,6 +98,7 @@ function Media:refresh()
     self.current=candidate;self.issue=""
     return true
 end
+-- Summary: Open the verified content-addressed package object.
 function Media:open(path)
     local entry=self.entries[path];local generation=self.generation
     if not entry then return nil,"Package is absent from trusted catalog" end
@@ -129,6 +133,7 @@ function Media:open(path)
         local value=data:sub(offset);offset=#data+1;return value
     end,close=function() closed=true;data="" end}
 end
+-- Summary: Fetch the indexed package object over HTTP and verify its length and Adler-32 checksum.
 function Media:openWeb(entry)
     local response,why=self.http.get({url=self.webBase.."objects/"..entry.object,binary=true})
     if not response then return nil,"Package download failed: "..tostring(why) end

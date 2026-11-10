@@ -1,5 +1,5 @@
 -- Section: Propulsion worker | Independent control cadence and completion heartbeat.
--- Independent control cadence; never renew abandoned core authority.
+-- Runs propulsion at its own cadence and stops command renewal when the core heartbeat expires.
 local Worker={}
 -- Section: Propulsion worker | Fault wording for a missing core heartbeat.
 function Worker.supervisionText(now,heartbeat)

@@ -716,6 +716,8 @@ _TEMP = tempfile.TemporaryDirectory(prefix="web-setup-", dir=ROOT / ".cache")
 _RESULT, _ = project.builder_module().build(ROOT, Path(_TEMP.name))
 WEB_MEDIA = _RESULT / "media"
 WEB_KEYS = {"one": 2, "two": 3, "three": 4, "r": 19, "u": 22, "y": 21, "n": 49, "q": 16, "up": 200, "down": 208, "enter": 28, "backspace": 14}
+WEB_CHARS = {"one": "1", "two": "2", "three": "3", "r": "r", "u": "u", "y": "y", "n": "n", "q": "q"}
+KEY_Z = 44  # the key marked Y on a QWERTZ keyboard reports the US-layout position of Z
 
 ENVIRONMENT = r"""
 term.clearLine=function() local x,y=term.getCursorPos();term.setCursorPos(1,y);term.write(string.rep(" ",screen.width));term.setCursorPos(x,y) end
@@ -828,10 +830,19 @@ class Computer:
         raise AssertionError("computer did not settle")
 
     def key(self, *names):
+        """Press keys as ComputerCraft reports them: a "key" event, then a "char" event for printable keys."""
         for name in names:
+            self.press(WEB_KEYS[name], WEB_CHARS.get(name))
+        return self
+
+    def press(self, code, char=None):
+        """Send one physical key code and, when given, the character it typed."""
+        assert self.state == "INPUT", self.state
+        self.state = self.resume("key", code)
+        if char is not None:
             assert self.state == "INPUT", self.state
-            self.state = self.resume("key", WEB_KEYS[name])
-            settle(self.network)
+            self.state = self.resume("char", char)
+        settle(self.network)
         return self
 
     def json(self, path):
@@ -866,6 +877,16 @@ class WebSetupTests(unittest.TestCase):
         core.key("one", "y")
         self.assertIn("1/16 registered", core.text())
         return network, core
+
+    def test_letters_follow_the_typed_character_on_any_layout(self):
+        network = {}
+        core = Computer(network, 0)
+        core.key("one")
+        self.assertIn("Install core on computer #0? (y/n)", core.text())
+        core.press(WEB_KEYS["y"], "z")  # QWERTZ: the key at the US Y position types z
+        self.assertIn("Install core on computer #0? (y/n)", core.text())
+        core.press(KEY_Z, "y")          # QWERTZ: the key marked Y reports keys.z and types y
+        self.assertIn("1/16 registered", core.text())
 
     def test_core_installs_from_the_web_and_opens_registration(self):
         _, core = self.core()

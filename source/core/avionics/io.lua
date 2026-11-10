@@ -51,7 +51,7 @@ end
 local function liftDebugEvent(io,event)
     local recorder=io.debugRecorder
     if recorder and recorder.enabled and type(recorder.liftEvent)=="function" then
-        -- Optional diagnostics must never reject a status or interrupt a send.
+        -- Isolate recorder errors from the status and command handlers with pcall.
         pcall(recorder.liftEvent,recorder,event)
     end
 end
@@ -1135,8 +1135,8 @@ function IO:sampleVessel(now)
     return self.vessel
 end
 
--- Sable and peripheral workers have separate deadlines and share only
--- completed read-only records. A blocked primary never owns backup publication.
+-- Sable and peripheral workers publish completed observations independently.
+-- Each worker uses its own deadline, so a delayed Sable call leaves backup publication available.
 local samplePrimaryVessel=IO.sampleVessel
 -- Summary: Read Sable vessel fields and configured sensors with per-observation timestamps.
 function IO:sampleVessel(now)
@@ -1544,8 +1544,8 @@ function IO:validateLiftStatus(sender, message, now,radioTiming)
     node.lastReceivedSeq = message.lastReceivedSeq or node.lastReceivedSeq
     node.lastSeen = now
     node.statusReceivedEpochMs=diagnosticEpoch()
-    -- Receiver/handler stamps are internal queue metadata, never packet fields.
-    -- Keep their wall-clock deltas diagnostic-only; freshness uses original now.
+    -- Record local receipt and handling timestamps for queue-latency diagnostics.
+    -- Use the original receipt time for freshness checks.
     radioTiming=type(radioTiming)=="table" and radioTiming or {}
     node.statusReceiverEpochMs=integer(radioTiming.receiverEpochMs,0,9007199254740991) and radioTiming.receiverEpochMs or nil
     node.statusHandlerEpochMs=integer(radioTiming.handlerEpochMs,0,9007199254740991) and radioTiming.handlerEpochMs or nil

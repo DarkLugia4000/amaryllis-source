@@ -1,7 +1,7 @@
 local Mathx = require("avionics.mathx")
 -- Section: Fleet registry | Role assignment validation and stored computer IDs.
 -- Authoritative role registry for core 35. IDs are editable; logical roles and
--- labels travel in the JSON file so runtime routing never depends on IDs.
+-- labels come from the saved fleet registry and identify role assignments.
 local Fleet = {}
 
 local ROLE_ORDER = {"core", "navigator", "heading-left", "heading-right", "heading-main",

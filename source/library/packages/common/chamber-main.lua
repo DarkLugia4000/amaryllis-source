@@ -21,7 +21,7 @@ local function ensureRuntime()
 end
 
 -- Section: Chamber coordinator | Supervised lift, propulsion relay and shared observations.
--- Summary: Publish the current cached component observations to the configured consumer.
+-- Summary: Aggregate lift and thrust component faults and hardware availability into the chamber runtime snapshot.
 local function publish()
     local current = ensureRuntime()
     local faults, available = {}, false

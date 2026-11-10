@@ -150,7 +150,7 @@ local function findLink()
         if not ok then modem=nil end
     end
 end
--- Summary: Build or validate the runtime configuration context used by the current component.
+-- Summary: Validate the wired core context and update the state reader configuration, node roster and pressure request.
 local function context(packet)
     if type(packet)~="table" or packet.protocol~=Wire.PROTOCOL or packet.kind~="state_context" or
         packet.sender~=cfg.coreID or packet.target~=cfg.computerID or type(packet.session)~="string" or

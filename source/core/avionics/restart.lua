@@ -71,8 +71,7 @@ function Restart:capture(flight,io,now)
     if not run then
         local prepared,reason=flight:systemsPreflight(io,now)
         if not prepared then return nil,reason end
-        -- An explicit restart of a previously stopped installation can adopt
-        -- verified existing ceilings, but must never substitute startup floors.
+        -- For a restart from STOPPED, seed the checkpoint with verified live provider ceilings.
         local maps={}
         for _,q in ipairs(QUADS) do
             maps[q]={}
