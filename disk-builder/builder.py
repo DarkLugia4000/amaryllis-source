@@ -1,8 +1,7 @@
-"""Build Amaryllis installation disks from maintained source or an explicit saved-ship export."""
+"""Build Amaryllis installation disks and update media from the maintained project source."""
 from __future__ import annotations
 
 import argparse
-import copy
 from datetime import datetime, timezone
 import hashlib
 import importlib.util
@@ -11,6 +10,7 @@ import math
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import stat
 import sys
 import subprocess
@@ -46,10 +46,6 @@ STATE_FILES = ["state_reader.lua", "state_wire.lua", "io.lua", "thrust.lua", "fl
 EXCLUDED_DIRS = {"data", "tests", "bundle", ".git", ".agents", "__pycache__"}
 EXCLUDED_FILES = {"install_status.json", "fleet.json", "install-receipt.json", "deployment.json", "amaryllis-install.json"}
 LEARNING = {"hover": "/avionics/data/hover-offset.json", "level": "/avionics/data/level-bias.json"}
-LINKS = {"packages/chamber/bl/config.json": ("minecraft:dropper", "minecraft:hopper"),
-         "packages/thrust/ls/config.json": ("minecraft:dropper", "minecraft:hopper"),
-         "packages/chamber/br/config.json": ("minecraft:hopper", "minecraft:dropper"),
-         "packages/thrust/rs/config.json": ("minecraft:hopper", "minecraft:dropper")}
 
 
 class BuildError(Exception):
@@ -202,7 +198,9 @@ def collect_project(selection, include_learning=True, log=lambda message: None):
         require(destination.startswith(("avionics/", "installer/")) and ".." not in Path(destination).parts,
                 "Unsafe project module destination.")
         files[destination] = snapshot.files[HOME / "assets" / asset]
-    # The disposable role registry supplies the existing collector's source layout.
+    files = source_notes.expand_shared_modules(files, metadata.get("sharedModules", {}))
+    source_notes.validate_package_families(files)
+    # Stage the source as a core computer folder with a role registry, the layout collect() validates.
     work = HOME / ".cache"
     work.mkdir(exist_ok=True)
     require(not linked(work) and work.resolve().is_relative_to(HOME.resolve()), "Unsafe source staging folder.")
@@ -222,11 +220,15 @@ def collect_project(selection, include_learning=True, log=lambda message: None):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
         (core / "fleet.json").write_bytes(encode(registry))
-        source = collect(core, include_learning, lambda message: log(message) if not message.startswith("Found ") else None)
-    source.update(core=root, computers=root, snapshot=snapshot, mediaSnapshot=None,
-                  packageSource={"kind": "project-source"})
+        source = collect(core, include_learning, log)
+        # The core console is generated from the package console during collection.
+        # Reject a maintained copy that differs, because direct edits to it would be discarded.
+        generated = source["payload"].get("/avionics/common/console.lua")
+        require(generated == files.get("avionics/common/console.lua"),
+                "source/core/avionics/common/console.lua differs from the console generated from "
+                "source/library/packages/common/console.lua. Edit the package console, then regenerate the core copy.")
+    source.update(core=root, computers=root, snapshot=snapshot, packageSource={"kind": "project-source"})
     source["provenance"] = project_revision(root, sha(encode(snapshot.inputs)))
-    source["notes"] = [note for note in source["notes"] if not note.startswith("Package sources:")]
     source["notes"].append("Programs and defaults were read from the maintained project source.")
     log("Project source: " + str(root))
     log("Source fingerprint: " + source["provenance"]["sourceTreeSHA256"])
@@ -236,27 +238,6 @@ def collect_project(selection, include_learning=True, log=lambda message: None):
 def default_project():
     """Find source beside the utility or at the repository root."""
     return next((path for path in (HOME.parent, HOME) if (path / "source/baseline.json").is_file()), None)
-
-
-# Resolve the selected save or computer folder to its registered core.
-def locate_core(selection):
-    selected = Path(selection).expanduser().resolve()
-    require(selected.is_dir(), "Choose an existing Minecraft save or core computer folder.")
-    if (selected / "fleet.json").is_file() and (selected / "avionics/config.json").is_file():
-        return selected, selected.parent
-    candidates_root = next((p for p in (selected / "computercraft/computer", selected / "computer", selected)
-                            if p.is_dir() and (p.name == "computer" or p == selected / "computercraft/computer")), None)
-    require(candidates_root is not None, "No ComputerCraft computer folder was found in this selection.")
-    candidates = []
-    for p in candidates_root.iterdir():
-        if not p.name.isdecimal() or not p.is_dir() or linked(p):
-            continue
-        if (p / "fleet.json").is_file() and (p / "avionics/config.json").is_file():
-            candidates.append(p)
-    require(candidates, "No Amaryllis core with fleet.json and avionics/config.json was found.")
-    require(len(candidates) == 1, "Several core candidates were found. Select the intended computer folder directly: " +
-            ", ".join(p.name for p in candidates))
-    return candidates[0].resolve(), candidates_root.resolve()
 
 
 def finite(value):
@@ -290,454 +271,10 @@ def library_entries(mapping):
             for p, d in sorted(mapping.items())]
 
 
-# Validate library paths, checksums and per-role package identities.
-def package_catalog(raw):
-    require(len(raw) <= 65536, "Package catalog exceeds metadata limits.")
-    catalog = decode(raw, "core package catalog")
-    require(isinstance(catalog, dict), "Invalid core package catalog.")
-    identity = dict(catalog);identity.pop("libraryId", None)
-    require(catalog.get("schemaVersion") == 1 and catalog.get("libraryId") == sha(encode(identity)) and
-            isinstance(catalog.get("files"), list) and 0 < len(catalog["files"]) <= 256 and
-            isinstance(catalog.get("roles"), dict) and set(catalog["roles"]) == set(FOLDERS),
-            "Core's package catalog is incomplete or damaged.")
-    paths = set()
-    for entry in catalog["files"]:
-        require(isinstance(entry, dict), "Invalid package catalog entry.")
-        path, obj = entry.get("path"), entry.get("object")
-        require(isinstance(path, str) and re.fullmatch(r"/packages/[A-Za-z0-9_./-]+", path) and
-                all(p not in ("", ".", "..") for p in path.split("/")[1:]) and path not in paths and
-                isinstance(obj, str) and re.fullmatch(r"[0-9a-f]{64}", obj) and
-                type(entry.get("bytes")) is int and 0 <= entry["bytes"] <= 4_000_000 and
-                isinstance(entry.get("adler32"), str) and re.fullmatch(r"[0-9A-F]{8}", entry["adler32"]),
-                "Unsafe or duplicate package catalog entry.")
-        paths.add(path)
-    for role, meta in catalog["roles"].items():
-        require(isinstance(meta, dict) and set(meta) == {"packageId", "version"} and
-                isinstance(meta["packageId"], str) and 1 <= len(meta["packageId"]) <= 64 and
-                type(meta["version"]) is int and 1 <= meta["version"] <= 65535,
-                f"Invalid catalog package identity: {role}.")
-    return catalog
-
-
-# Read and verify a selected installer library against core metadata.
-def read_package_media(selection, raw):
-    root = Path(selection).expanduser().resolve()
-    if (root / "media/library.json").is_file():root /= "media"
-    snapshot = Snapshot(root)
-    require(snapshot.read(root / "library.json") == raw,
-            "The selected installer library does not match this core's adopted library.")
-    catalog = package_catalog(raw)
-    result = {}
-    for entry in catalog["files"]:
-        data = snapshot.read(root / "objects" / entry["object"])
-        require(sha(data) == entry["object"] and len(data) == entry["bytes"] and
-                f"{zlib.adler32(data):08X}" == entry["adler32"], "Corrupt disk library object: " + entry["path"])
-        result[entry["path"]] = data
-    return result, snapshot
-
-
-def discover_package_media(computers):
-    """Bounded search of saved disks and the builder's usual installer locations."""
-    roots = [computers.parent / "disk", HOME / "Installers", HOME.parent / "Installers",
-             HOME.parent / "disk-builder" / "Installers",
-             # Search exports left in the utility's previous directory too.
-             HOME.parent / "Amaryllis Installer Builder" / "Installers"]
-    visited = set();budget = 2048
-    for root in roots:
-        pending = [(root, 0)]
-        while pending and budget:
-            path, depth = pending.pop();budget -= 1
-            if not path.is_dir() or linked(path):continue
-            resolved = path.resolve()
-            if resolved in visited:continue
-            visited.add(resolved)
-            if (path / "library.json").is_file():yield path
-            if depth >= 3:continue
-            try:
-                children = sorted(path.iterdir(), key=lambda p:p.name, reverse=True)
-            except OSError:continue
-            for child in children:
-                if len(pending) >= budget:break
-                if not child.name.startswith(".") and child.name not in ("objects", "Backups", "windows-update", "windows-settings"):
-                    pending.append((child, depth + 1))
-
-
-# Recover editable auxiliary sources from registered installed computers.
-def recover_package_library(payload, snap, registry, core, computers, loader, selection, log):
-    raw = payload.get("/installer/library.json")
-    require(isinstance(raw, bytes), "Core's package catalog is missing.")
-    catalog = package_catalog(raw)
-    if selection:
-        result, snapshot = read_package_media(selection, raw)
-        log("Using verified package-library override: " + str(snapshot.root))
-        return result, snapshot, {"kind": "media-override", "path": str(snapshot.root)}
-
-    # Recover the registered role payload using its trusted package metadata.
-    def installed(role, expected, entries):
-        record = registry[role];computer_id = record.get("id")
-        require(type(computer_id) is int, "No installed computer is registered for " + role)
-        folder = computers / str(computer_id)
-        cfg = decode(snap.read(folder / "avionics/config.json"), role + " installed config")
-        require(isinstance(cfg, dict), "Invalid installed configuration: " + role)
-        receipt = cfg.get("install", {})
-        require(isinstance(receipt, dict) and receipt.get("protocol") == "amaryllis.install.v1" and
-                receipt.get("role") == role and cfg.get("role") == role and
-                receipt.get("computerID") == computer_id and receipt.get("coreID") == int(core.name) and
-                receipt.get("label") == record["label"] and
-                all(receipt.get(k) == expected[k] for k in ("packageId", "version")),
-                "Installed role, ID or package receipt does not match core: " + role)
-        status = decode(snap.read(folder / "installer/status.json"), role + " installer status")
-        fields = {"role":"installedRole", "packageId":"installedPackageId", "version":"installedVersion",
-                  "installID":"installedInstallID", "manifestChecksum":"installedManifestChecksum",
-                  "computerID":"installedComputerID", "coreID":"installedCoreID", "label":"installedLabel",
-                  "clientSession":"installedClientSession", "serverSession":"installedServerSession",
-                  "coreSession":"installedCoreSession"}
-        require(isinstance(status, dict) and status.get("hasInstalled") is True and status.get("recoveryRequired") is False and
-                status.get("state") not in ("committing", "recovery_required") and
-                all(status.get(field) == receipt.get(key) and key in receipt for key,field in fields.items()),
-                "Installed package is unfinished or its status conflicts with its receipt: " + role)
-        checksum_rows = b"".join(p.encode() + b"\0" + str(e["bytes"]).encode() + b"\0" + e["adler32"].encode() + b"\n"
-                                 for p,e in zip(bundling.PATHS, entries))
-        require(str(receipt.get("manifestChecksum", "")).upper() == f"{zlib.adler32(checksum_rows):08X}",
-                "Installed manifest receipt does not match core's package catalog: " + role)
-        alias = snap.read(folder / "avionics/common/console.lua")
-        require(sha(alias) == entries[2]["object"], "Installed console entry does not match core's catalog: " + role)
-        return snap.read(folder / "avionics/main.lua")
-
-    legacy_used = [False]
-    # Load verified compatibility metadata for older installed packages.
-    def legacy_metadata():
-        hashes = decode((HOME / "assets/asset-hashes.json").read_bytes(), "builder assets")
-        metadata = (HOME / "assets/legacy-package-metadata.json").read_bytes()
-        require(sha(metadata) == hashes.get("legacy-package-metadata.json"), "Builder recovery metadata is damaged.")
-        legacy = decode(metadata, "legacy package metadata")
-        require(legacy.get("schemaVersion") == 1 and isinstance(legacy.get("objects"), dict), "Invalid recovery metadata.")
-        legacy_used[0] = True
-        return legacy["objects"]
-
-    try:
-        result = bundling.recover_library(catalog, FOLDERS, loader, installed, legacy_metadata)
-        log("Recovered and verified all 14 auxiliary packages from the installed ship; previous installer media is not required.")
-        return result, None, {"kind": "installed-fleet", "packages": len(FOLDERS),
-                              "metadata": "builder-legacy-json" if legacy_used[0] else "embedded-in-bundles"}
-    except (BuildError, ValueError, KeyError, TypeError, OSError) as error:
-        recovery_error = str(error)
-    for candidate in discover_package_media(computers):
-        try:
-            result, snapshot = read_package_media(candidate, raw)
-        except (BuildError, ValueError, OSError):continue
-        log("Automatically found and verified matching package media: " + str(snapshot.root))
-        return result, snapshot, {"kind": "auto-media", "path": str(snapshot.root)}
-    raise BuildError("Cannot recover this ship's complete package sources: " + recovery_error +
-                     ". No matching media was found automatically. Restore the affected computer from backup, "
-                     "or select matching installer media in the optional Package library override.")
-
-
-def disk_server(server):
-    """Add media availability to the existing transport's authority checkpoints."""
-    # Already exported disk servers are rebuilt from their transport source below.
-    text = server.decode("utf-8")
-    if text.startswith("-- Removable package media v1\n"):
-        return server
-    replacements = [
-        ('    local bundleCache=injected.bundleCache',
-         '    local media\n    if not injected.fs then\n'
-         '        media=assert(loadfile("/installer/media.lua",nil,_ENV))().new(deps.fs,peripheral,disk,textutils,sleep)\n'
-         '        deps.fs=media.fs\n    end\n    local bundleCache=injected.bundleCache'),
-        ('        else\n        modemCount = openModems(deps)',
-         '        elseif media and not media:refresh() then\n'
-         '            setState(deps,status,"waiting_for_media",media.issue)\n            deps.sleep(2)\n'
-         '        else\n        modemCount = openModems(deps)'),
-        ('or status.state=="paused" then setState', 'or status.state=="paused" or status.state=="waiting_for_media" then setState'),
-        ('                            targetConfig.authorityCheck = function()',
-         '                            local mediaGeneration=media and media.generation\n'
-         '                            targetConfig.authorityCheck = function()\n'
-         '                                if media and not media:valid(mediaGeneration) then return false,"installer disk removed or changed; transfer retired" end'),
-        ('                                if pauseRequested(deps) then return false,"installer paused; package verification retired" end',
-         '                                if media and not media:valid(mediaGeneration) then return false,"installer disk removed or changed; package verification retired" end\n'
-         '                                if pauseRequested(deps) then return false,"installer paused; package verification retired" end'),
-    ]
-    for old, new in replacements:
-        require(old in text, "Unsupported installer transport. Update the builder for this server version.")
-        text = text.replace(old, new)
-    return ("-- Removable package media v1\n" + text).encode()
-
-
-def lift_recovery_overlays(payload):
-    """Recover communication/lease loss using verified retained lift intent."""
-    path = "/avionics/flight.lua"
-    flight = payload[path].decode("utf-8")
-    marker = "-- Recoverable lift handshake v1"
-    if marker in flight:
-        return
-    def change(old, new, label):
-        nonlocal flight
-        require(flight.count(old) == 1,
-                f"Unsupported {label} for lift recovery. Update the builder for this source version.")
-        flight = flight.replace(old, new, 1)
-    change('''        local ok,seq=io:sendSystemsCommand(q,targets,s.batchStage)''',
-        '''        local commandStage=s.telemetryRecovery and s.recoveryStages and s.recoveryStages[q] or s.batchStage
-        local ok,seq=io:sendSystemsCommand(q,targets,commandStage)''', "lift batch sender")
-    change('''s.pending[q]={q=q,seq=seq,targets=targets,stage=s.batchStage,sentAt=now,boot=s.boots[q]}''',
-        '''s.pending[q]={q=q,seq=seq,targets=targets,stage=commandStage,sentAt=now,boot=s.boots[q]}''', "lift pending stage")
-    change('''                local expectedStage=stage''',
-        '''                local expectedStage=pending.stage or stage''', "recovery stage readback")
-    change('''                if stage=="probe" and not leaseExpired then''',
-        '''                if expectedStage=="probe" and not leaseExpired then''', "probe activation readback")
-    change('''    local function sendRecoveryBatch(stage,maps,coarse)
-        if stage=="probe" then
-            maps=recoveryProbeMaps(io,maps)
-            recovery.probeTargets=copyMaps(maps)
-        end''',
-        '''    local function sendRecoveryBatch(stage,maps,coarse)
-        s.recoveryStages=nil
-        if stage=="probe" then
-            maps=recoveryProbeMaps(io,maps)
-            s.recoveryStages={}
-            for _,q in ipairs(QUADS) do
-                local node=io.nodes[q]
-                -- A valid control owner cannot accept a probe. Keep its exact
-                -- observed map and renew control while expired peers re-probe.
-                if node.systemsStage=="control" and node.systemsProbeReady==true then
-                    local actual,reason=TelemetryRecovery.readTargetMap(node,
-                        recovery.targetMaps and recovery.targetMaps[q],s.providerRoles[q])
-                    if not actual then return wait(q.." "..tostring(reason),false) end
-                    maps[q]=actual;s.recoveryStages[q]="control"
-                end
-            end
-            recovery.probeTargets=copyMaps(maps)
-        end''', "mixed chamber recovery")
-    change('''            if stage=="control" and node.systemsStage==nil and node.systemsProbeReady~=true then''',
-        '''            if node.systemsStage==nil and node.systemsProbeReady~=true and
-                (stage=="control" or (pending and now-pending.sentAt>=SYSTEMS_ACK_TIMEOUT_SECONDS)) then''',
-        "expired recovery probe")
-    change('''    s.lastSystemsUpdateAt=now
-    self:observeSystemsDynamics(io,s,now)''',
-        '''    s.lastSystemsUpdateAt=now
-    -- A fresh node may have lost its renewable lease before the command's
-    -- rejection arrives. Re-probe using the retained run instead of waiting
-    -- for a matching rejected sequence or letting an ACK timeout abort it.
-    if s.batchStage=="control" or s.phase=="READY" or s.phase=="BUILDING_LIFT" then
-        for _,q in ipairs(QUADS) do
-            local node=io.nodes[q]
-            if node.systemsStage==nil and node.systemsProbeReady~=true then
-                TelemetryRecovery.suspend(self,s,now,q.." LIFT CONTROL LEASE LOST")
-                self:updateSystemsRecovery(io,now,s);return
-            end
-        end
-    end
-    self:observeSystemsDynamics(io,s,now)''', "normal control lease loss")
-    change('''                    self:stopSystems(io,q.." SYSTEMS COMMAND ACK TIMEOUT",now);return''',
-        '''                    TelemetryRecovery.suspend(self,s,now,q.." SYSTEMS COMMAND ACK TIMEOUT")
-                    self:updateSystemsRecovery(io,now,s);return''', "normal lift acknowledgement timeout")
-    payload[path] = (marker + "\n" + flight).encode("utf-8")
-
-
-def vessel_recovery_overlays(payload):
-    """Separate unavailable telemetry from fresh, confirmed vessel changes."""
-    flight_path = "/avionics/flight.lua"
-    recovery_path = "/avionics/telemetry_recovery.lua"
-    flight = payload[flight_path].decode("utf-8")
-    recovery = payload[recovery_path].decode("utf-8")
-    marker = "-- Recoverable vessel telemetry v1"
-    if marker in flight and marker in recovery:
-        return
-    require(marker not in flight and marker not in recovery,
-            "Incomplete vessel recovery patch. Restore matching core files before export.")
-    def change(text, old, new, label):
-        require(text.count(old) == 1,
-                f"Unsupported {label} for vessel recovery. Update the builder for this source version.")
-        return text.replace(old, new, 1)
-    recovery = change(recovery, 'function Recovery.nodeBootState(io,s,q,now,flight)',
-        '''-- An unavailable UUID is not evidence of another vessel. Do not
--- authorize writes until a fresh complete sample confirms the retained UUID.
-function Recovery.vesselState(io,s,now)
-    local vessel=io and io.vessel
-    local stale=io and io.config and io.config.network and io.config.network.sensor_stale_seconds
-    if not s or type(s.uuid)~="string" or #s.uuid==0 then
-        return "terminal","RETAINED VESSEL IDENTITY UNAVAILABLE"
-    end
-    if type(vessel)~="table" or not closeEnoughFresh(now,vessel.at,stale) then
-        return "wait","VESSEL TELEMETRY STALE"
-    end
-    if type(vessel.uuid)~="string" or #vessel.uuid==0 then
-        return "wait","VESSEL IDENTITY UNAVAILABLE"
-    end
-    if vessel.valid~=true then return "wait","VESSEL TELEMETRY INCOMPLETE" end
-    if vessel.uuid~=s.uuid then return "terminal","VESSEL IDENTITY CHANGED" end
-    if not finite(vessel.altitude) or not finite(vessel.verticalSpeed) then
-        return "wait","VESSEL TELEMETRY INCOMPLETE"
-    end
-    return "trusted"
-end
-
-function Recovery.nodeBootState(io,s,q,now,flight)''', "vessel evidence classifier")
-    recovery = change(recovery, '''    local vessel=io.vessel or {}
-    local stale=io.config.network and io.config.network.sensor_stale_seconds
-    if vessel.uuid~=s.uuid then return "terminal","VESSEL IDENTITY CHANGED" end
-    if vessel.valid~=true or not closeEnoughFresh(now,vessel.at,stale) or
-        not finite(vessel.altitude) or not finite(vessel.verticalSpeed) then
-        return "wait","VESSEL SENSOR STALE / IDENTITY CHANGED"
-    end''',
-        '''    local vesselState,vesselReason=Recovery.vesselState(io,s,now)
-    if vesselState~="trusted" then return vesselState,vesselReason end''', "rebound vessel validation")
-    recovery = change(recovery, '''    if reason=="VESSEL SENSOR STALE / IDENTITY CHANGED" then
-        if not s or vessel.uuid~=s.uuid then return false end
-        local stale=io and io.config and io.config.network and io.config.network.sensor_stale_seconds
-        return vessel.valid~=true or not closeEnoughFresh(now,vessel.at,stale) or
-            not finite(vessel.altitude) or not finite(vessel.verticalSpeed)
-    end''',
-        '''    if reason=="VESSEL SENSOR STALE / IDENTITY CHANGED" or reason=="VESSEL TELEMETRY STALE" or
-        reason=="VESSEL IDENTITY UNAVAILABLE" or reason=="VESSEL TELEMETRY INCOMPLETE" then
-        return Recovery.vesselState(io,s,now)=="wait"
-    end''', "transient vessel classification")
-    flight = change(flight, '''    if not v or v.valid~=true or v.uuid~=s.uuid or not freshAt(now,v.at,stale) or
-        not finite(v.altitude) or not finite(v.verticalSpeed) then return false,"VESSEL SENSOR STALE / IDENTITY CHANGED" end''',
-        '''    local vesselState,vesselReason=TelemetryRecovery.vesselState(io,s,now)
-    if vesselState~="trusted" then return false,vesselReason end''', "flight vessel guard")
-    flight = change(flight, '''    local maps,mapReason,coarse=TelemetryRecovery.reconcileTargetMaps(s,io.nodes,trustedRebinds)
-    if not maps then return nil,mapReason end''',
-        '''    -- A command may have applied to only some providers before the
-    -- abort. Recover core's retained intent, not an unexplained observed map.
-    -- The guards above verify identity/bindings; this helper checks the exact
-    -- provider allowlist and target bounds before recovery re-applies it.
-    local maps,mapReason,coarse=TelemetryRecovery.authoritativeTargetMaps(s,io.nodes)
-    if not maps then return nil,mapReason end''', "retained abort target recovery")
-    payload[flight_path] = (marker+"\n"+flight).encode("utf-8")
-    payload[recovery_path] = (marker+"\n"+recovery).encode("utf-8")
-
-
-def identity_overlays(payload, assets):
-    """Advisory receiver-side monitoring, without touching control decisions."""
-    payload["/avionics/identity_watch.lua"] = assets["identity-watch.lua"]
-    io = payload["/avionics/io.lua"].decode("utf-8")
-    main = payload["/avionics/main.lua"].decode("utf-8")
-    ui = payload["/packages/navigation/ui.lua"].decode("utf-8")
-    def change(text, old, new, label):
-        require(text.count(old) == 1, f"Unsupported {label} for identity warnings. Update the builder for this source version.")
-        return text.replace(old, new, 1)
-    if "-- Identity conflict advisory v1" not in io:
-        io = '-- Identity conflict advisory v1\nlocal IdentityWatch=require("avionics.identity_watch")\n' + io
-        io = change(io, '    self.session = dependencies.session or newSession(id or self.fleet.coreID,self.os)',
-            '    self.identityWatch=IdentityWatch.new()\n'
-            '    local epochOK,epochMs=pcall(function()return self.os.epoch("utc")end)\n'
-            '    self.identityStartedEpochMs=epochOK and epochMs or nil\n'
-            '    self.session = dependencies.session or newSession(id or self.fleet.coreID,self.os)', 'core identity initialization')
-        io = change(io, '''function IO:registryPacket()
-    return {v=1,kind="fleet_registry",coreID=self.config.computer_id,session=self.session,
-        computers=Fleet.clone(self.computers or {})}
-end''', '''function IO:registryPacket()
-    self.identityRegistrySeq=((self.identityRegistrySeq or 0)%2147483647)+1
-    local ok,epochMs=pcall(function()return self.os.epoch("utc")end)
-    local uuid=self.vessel and self.vessel.uuid
-    return {v=1,kind="fleet_registry",coreID=self.config.computer_id,session=self.session,
-        identitySeq=self.identityRegistrySeq,identityEpochMs=ok and epochMs or nil,
-        identityVesselUUID=boundedString(uuid,128) and uuid or nil,
-        computers=Fleet.clone(self.computers or {})}
-end
-
-function IO:observeIdentityClaim(sender,message,protocol,now,epochMs)
-    if self.identityWatch then return self.identityWatch:observe(self,sender,message,protocol,now,epochMs) end
-end''', 'registry publication')
-        io = change(io, '        targets = {}, anchor = "OFF", ap = "UNAVAILABLE", throttleApplied = nil, faults = {},',
-            '        targets = {}, anchor = "OFF", ap = "UNAVAILABLE", throttleApplied = nil, faults = {},\n'
-            '        identityConflict=self.identityWatch and self.identityWatch:snapshot(now) or {active=false},', 'core status snapshot')
-        io = change(io, '    for role,report in pairs(self.roleReports or {}) do',
-            '    self:logState("identityConflict",state.identityConflict.active and state.identityConflict.text or nil)\n'
-            '    for role,report in pairs(self.roleReports or {}) do', 'identity warning log')
-    if "-- Identity conflict receiver v1" not in main:
-        main = change(main,
-            '            inbox:push(from,payload,channel,io:nowSeconds(),os.epoch("utc"))',
-            '            -- Identity conflict receiver v1: observe before routine coalescing; never yield.\n'
-            '            local receivedAt,receivedEpoch=io:nowSeconds(),os.epoch("utc")\n'
-            '            pcall(io.observeIdentityClaim,io,from,payload,channel,receivedAt,receivedEpoch)\n'
-            '            inbox:push(from,payload,channel,receivedAt,receivedEpoch)', 'core radio receiver')
-        main = change(main, '    local vessel, rows = snapshot.vessel or {}, {}',
-            '    local vessel, rows = snapshot.vessel or {}, {}\n'
-            '    local conflict=snapshot.identityConflict or {}\n'
-            '    if conflict.active then\n'
-            '        rows[#rows+1]="IDENTITY WARNING: "..clean(conflict.text)\n'
-            '        rows[#rows+1]=clean(conflict.detail)\n'
-            '        for _,alert in ipairs(conflict.alerts or {}) do\n'
-            '            rows[#rows+1]="#"..tostring(alert.id).." "..clean(alert.role)..": "..clean(alert.detail)\n'
-            '            if alert.localIdentity then rows[#rows+1]="  Local: "..clean(alert.localIdentity) end\n'
-            '            for _,claim in ipairs(alert.claims or {}) do\n'
-            '                rows[#rows+1]="  Seen: "..clean(claim.identity).." / seq "..clean(claim.sequence)\n'
-            '            end\n'
-            '        end\n'
-            '    end', 'core monitor')
-    if "-- Identity conflict bridge warning v1" not in ui:
-        ui = change(ui, 'local function firstThrustIssue(snapshot, live)\n    if not live then return "THRUST STATUS STALE" end',
-            'local function firstThrustIssue(snapshot, live)\n    if not live then return "THRUST STATUS STALE" end\n'
-            '    -- Identity conflict bridge warning v1\n'
-            '    local conflict=snapshot.identityConflict or {}\n'
-            '    if conflict.active then return conflict.text end', 'bridge status line')
-        ui = change(ui, '        if assembly then offer(assembly.reason or ("VESSEL "..tostring(assembly.state)),"red") end',
-            '        if assembly then offer(assembly.reason or ("VESSEL "..tostring(assembly.state)),"red") end\n'
-            '        local conflict=snapshot.identityConflict or {}\n'
-            '        if live and conflict.active then offer(conflict.text,"red") end', 'bridge flight warning')
-        ui = change(ui, '    if #faults > 0 then\n        faultText, faultTone = clampText(faults[1], surface.width - 4), "red"',
-            '    local conflict=snapshot.identityConflict or {}\n'
-            '    if live and conflict.active then\n'
-            '        faultText,faultTone=clampText(conflict.text,surface.width-4),"red"\n'
-            '    elseif #faults > 0 then\n        faultText, faultTone = clampText(faults[1], surface.width - 4), "red"', 'bridge ship warning')
-    payload["/avionics/io.lua"] = io.encode()
-    payload["/avionics/main.lua"] = main.encode()
-    payload["/packages/navigation/ui.lua"] = ui.encode()
-
-
-
-def control_persistence_overlays(payload):
-    """Retain explicit heading/throttle selections across automatic handovers."""
-    # Apply a supported persistent-selection revision or accept its existing result.
-    def change(path, old, new, label, count=1):
-        text=payload[path].decode("utf-8")
-        if new in text:
-            require(text.count(new)==count and text.count(old)==count*new.count(old),
-                    "Partial persistent-mode overlay: "+label)
-            return
-        require(text.count(old)==count,"Unsupported persistent-mode source: "+label)
-        payload[path]=text.replace(old,new).encode("utf-8")
-    change("/avionics/autopilot.lua",
-           '        controls.modes.throttle="MANUAL";controls.modes.heading="MANUAL"',
-           '''        -- Keep the pilot's selections; only live authority is handed back.
-        controls.requireNeutral=true;controls.waitThrottle=true;controls.waitHeading=true''',
-           "AP handover")
-    change("/avionics/anchor.lua",
-           '        controls.modes.throttle="DIRECT";controls.request=0',
-           '''        -- Preserve the pilot's selected throttle mode and target.
-        controls.request=0;controls.yaw=0;controls.requireNeutral=true;controls.waitHeading=true''',
-           "anchor handover")
-    change("/avionics/controls.lua",
-           '        io.autopilot:cancel(io,self,"PILOT DISENGAGED AUTOPILOT; MANUAL CONTROL")\n        anchorActive=io.positionAnchor and io.positionAnchor.active',
-           '''        io.autopilot:cancel(io,self,"PILOT DISENGAGED AUTOPILOT; SELECTED MODES RETAINED")
-        return -- Do not consume the disconnect sample again as a manual command.''',
-           "disconnect neutral boundary")
-    change("/avionics/flight.lua",
-           '        if ok and io.controlPresets then io.controlPresets:cancelRestore() end',
-           '''        if ok and io.controlPresets then
-            io.controlPresets:cancelRestore()
-            -- Persist the explicit selection before its acknowledgement.
-            io.controlPresets:update(io,self,now)
-        end''',
-           "durable mode acknowledgement",2)
-    for path in ("/avionics/flight.lua","/avionics/autopilot.lua","/avionics/remote_ap.lua"):
-        text=payload[path].decode("utf-8").replace("MANUAL CONTROL","SELECTED MODES RETAINED")
-        payload[path]=text.encode("utf-8")
-    for path in ("/avionics/anchor.lua","/avionics/flight.lua"):
-        text=payload[path].decode("utf-8").replace("DIRECT THROTTLE REQUIRES NEUTRAL","SELECTED MODE RETAINED; NEUTRAL REQUIRED")
-        text=text.replace("-- Release means a neutral handover, never restoring a nonzero SEL\n        -- target or immediately applying a lever held during anchoring.",
-                          "-- Release preserves selection and requires a neutral-input handover.")
-        payload[path]=text.encode("utf-8")
-    path="/avionics/controls.lua"
-    text=payload[path].decode("utf-8").replace("-- interpreted and nothing accumulates. clear() drops SEL modes and",
-                                            "-- interpreted and nothing accumulates. clear() retains selections and")
-    payload[path]=text.encode("utf-8")
-
-# Validate source files, apply guarded revisions and collect portable payloads.
-def collect(selection, include_learning=True, log=lambda s: None, library=None):
-    core, computers = locate_core(selection)
-    require(core.name.isdecimal(), "The selected core folder must be its numeric ComputerCraft ID folder.")
+# Summary: Validate and package the staged project core: registry, programs, package manifests, learning and state reader files.
+def collect(core, include_learning=True, log=lambda s: None):
+    core = Path(core).resolve()
+    computers = core.parent
     snap = Snapshot(computers)
     fleet = decode(snap.read(core / "fleet.json"), "fleet.json")
     require(isinstance(fleet, dict) and fleet.get("schemaVersion") == 1 and isinstance(fleet.get("computers"), dict), "Unsupported fleet registry.")
@@ -754,15 +291,12 @@ def collect(selection, include_learning=True, log=lambda s: None, library=None):
         if record.get("id") is not None:
             require(type(record["id"]) is int and 0 <= record["id"] <= 65535 and record["id"] not in ids, "The fleet registry contains invalid or duplicate IDs.")
             ids.add(record["id"])
-    log(f"Found {registry['core']['label']} (computer #{core.name}).")
     loader = (HOME / "assets/runtime-loader.lua").read_bytes()
     asset_hashes = decode((HOME / "assets/asset-hashes.json").read_bytes(), "builder assets")
     require(sha(loader) == asset_hashes.get("runtime-loader.lua"), "Builder runtime loader changed or is damaged.")
     payload = {}
     for directory in ("avionics", "packages", "installer"):
         root = core / directory
-        if directory == "packages" and not root.exists():
-            continue
         require(root.is_dir() and not linked(root), f"Required source folder is missing or linked: {directory}")
         for folder, dirs, files in os.walk(root, followlinks=False):
             for child in dirs:
@@ -777,37 +311,9 @@ def collect(selection, include_learning=True, log=lambda s: None, library=None):
                 if path.suffix == ".json":
                     value = decode(data, relative)
                     require(isinstance(value, dict), f"Expected a JSON object in {relative}.")
-                    if relative.startswith("packages/") and name == "config.json":
-                        require(not any(k in value for k in ("install", "coreId", "computerId", "computer_id")),
-                                f"Package config contains installation-specific identity: {relative}. Export clean core package sources.")
-                    if relative in LINKS:
-                        link = value["primaryDirection"]["link"]
-                        link["itemID1"], link["itemID2"] = LINKS[relative]
-                        data = encode(value)
                 payload["/" + relative] = data
     payload["/startup.lua"] = snap.read(core / "startup.lua")
-    try:
-        payload = bundling.expand(payload, loader)
-        if "/installer/server.lua" in payload:
-            payload["/installer/server.lua"] = bundling.server_source(payload["/installer/server.lua"])
-    except (ValueError, KeyError, TypeError) as error:
-        raise BuildError("Cannot recover editable core source from bundle: " + str(error)) from error
-    media_snapshot = None
-    package_source = {"kind": "core-library"}
-    if not any(p.startswith("/packages/") for p in payload):
-        recovered, media_snapshot, package_source = recover_package_library(
-            payload, snap, registry, core, computers, loader, library, log)
-        payload.update(recovered)
-    try:
-        library_files = {p: d for p, d in payload.items() if p.startswith("/packages/")}
-        if library_files:
-            recovered = bundling.library_source(library_files, FOLDERS, loader)
-            payload = {p: d for p, d in payload.items() if not p.startswith("/packages/")}
-            payload.update(recovered)
-    except (ValueError, KeyError, TypeError) as error:
-        raise BuildError("Cannot recover editable auxiliary source from bundle: " + str(error)) from error
     information.strip_notes(payload)
-    source_notes.revise(payload, reverse=True)
     for path, data in list(payload.items()):
         if path.startswith("/packages/") and path.endswith("/config.json"):
             value = decode(data, path)
@@ -865,7 +371,7 @@ def collect(selection, include_learning=True, log=lambda s: None, library=None):
         notes.append("Saved learning was intentionally excluded.")
     assets_manifest = decode((HOME / "assets/asset-hashes.json").read_bytes(), "builder assets")
     assets = {}
-    for name in ("setup.lua", "startup.lua", "auxiliary-startup.lua", "bootstrap-launcher.lua", "installer.lua", "core-progress.lua", "core-media.lua", "identity-watch.lua", "runtime-loader.lua", "systems-menu.lua", "panel-console.lua", "remote-panel.lua"):
+    for name in ("setup.lua", "startup.lua", "auxiliary-startup.lua", "bootstrap-launcher.lua", "installer.lua", "core-progress.lua", "core-media.lua", "runtime-loader.lua", "panel-console.lua", "remote-panel.lua", "disk-download.lua", "web-setup.lua", "pastebin-loader.lua"):
         data = (HOME / "assets" / name).read_bytes()
         require(sha(data) == assets_manifest.get(name), f"Builder support file changed or is damaged: {name}. Restore the utility's assets folder.")
         assets[name] = data
@@ -874,19 +380,7 @@ def collect(selection, include_learning=True, log=lambda s: None, library=None):
             b"deps.progress:update(status)" in server and b"deps.progress:draw(status)" in server,
             "Core installer does not expose the supported progress interface. Update the builder for this installer version.")
     payload["/installer/progress.lua"] = assets["core-progress.lua"]
-    payload["/installer/server.lua"] = disk_server(server)
     payload["/installer/media.lua"] = assets["core-media.lua"]
-    lift_recovery_overlays(payload)
-    vessel_recovery_overlays(payload)
-    identity_overlays(payload, assets)
-    if presentation.apply(payload, assets["systems-menu.lua"], require):
-        manifest_path="/packages/navigation/manifest.json"
-        nav_manifest=decode(payload[manifest_path],"bridge package manifest")
-        require(nav_manifest["version"]<65535,"Bridge package version cannot be advanced for the Systems menu.")
-        nav_manifest["version"]+=1
-        payload[manifest_path]=encode(nav_manifest)
-        versions["navigator"]=nav_manifest["version"]
-    information.apply(payload)
     package_library = {p: payload.pop(p) for p in list(payload) if p.startswith("/packages/")}
     library_notes,_ = source_notes.annotate(package_library)
     catalog = {"schemaVersion": 1, "files": library_entries(package_library), "roles": {
@@ -898,49 +392,8 @@ def collect(selection, include_learning=True, log=lambda s: None, library=None):
     payload["/avionics/common/console.lua"] = package_library["/packages/common/console.lua"]
     presentation.apply_console(payload, assets["panel-console.lua"], require)
     presentation.apply_remote(payload, assets["remote-panel.lua"], require)
-    presentation.apply_remote_transient(payload, require)
-    presentation.apply_remote_reads(payload, require)
-    control_persistence_overlays(payload)
-    # Keep the core header consistent with retained-intent automatic resumption.
-    payload["/avionics/main.lua"] = payload["/avionics/main.lua"].replace(
-        b'-- authority. Only an explicitly saved, one-shot systems restart resumes it.',
-        b'-- authority. Retained running intent can resume after validation; coordinated\n-- restarts also restore their explicit one-shot checkpoint.')
     startup = payload["/startup.lua"]
-    require(b'/packages/common/console.lua' in startup or b'/avionics/common/console.lua' in startup, "Unsupported core startup console path.")
-    payload["/startup.lua"] = startup.replace(b'/packages/common/console.lua', b'/avionics/common/console.lua')
-    io = payload["/avionics/io.lua"]
-    # Correct legacy assembly comments in exported IO without changing Lua statements.
-    io = io.replace(b'--   missing/failed/stale   UNKNOWN, gate stays closed',
-                    b'--   missing/failed/stale   ASSEMBLED but unverified, gate stays open')
-    io = io.replace(b'-- that answer only expires after network.sensor_stale_seconds without\n-- another definite read. This stops a single bad read flickering the gate.',
-                    b'-- Fresh Sable association takes precedence over a fresh assembler result.\n-- Unresolved verification keeps the gate open and warns after five minutes.\n-- Applied lift settings remain retained through verification uncertainty.')
-    io = io.replace(b'    -- Assembly uncertainty has three six-second retry windows. This is\n    -- independent of ordinary sensor freshness; explicit false never waits.',
-                    b'    -- Three six-second windows describe assembly verification age only.\n    -- Expiry leaves the gate open but unverified; it does not stop systems.\n    -- Explicit false blocks immediately until a later true reading.')
-    if b'-- Disk-library role metadata' not in io:
-        old = b'    for role,path in pairs(ROLE_MANIFESTS) do\n        local manifest\n'
-        require(old in io and b'        if manifest then self.expectedPackages[role]' in io,
-                "Unsupported core role-version lookup. Update the builder for this IO version.")
-        start = io.index(old)
-        end = io.index(b'        if manifest then self.expectedPackages[role]', start)
-        io = io[:start] + b'''    -- Disk-library role metadata remains local when media is removed.
-    local catalog
-    if self.fs and self.json then
-        local ok,handle=pcall(self.fs.open,"/installer/library.json","r")
-        if not ok or not handle then ok,handle=pcall(self.fs.open,"/installer/library.json.amaryllis-backup","r") end
-        if ok and handle then
-            local readOK,raw=pcall(handle.readAll);pcall(handle.close)
-            if readOK and type(raw)=="string" and #raw<=65536 then
-                local decoded,value=pcall(self.json.unserializeJSON,raw)
-                if decoded and type(value)=="table" and value.schemaVersion==1 and type(value.roles)=="table" then catalog=value end
-            end
-        end
-    end
-    for role,path in pairs(ROLE_MANIFESTS) do
-        local manifest=catalog and catalog.roles[role]
-        if type(manifest)~="table" or not boundedString(manifest.packageId,64) or not integer(manifest.version,1,65535) then manifest=nil end
-''' + io[end:]
-        io = re.sub(rb'"/packages/[^"\r\n]+/manifest.json"', b'"/installer/library.json"', io)
-    payload["/avionics/io.lua"] = io
+    require(b'/avionics/common/console.lua' in startup, "Unsupported core startup console path.")
     core_notes,_ = source_notes.annotate(payload)
     # Resolve state dependencies from the final overlaid core source. This is
     # stable when rebuilding an installed bundle and includes newly added imports.
@@ -957,44 +410,78 @@ def collect(selection, include_learning=True, log=lambda s: None, library=None):
     state_payload = {"/avionics/" + name: payload["/avionics/" + name] for name in sorted(state_names)}
     state_payload["/avionics/config.json"] = encode({"schemaVersion": 1, "role": "state", "label": registry["state"]["label"]})
     state_payload["/startup.lua"] = b'if multishell and shell.openTab then local t=shell.openTab("/avionics/state_reader.lua");multishell.setTitle(t,"ama-state") else shell.run("/avionics/state_reader.lua") end\n'
-    notes.append("Package sources: " + package_source["kind"] + ".")
     notes.append("Auxiliary package programs remain on removable media; core retains its console and trusted version metadata.")
-    notes.append("Included Systems Options dropdown, retained lift-kill confirmation/disarm controls and approved bridge wording changes.")
-    notes.append("Included advisory duplicate-ID detection on existing core/session and role-boot traffic; flight authority is unchanged.")
-    notes.append("Included automatic retained-lift recovery for expired probe/control leases and missed command acknowledgements.")
-    notes.append("Missing/stale vessel identity now waits for fresh validation; abort recovery restores core's retained target intent after hardware checks.")
-    nav_id = registry["navigator"].get("id")
-    installed_client = computers / str(nav_id) / "installer.lua" if nav_id is not None else None
-    if installed_client and installed_client.is_file():
-        client = snap.read(installed_client)
-        require(b"amaryllis.install.v1" in client, "Navigator's bootstrap installer is not recognized.")
-        assets["installer.lua"] = client
-        notes.append("Auxiliary bootstrap copied from the registered navigator.")
-    else:
-        notes.append("Navigator bootstrap was unavailable; included the utility's tested compatible bootstrap.")
     log(f"Validated {len(payload)} core files and {len(versions)} auxiliary packages.")
     return {"core": core, "computers": computers, "snapshot": snap, "payload": payload, "state": state_payload,
             "calibration": calibration, "assets": assets, "roles": {r: {"label": v["label"]} for r, v in registry.items()},
             "versions": versions, "notes": notes, "library": package_library, "catalog": catalog,
-            "mediaSnapshot": media_snapshot, "packageSource": package_source,
             "sourceDocumentation": core_notes + library_notes}
 
 
 # Describe the generated media, setup procedure and update helper.
+PYTHON_RUNTIME_SKIP_DIRS = {"__pycache__", "site-packages", "test", "tests", "idlelib", "turtledemo", "ensurepip", "lib2to3"}
+
+
+# Section: Windows helpers | Bundled Python runtime for the settings and update tools.
+# Summary: Copy this Windows Python install, with Tcl/Tk, into a folder that the helper launchers can run.
+def bundle_python_runtime(destination, base=None, windows=None):
+    destination = Path(destination)
+    base = Path(base or sys.base_prefix)
+    if not (os.name == "nt" if windows is None else windows) or not (base / "python.exe").is_file() or not (base / "tcl").is_dir():
+        return None, "Python was not bundled because this build did not run on a Windows Python with Tcl/Tk."
+    def keep(directory, names):
+        return [name for name in names if name in PYTHON_RUNTIME_SKIP_DIRS or name.lower().endswith((".pdb", ".lib", ".pyc"))]
+    try:
+        destination.mkdir(parents=True)
+        for item in base.iterdir():
+            lowered = item.name.lower()
+            if item.is_dir() and lowered in ("dlls", "lib", "tcl"):
+                shutil.copytree(item, destination / item.name, ignore=keep)
+            elif item.is_file() and lowered.endswith((".exe", ".dll", ".txt")) and not lowered.startswith(("unins", "vcredist")):
+                shutil.copy2(item, destination / item.name)
+        check = subprocess.run([str(destination / "python.exe"), "-I", "-c",
+                                "import sys, tkinter; tkinter.Tcl(); sys.exit(0 if sys.version_info >= (3, 11) else 1)"],
+                               capture_output=True, timeout=30)
+        if check.returncode != 0:
+            raise RuntimeError(check.stderr.decode(errors="replace").strip() or "bundled Python failed its Tcl/Tk check")
+    except BaseException as error:
+        shutil.rmtree(destination, ignore_errors=True)
+        return None, f"Python was not bundled: {error}"
+    return destination, "Python " + sys.version.split()[0] + " with Tcl/Tk is bundled in the python folder."
+
+
+# Section: Windows helpers | Bundled Python runtime for the settings and update tools.
+# Summary: Build a helper launcher that prefers the bundled Python and falls back to the standard search.
+def helper_launcher(script, remove_gui=False):
+    original = (HOME / "Start Builder.cmd").read_bytes().replace(b"builder.py", script.encode())
+    if remove_gui:
+        original = original.replace(b" --gui", b"")
+    lines = original.split(b"\r\n")
+    bundled = [b'if exist "%~dp0..\\python\\pythonw.exe" (',
+               b'    start "" "%~dp0..\\python\\pythonw.exe" "%~dp0' + script.encode() + b'"',
+               b"    exit /b", b")"]
+    return b"\r\n".join(lines[:2] + bundled + lines[2:])
+
+
 def installer_readme(manifest, report):
-    state = report.get("source", {}).get("dirty")
+    state = report["source"]["dirty"]
     edits = "yes" if state is True else "no" if state is False else "unknown"
     return (f"# Amaryllis installer {manifest['releaseId']}\n\n"
-            + ("Software source: maintained project\n"
-               f"Revision: {report['source']['commit'] or 'unversioned source snapshot'}\n"
-               f"Includes uncommitted changes: {edits}\n"
-               f"Source fingerprint: {report['source']['sourceTreeSHA256']}\n\n" if report.get("source") else "Software source: saved-ship export\n\n") +
+            + "Software source: maintained project\n"
+            + f"Revision: {report['source']['commit'] or 'unversioned source snapshot'}\n"
+            + f"Includes uncommitted changes: {edits}\n"
+            + f"Source fingerprint: {report['source']['sourceTreeSHA256']}\n\n" +
             "Copy the contents of media/ to an empty, writable ComputerCraft installer disk.\n"
             f"Allow at least {report['minimumMediaCapacityBytes']:,} bytes of disk capacity and 4,000,000 bytes per computer.\n\n"
+            "Web install: the GitHub release workflow publishes media/ on the release branch, and the\n"
+            "Pastebin loader (media/loader.lua) runs web-setup.lua on each computer: install core first,\n"
+            "then register every other computer with core over rednet, then import on core.\n"
+            "To fill a floppy disk from the web instead, run media/download.lua with wget run.\n\n"
+            "The python/ folder, when present, lets the Windows helpers run without a separate Python install.\n"
             "To prepare a Windows Minecraft instance, open windows-settings/Configure ComputerCraft.cmd.\n"
             "It previews capacity/thread edits, requires Minecraft/server closed, and backs up the selected\n"
             "computercraft-server.toml. These Windows helpers do not go onto the in-game disk.\n\n"
-            "For an existing ship, save and fully close Minecraft. Run windows-update/Update Amaryllis.cmd,\n"
+            "For an existing ship, run windows-update/Update Amaryllis.cmd (Minecraft may stay open),\n"
             "select the existing save and this media folder, then preview and apply the replacement.\n"
             "It updates all registered computers, retains stored settings and learning, backs up outside\n"
             "the save and removes obsolete managed programs. Use Restore backup for recovery.\n\n"
@@ -1013,7 +500,7 @@ def installer_readme(manifest, report):
             "On receiving auxiliaries the temporary setup screen removes itself after a verified\n"
             "package receipt; the normal updater and recovery records remain.\n\n"
             + ("Program modules are bundled per computer. Configuration and saved learning remain\n"
-               "separate. Media remains useful for installation and repair; complete ships can rebuild without it.\n\n" if report.get("bundling") else "") +
+               "separate. Media remains useful for installation and repair.\n\n" if report.get("bundling") else "") +
             "Watch core's Installation page for the package roster, current file, transfer percentage,\n"
             "verification and faults. It announces completion after all 14 wireless packages verify.\n"
             "The state reader uses direct disk setup; check its wired link separately.\n\n"
@@ -1022,16 +509,33 @@ def installer_readme(manifest, report):
             "it again for auxiliary repair. Choose Adopt auxiliary package library in Setup,\n"
             "with core stopped; it verifies all objects and requires the same core runtime.\n"
             "Use the Windows updater for core/state replacement and loose-file migration.\n"
-            "Keep this disk or media for installation and repair. Complete supported ships can rebuild without it.\n\n"
+            "Keep this disk or media for installation and repair.\n\n"
             "If included, saved hover/level defaults seed missing core learning files only.\n"
             "Different loads or balloon layouts may need further settling and learning.\n\n"
-            "This export contains saved source files. File/package checks do not establish\n"
+            "This release contains the maintained project source. File/package checks do not establish\n"
             "which code was running in-game, compile Lua, or certify flight behavior.\n")
 
 
-# Export, verify and package a new installer in a unique output folder.
-def build(selection, output_parent, include_learning=True, log=lambda s: None, library=None, bundle=True, *, project_source=False):
-    source = collect_project(selection, include_learning, log) if project_source else collect(selection, include_learning, log, library)
+# Build verified runtime media and optionally export the distributable installer package.
+# The web downloader (download.lua) fetches the media folder file by file in this
+# order: objects first, the installer and manifests next, startup.lua last, so a
+# disk boots only from a complete download. The index lists neither itself nor
+# loader.lua, whose repository the release workflow fills in after the build.
+DOWNLOAD_LAST = ("library.json", "setup.lua", "download.lua", "web-setup.lua", "release.json", "startup.lua")
+
+
+def write_download_index(media, release_id):
+    """Write media/download.json: every media file with its size and Adler-32, in download order."""
+    def entry(path):
+        data = (media / path).read_bytes()
+        return {"path": path, "bytes": len(data), "adler32": f"{zlib.adler32(data):08X}"}
+    objects = sorted("objects/" + p.name for p in (media / "objects").iterdir() if p.is_file())
+    files = [entry(p) for p in objects] + [entry(p) for p in DOWNLOAD_LAST]
+    (media / "download.json").write_bytes(encode({"schemaVersion": 1, "releaseId": release_id, "files": files}))
+
+
+def build(selection, output_parent, include_learning=True, log=lambda s: None, bundle=True, *, installer_package=True):
+    source = collect_project(selection, include_learning, log)
     if bundle:
         try:
             source = bundling.prepare(source, FOLDERS)
@@ -1044,28 +548,20 @@ def build(selection, output_parent, include_learning=True, log=lambda s: None, l
         require(len(encode(catalog)) <= 65536 and len(catalog["files"]) <= 256, "Bundled catalog exceeds metadata limits.")
         source["catalog"] = catalog
         source["payload"]["/installer/library.json"] = encode(catalog)
-        # Fresh receivers need the bundled-layout allowlist, even when the source
-        # ship still has an older installed bootstrap client.
-        source["assets"] = dict(source["assets"])
-        source["assets"]["installer.lua"] = (HOME / "assets/installer.lua").read_bytes()
     # Document the final commissioning copies after bootstrap selection.
     exported_assets={"/disk/"+name:source["assets"][name] for name in
                      ("setup.lua","startup.lua","installer.lua","bootstrap-launcher.lua","auxiliary-startup.lua")}
+    exported_assets["/disk/download.lua"]=source["assets"]["disk-download.lua"]
+    exported_assets["/disk/web-setup.lua"]=source["assets"]["web-setup.lua"]
     information.strip_notes(exported_assets)
     installer_notes,_=source_notes.annotate(exported_assets)
     source["assets"]=dict(source["assets"])
-    for path,data in exported_assets.items():source["assets"][path.removeprefix("/disk/")]=data
+    for path,data in exported_assets.items():
+        name=path.removeprefix("/disk/");source["assets"]["disk-download.lua" if name=="download.lua" else name]=data
     source["sourceDocumentation"].extend(installer_notes)
     parent = Path(output_parent).expanduser().resolve()
     require(parent.is_dir(), "Choose an existing output folder.")
-    # Protect the entire selected save, not just its core subfolder.
-    if not project_source:
-        protected = source["computers"].parent.parent
-        require(not parent.is_relative_to(protected), "Output must be outside the selected Minecraft save.")
-    else:
-        require(not parent.is_relative_to(source["core"] / "source"), "Output must be outside editable source folders.")
-    require(not source["mediaSnapshot"] or not parent.is_relative_to(source["mediaSnapshot"].root),
-            "Output must be outside the selected package media folder.")
+    require(not parent.is_relative_to(source["core"] / "source"), "Output must be outside editable source folders.")
     token = uuid.uuid4().hex[:8]
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     staging = parent / f"Amaryllis-INCOMPLETE-{stamp}-{token}"
@@ -1091,13 +587,18 @@ def build(selection, output_parent, include_learning=True, log=lambda s: None, l
                 "capturedDate": datetime.now().date().isoformat(), "files": entries(source["calibration"])}
         # Bind commissioning scripts too, so changing the installer changes the release ID.
         manifest["installerScripts"] = {name: sha(source["assets"][name]) for name in ("setup.lua", "startup.lua")}
-        if project_source:
-            manifest["source"] = source["provenance"]
+        manifest["source"] = source["provenance"]
         manifest["releaseId"] = "amaryllis-" + sha(json.dumps(manifest, sort_keys=True).encode())[:12]
         (media / "release.json").write_bytes(encode(manifest))
         (media / "library.json").write_bytes(encode(source["catalog"]))
         for name in ("setup.lua", "startup.lua"):
             (media / name).write_bytes(source["assets"][name])
+        (media / "download.lua").write_bytes(source["assets"]["disk-download.lua"])
+        # Web install: web-setup.lua runs on every computer; loader.lua is the Pastebin
+        # text, its repository filled in by the GitHub Actions release workflow.
+        (media / "web-setup.lua").write_bytes(source["assets"]["web-setup.lua"])
+        (media / "loader.lua").write_bytes(source["assets"]["pastebin-loader.lua"])
+        write_download_index(media, manifest["releaseId"])
         core_bytes = sum(e["bytes"] for e in manifest["core"]) + sum(len(d) for d in source["calibration"].values())
         require(core_bytes + 65536 < 4_000_000, "Core payload no longer fits the supported 4 MB installation budget.")
         media_bytes = sum(p.stat().st_size for p in media.rglob("*") if p.is_file())
@@ -1108,74 +609,75 @@ def build(selection, output_parent, include_learning=True, log=lambda s: None, l
                   "mediaBytes": media_bytes, "minimumMediaCapacityBytes": media_bytes + 16384,
                   "packageVersions": source["versions"], "learningFiles": len(source["calibration"]),
                   "notes": source["notes"], "packageSource": source["packageSource"],
-                  "sourceFiles": source["snapshot"].inputs if project_source else {
-                      str(p.relative_to(source["computers"])): sha(d) for p, d in source["snapshot"].files.items()},
+                  "sourceFiles": source["snapshot"].inputs,
                   "builderOverrides": {path: sha(source["payload"][path]) for path in
                       ("/installer/progress.lua", "/installer/server.lua", "/installer/media.lua", "/avionics/io.lua",
                        "/avionics/main.lua", "/avionics/identity_watch.lua", "/startup.lua") if path in source["payload"]},
                   "bundling": source.get("bundleCounts"),
-                  "validation": {"objects": True, "sourceStable": True, "archive": True,
-                                 "luaCompiled": False, "inGameAcceptance": False}}
-        if project_source:
-            report["source"] = source["provenance"]
+                  "validation": {"objects": True, "sourceStable": True, "archive": installer_package,
+                                 "luaCompiled": False, "inGameAcceptance": False},
+                  "source": source["provenance"]}
         if not bundle:
             report["builderOverrides"]["/packages/navigation/ui.lua"] = sha(source["library"]["/packages/navigation/ui.lua"])
-        (staging / "README.md").write_text(installer_readme(manifest, report), encoding="utf-8")
-        helper = staging / "windows-settings"
-        helper.mkdir()
-        (helper / "cc_settings.py").write_bytes((HOME / "cc_settings.py").read_bytes())
-        launcher = (HOME / "Start Builder.cmd").read_bytes().replace(b"builder.py", b"cc_settings.py").replace(b" --gui", b"")
-        (helper / "Configure ComputerCraft.cmd").write_bytes(launcher)
-        (helper / "README.md").write_text(
-            "# ComputerCraft settings helper\n\n"
-            "Run Configure ComputerCraft.cmd on Windows, using Python 3.11+ with Tcl/Tk.\n"
-            "Select the active computercraft-server.toml, load it, and preview capacity/thread\n"
-            "changes. Capacities require at least 4 MB and can only increase. Threads start\n"
-            "at the current value; higher counts can affect lag and mod compatibility.\n\n"
-            "Close Minecraft/server fully before applying. The helper checks running Java\n"
-            "processes too, but cannot identify every custom launcher. It changes only the\n"
-            "two capacity values and execution.computer_threads. Other settings are preserved.\n"
-            "A verified backup and hash record are saved beside the selected file. Restore\n"
-            "backup returns the previous file and capacity limits, and refuses newer edits.\n\n"
-            "An instance-wide config affects all worlds in that instance. Restart afterward.\n"
-            "This helper does not update ship programs. Keep windows-settings on Windows;\n"
-            "only the separate media folder belongs on the in-game installer disk.\n", encoding="utf-8")
-        update_helper = staging / "windows-update"
-        (update_helper / "assets").mkdir(parents=True)
-        for name in ("updater.py", "bundling.py", "cc_settings.py"):
-            (update_helper / name).write_bytes((HOME / name).read_bytes())
-        (update_helper / "assets/runtime-loader.lua").write_bytes(source["assets"]["runtime-loader.lua"])
-        for name in ("bootstrap-launcher.lua", "asset-hashes.json"):
-            (update_helper / "assets" / name).write_bytes((HOME / "assets" / name).read_bytes())
-        update_launcher = (HOME / "Start Builder.cmd").read_bytes().replace(b"builder.py", b"updater.py")
-        (update_helper / "Update Amaryllis.cmd").write_bytes(update_launcher)
-        (update_helper / "README.md").write_text(
-            "# Update an existing Amaryllis\n\nSave and fully close Minecraft. Run Update Amaryllis.cmd.\n"
-            "Select the existing save or its numeric core folder. The new media folder is selected automatically.\n"
-            "Choose a backup folder outside the save, preview the file changes, then apply the update.\n"
-            "All 16 registered computers are updated together. Stored settings and avionics/data are retained.\n"
-            "Old managed programs and core's package library are removed after a verified external backup.\n"
-            "Load the world after completion. Media remains useful for installation or repair.\n"
-            "Restore backup checks for newer edits before restoring. If interrupted, keep Minecraft closed\n"
-            "and select the transaction's Amaryllis-update folder using Restore backup.\n"
-            "This helper requires Windows and Python 3.11+ with Tcl/Tk. Keep windows-update on Windows.\n", encoding="utf-8")
+        if installer_package:
+            (staging / "README.md").write_text(installer_readme(manifest, report), encoding="utf-8")
+            helper = staging / "windows-settings"
+            helper.mkdir()
+            (helper / "cc_settings.py").write_bytes((HOME / "cc_settings.py").read_bytes())
+            (helper / "Configure ComputerCraft.cmd").write_bytes(helper_launcher("cc_settings.py", True))
+            (helper / "README.md").write_text(
+                "# ComputerCraft settings helper\n\n"
+                "Run Configure ComputerCraft.cmd on Windows. It uses the python folder next to this one when present,\n"
+                "otherwise Python 3.11+ with Tcl/Tk.\n"
+                "Select the active computercraft-server.toml, load it, and preview capacity/thread\n"
+                "changes. Capacities require at least 4 MB and can only increase. Threads start\n"
+                "at the current value; higher counts can affect lag and mod compatibility.\n\n"
+                "Close Minecraft/server fully before applying. The helper checks running Java\n"
+                "processes too, but cannot identify every custom launcher. It changes only the\n"
+                "two capacity values and execution.computer_threads. Other settings are preserved.\n"
+                "A verified backup and hash record are saved beside the selected file. Restore\n"
+                "backup returns the previous file and capacity limits, and refuses newer edits.\n\n"
+                "An instance-wide config affects all worlds in that instance. Restart afterward.\n"
+                "This helper does not update ship programs. Keep windows-settings on Windows;\n"
+                "only the separate media folder belongs on the in-game installer disk.\n", encoding="utf-8")
+            update_helper = staging / "windows-update"
+            (update_helper / "assets").mkdir(parents=True)
+            for name in ("updater.py", "bundling.py", "cc_settings.py"):
+                (update_helper / name).write_bytes((HOME / name).read_bytes())
+            (update_helper / "assets/runtime-loader.lua").write_bytes(source["assets"]["runtime-loader.lua"])
+            for name in ("bootstrap-launcher.lua", "asset-hashes.json"):
+                (update_helper / "assets" / name).write_bytes((HOME / "assets" / name).read_bytes())
+            (update_helper / "Update Amaryllis.cmd").write_bytes(helper_launcher("updater.py"))
+            python_folder, python_note = bundle_python_runtime(staging / "python")
+            log(python_note)
+            (update_helper / "README.md").write_text(
+                "# Update an existing Amaryllis\n\nMinecraft may stay open. Run Update Amaryllis.cmd.\n"
+                "Select the existing save or its numeric core folder. The new media folder is selected automatically.\n"
+                "Choose a backup folder outside the save, preview the file changes, then apply the update.\n"
+                "All 16 registered computers are updated together. Stored settings and avionics/data are retained.\n"
+                "Old managed programs and core's package library are removed after a verified external backup.\n"
+                "Reboot each computer (or load the world) to run the new programs. Media remains useful for installation or repair.\n"
+                "Restore backup checks for newer edits before restoring. If interrupted, do not edit the computers\n"
+                "and select the transaction's Amaryllis-update folder using Restore backup.\n"
+                "This helper requires Windows. It uses the python folder next to this one when present, otherwise\n"
+                "Python 3.11+ with Tcl/Tk. Keep windows-update on Windows.\n", encoding="utf-8")
         for group in (manifest["core"], manifest["state"], manifest["bootstrap"], manifest["library"], manifest.get("calibration", {}).get("files", [])):
             for entry in group:
                 data = (objects / entry["object"]).read_bytes()
                 require(sha(data) == entry["object"] and len(data) == entry["bytes"] and
                         f"{zlib.adler32(data):08X}" == entry["adler32"], "Output object verification failed.")
-        share_files = {"README.md": (staging / "README.md").read_bytes(),
-                       **{p.relative_to(staging).as_posix(): p.read_bytes()
-                          for folder in (media, helper, update_helper) for p in folder.rglob("*") if p.is_file()}}
-        archive_path = staging / "amaryllis-installer.zip"
-        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
-            for name, data in sorted(share_files.items()):archive.writestr(name, data)
-        with zipfile.ZipFile(archive_path) as archive:
-            require(archive.testzip() is None and set(archive.namelist()) == set(share_files) and
-                    all(archive.read(n) == d for n, d in share_files.items()), "ZIP verification failed.")
+        if installer_package:
+            share_files = {"README.md": (staging / "README.md").read_bytes(),
+                           **{p.relative_to(staging).as_posix(): p.read_bytes()
+                              for folder in (media, helper, update_helper, *([python_folder] if python_folder else []))
+                              for p in folder.rglob("*") if p.is_file()}}
+            archive_path = staging / "amaryllis-installer.zip"
+            with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
+                for name, data in sorted(share_files.items()):archive.writestr(name, data)
+            with zipfile.ZipFile(archive_path) as archive:
+                require(archive.testzip() is None and set(archive.namelist()) == set(share_files) and
+                        all(archive.read(n) == d for n, d in share_files.items()), "ZIP verification failed.")
         source["snapshot"].check_unchanged()
-        if source["mediaSnapshot"]:
-            source["mediaSnapshot"].check_unchanged()
         (staging / "build-report.json").write_bytes(encode(report))
         final = parent / f"Amaryllis-{stamp}-{manifest['releaseId'].removeprefix('amaryllis-')}-{token}"
         require(not final.exists(), "Output already exists. Choose a new output folder.")
@@ -1218,39 +720,19 @@ def gui():
     style.configure("Title.TLabel", font=("Segoe UI", 19, "bold"))
     frame = ttk.Frame(root, padding=24);frame.pack(fill="both", expand=True)
     ttk.Label(frame, text="Amaryllis Disk Builder", style="Title.TLabel").pack(anchor="w")
-    description=ttk.Label(frame, text="Creates an installation disk from an existing Amaryllis to be used to commission a future blueprint.", wraplength=740, justify="left")
+    description=ttk.Label(frame, text="Builds an installation disk or an existing-ship update from the maintained project source.", wraplength=740, justify="left")
     description.pack(anchor="w", fill="x", pady=(4, 20))
     description.bind("<Configure>", lambda event: description.configure(wraplength=max(1,event.width)))
     project = default_project()
-    mode = tk.StringVar(value="Project source" if project else "Saved ship export")
     source = tk.StringVar(value=str(project) if project else "");learning = tk.BooleanVar(value=True)
-    ttk.Label(frame, text="Software source").pack(anchor="w")
-    mode_box = ttk.Combobox(frame, textvariable=mode, values=("Project source", "Saved ship export"), state="readonly")
-    mode_box.pack(fill="x", pady=(5, 12))
-    source_label = tk.StringVar()
     def choose(variable):
         value = filedialog.askdirectory(parent=root, initialdir=variable.get() or str(Path.home()))
         if value:variable.set(value)
-    def field(label, variable):
-        ttk.Label(frame, textvariable=label).pack(anchor="w")
-        row = ttk.Frame(frame);row.pack(fill="x", pady=(5, 15))
-        ttk.Entry(row, textvariable=variable).pack(side="left", fill="x", expand=True)
-        ttk.Button(row, text="Browse…", command=lambda: choose(variable)).pack(side="right", padx=(8, 0))
-    field(source_label, source)
-    learning_button = ttk.Checkbutton(frame, variable=learning)
-    learning_button.pack(anchor="w")
-    def source_mode_changed(event=None):
-        """Explain whether programs come from the project or a saved installation."""
-        authoritative = mode.get() == "Project source"
-        source_label.set("Amaryllis project folder" if authoritative else "Select a save with an extant and configured A.E.V Amaryllis")
-        description.configure(text="Builds an installation disk or an existing-ship update from the maintained project source." if authoritative else
-                              "Creates an installation disk from an existing Amaryllis to be used to commission a future blueprint.")
-        learning_button.configure(text="Include shipped hover and leveling defaults" if authoritative else
-                                  "Include this ship’s saved hover and leveling corrections")
-        if event is not None:
-            source.set(str(project) if authoritative and project else "")
-    mode_box.bind("<<ComboboxSelected>>", source_mode_changed)
-    source_mode_changed()
+    ttk.Label(frame, text="Amaryllis project folder").pack(anchor="w")
+    source_row = ttk.Frame(frame);source_row.pack(fill="x", pady=(5, 15))
+    ttk.Entry(source_row, textvariable=source).pack(side="left", fill="x", expand=True)
+    ttk.Button(source_row, text="Browse…", command=lambda: choose(source)).pack(side="right", padx=(8, 0))
+    ttk.Checkbutton(frame, variable=learning, text="Include shipped hover and leveling defaults").pack(anchor="w")
     status = tk.StringVar(value="Ready")
     row = ttk.Frame(frame);row.pack(fill="x", pady=(0, 10))
     button = ttk.Button(row, text="Build installer");button.pack(side="left")
@@ -1261,11 +743,9 @@ def gui():
     settings_button = ttk.Button(row, text="ComputerCraft settings…", command=settings);settings_button.pack(side="right")
     update_row = ttk.Frame(frame); update_row.pack(fill="x", pady=(0, 8))
     def update_ship():
-        if mode.get() == "Project source":
-            start(for_update=True)
-            return
+        """Open a source-based updater without exporting an installation disk first."""
         import updater
-        updater.open_dialog(root, source.get())
+        updater.open_dialog(root, project=source.get())
     update_button = ttk.Button(update_row, text="Update existing ship…", command=update_ship)
     update_button.pack(side="left")
     ttk.Label(frame, textvariable=status).pack(anchor="w")
@@ -1275,14 +755,14 @@ def gui():
     events = queue.Queue();last_result = [None];busy = [False]
     def append(message):
         text.configure(state="normal");text.insert("end", message + "\n");text.see("end");text.configure(state="disabled")
-    def worker(selected, destination, include, authoritative, for_update):
-        try:events.put(("update" if for_update else "done", build(selected, destination, include,
-                         lambda line: events.put(("log", line)), project_source=authoritative)))
+    def worker(selected, destination, include):
+        try:events.put(("done", build(selected, destination, include,
+                         lambda line: events.put(("log", line)))))
         except Exception as error:events.put(("error", build_error_details(error)))
     # Validate the selected paths and launch a single background build.
-    def start(for_update=False):
+    def start():
         if busy[0]:return
-        if not source.get().strip():messagebox.showerror("Choose a source", "Select the project folder or source save first.", parent=root);return
+        if not source.get().strip():messagebox.showerror("Choose a source", "Select the Amaryllis project folder first.", parent=root);return
         destination = DEFAULT_OUTPUT
         try:
             # Only create the utility's default output folder automatically.
@@ -1291,29 +771,22 @@ def gui():
         busy[0] = True;button.configure(state="disabled");open_button.configure(state="disabled");settings_button.configure(state="disabled");update_button.configure(state="disabled");status.set("Reading and validating…")
         text.configure(state="normal");text.delete("1.0", "end");text.configure(state="disabled")
         append("Builder "+VERSION+" | Python "+sys.version.split()[0]+" | "+sys.executable)
-        mode_box.configure(state="disabled")
-        threading.Thread(target=worker, args=(source.get(), str(destination), learning.get(), mode.get()=="Project source", for_update), daemon=True).start()
+        threading.Thread(target=worker, args=(source.get(), str(destination), learning.get()), daemon=True).start()
     # Deliver worker progress and completion results to the Tk interface.
     def poll():
         while not events.empty():
             kind, value = events.get_nowait()
             if kind == "log":append(value)
-            elif kind in ("done", "update"):
+            elif kind == "done":
                 result, report = value;last_result[0] = result;busy[0] = False;button.configure(state="normal");open_button.configure(state="normal");settings_button.configure(state="normal");update_button.configure(state="normal")
                 status.set("Installation disk created and verified")
                 append(f"Saved to: {result}");append(f"Share: amaryllis-installer.zip | Required disk space: {report['minimumMediaCapacityBytes']:,} bytes")
-                mode_box.configure(state="readonly")
-                if report.get("source"):
-                    revision=report["source"]
-                    append("Source revision: " + (revision["commit"] or "unversioned source snapshot") +
-                           (" (includes uncommitted changes)" if revision["dirty"] else ""))
-                if kind == "update":
-                    import updater
-                    updater.open_dialog(root, media=str(result / "media"))
+                revision=report["source"]
+                append("Source revision: " + (revision["commit"] or "unversioned source snapshot") +
+                       (" (includes uncommitted changes)" if revision["dirty"] else ""))
             else:
                 busy[0] = False;button.configure(state="normal");settings_button.configure(state="normal");update_button.configure(state="normal");status.set("Build could not be completed");append(value)
                 messagebox.showerror("Build could not be completed", value, parent=root)
-                mode_box.configure(state="readonly")
         root.after(100, poll)
     button.configure(command=start)
     open_button.configure(command=lambda: os.startfile(str(last_result[0])))
@@ -1328,20 +801,15 @@ def gui():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gui", action="store_true")
-    parser.add_argument("--source", type=Path, help="Minecraft save, computercraft/computer folder, or core computer folder")
-    parser.add_argument("--project", type=Path, help="Build maintained source from this Amaryllis project folder")
+    parser.add_argument("--project", type=Path, help="Amaryllis project folder to build")
     parser.add_argument("--output", type=Path, help="Existing parent folder for a new installer")
     parser.add_argument("--without-learning", action="store_true")
     parser.add_argument("--loose", action="store_true", help="Export separate Lua source files instead of runtime bundles")
-    parser.add_argument("--library", type=Path, help="Optional matching installer media override; otherwise recover from the ship or discover media automatically")
     args = parser.parse_args()
-    if args.gui or (args.source is None and args.project is None and args.output is None):gui();return
-    if (args.source is None) == (args.project is None) or args.output is None:
-        parser.error("Choose exactly one of --project or --source, and supply --output")
-    if args.project and args.library:
-        parser.error("--library applies to saved-ship exports only")
-    path, report = build(args.project or args.source, args.output, not args.without_learning, print, args.library,
-                         bundle=not args.loose, project_source=args.project is not None)
+    if args.gui or (args.project is None and args.output is None):gui();return
+    if args.project is None or args.output is None:
+        parser.error("Supply both --project and --output")
+    path, report = build(args.project, args.output, not args.without_learning, print, bundle=not args.loose)
     print(path);print(json.dumps({"releaseId": report["releaseId"], "mediaBytes": report["mediaBytes"]}))
 
 

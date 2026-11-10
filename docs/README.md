@@ -5,13 +5,15 @@
 - [Core file responsibilities](architecture/Amaryllis-Core-File-Responsibilities.md)
 - [State computer and cockpit telemetry](architecture/STATE_MODULE.md)
 - [Vessel sensor fallback](architecture/SENSOR_FALLBACK.md)
+- [Shared runtime values](architecture/RUNTIME-GLOBALS.md)
 
 ## Installation
 
-- [Owner installation and first flight guide, draft](installation/Amaryllis-Owner-Installation-and-First-Flight-DRAFT.md)
+- [Owner installation and first flight guide, draft](installation/Amaryllis-Owner-Installation-and-First-Flight-DRAFT-v3.md)
 - [Chamber hardware setup](installation/Amaryllis-chamber-hardware-setup.md)
 - [Split chamber and thrust installation](installation/Amaryllis-chamber-thrust-migration.md)
 - [Builder and updater instructions](../disk-builder/README.md)
+- [Pilot reference](installation/PILOT-REFERENCE.md)
 
 ## Maintenance
 
@@ -21,6 +23,7 @@
 
 - [Cockpit timing investigation](diagnostics/COCKPIT_TIMING_RUN.md)
 - [Lift debug recordings](diagnostics/LIFT_DEBUG_RUNS.md)
+- [Pressure integration evidence](diagnostics/PRESSURE-EVIDENCE.md)
 
 ## Plans
 
@@ -36,6 +39,11 @@ Check their status sections and current source when assessing remaining work.
 
 - [Git migration and verification](development/GIT-MIGRATION.md)
 - [Current development workflow](../README.md)
+- [Maintenance delivery record](development/MAINTENANCE-ROADMAP.md)
+- [Control refactoring evidence and measurements](development/CONTROL-REFACTOR-EVIDENCE.md)
+- [Flight and thrust tuning reference](development/TUNING-REFERENCE.md)
+- [Offline flight model](development/FLIGHT-MODEL.md)
+- [Claude session handoff, October 31](development/HANDOFF-CLAUDE.md)
 
 ## History
 

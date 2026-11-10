@@ -1,10 +1,11 @@
--- @ama-section: Remote command service | Authenticated requests serviced by core's supervisor.
+local Mathx = require("avionics.mathx")
+-- Section: Remote command service | Authenticated requests serviced by core's supervisor.
 -- Remote requests are serialized by core's supervisor, never executed in a radio worker.
 local Ops={}
 local INPUTS={"prop_forward","prop_reverse","left_press","left_lift","right_press","right_lift",
     "ap_disconnect","altitude_up","altitude_down"}
 local function copy(v) if type(v)~="table" then return v end;local r={};for k,x in pairs(v) do r[k]=copy(x) end;return r end
-local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
+local finite = Mathx.finite
 local function id(s) return type(s)=="string" and #s>0 and #s<=100 and s:match("^[%w_%.:%-]+$") end
 function Ops.new(io,flight,deps)
     deps=deps or {}
@@ -16,6 +17,7 @@ function Ops:alive()
     local now=self.io:nowSeconds();local at=self.io.propulsionHeartbeat
     return finite(at) and now>=at and now-at<3
 end
+-- Summary: Change remote AP permission for this boot and advance its command generation.
 function Ops:setEnabled(enabled)
     if enabled and not self:alive() then return false,"CORE SUPERVISOR UNAVAILABLE" end
     self.enabled=enabled==true;self.generation=self.generation+1
@@ -23,8 +25,8 @@ function Ops:setEnabled(enabled)
     self.reason=self.enabled and "REMOTE AP ENABLED FOR THIS CORE BOOT" or "REMOTE AP DISABLED ONBOARD"
     return true,self.reason
 end
--- @ama-section: Remote command service | Authenticated requests serviced by core's supervisor.
--- @ama-summary: Identify local pilot activity that supersedes a queued remote operation.
+-- Section: Remote command service | Authenticated requests serviced by core's supervisor.
+-- Summary: Identify local pilot activity that supersedes a queued remote operation.
 function Ops:pilotAction(action)
     local kind=type(action)=="table" and action.type
     if kind and ({ap_engage=true,ap_disengage=true,anchor_engage=true,anchor_cancel=true,cockpit_mode=true,
@@ -37,7 +39,7 @@ function Ops:pilotAction(action)
         end
     end
 end
--- @ama-summary: Evaluate the neutral-input gate for the current remote command.
+-- Summary: Evaluate the neutral-input gate for the current remote command.
 function Ops:neutral(now)
     local c=self.flight.controls
     if not c or type(c.fresh)~="function" then return false,"COCKPIT INPUT VERIFICATION UNAVAILABLE" end
@@ -47,7 +49,7 @@ function Ops:neutral(now)
     return true
 end
 local function key(sender,pair,command) return tostring(sender)..":"..pair..":"..command end
--- @ama-summary: Build bounded remote command and route progress from cached core state.
+-- Summary: Build bounded remote command and route progress from cached core state.
 function Ops:status(pair)
     local ap=self.io.autopilot;local v=self.io.vessel or {}
     local entry=ap and ap.route and ap.route.entries and ap.route.entries[ap.route.index or 1]
@@ -60,7 +62,7 @@ function Ops:status(pair)
         digitalAnchor=self.io.positionAnchor and self.io.positionAnchor.active==true or false,
         queued=#self.queue}
 end
--- @ama-summary: Validate, correlate and queue an authenticated remote operation.
+-- Summary: Validate, correlate and queue an authenticated remote operation.
 function Ops:request(sender,pair,p)
     if p.action=="ap_status" then return self:status(pair) end
     if not id(p.commandID) then return {status="REJECTED",reason="INVALID COMMAND ID"} end
@@ -99,7 +101,7 @@ function Ops:request(sender,pair,p)
     self.queue[#self.queue+1]={sender=sender,pair=pair,key=k,packet=p,pilotRevision=self.pilotRevision or 0}
     return copy(self.results[k])
 end
--- @ama-summary: Apply the queued remote action through core's flight request interface.
+-- Summary: Apply the queued remote action through core's flight request interface.
 function Ops:execute(item,now)
     local io,f,p=self.io,self.flight,item.packet
     if not self.enabled or p.generation~=self.generation then return false,self.reason end
@@ -142,7 +144,7 @@ function Ops:execute(item,now)
     self.reason="REMOTE ROUTE ACCEPTED"
     return true,"AUTOPILOT ENGAGED; ARRIVAL WILL ANCHOR AT DESTINATION"
 end
--- @ama-summary: Service the next remote operation after higher-priority ship work.
+-- Summary: Service the next remote operation after higher-priority ship work.
 function Ops:step(now)
     local ap=self.io.autopilot
     if ap and ap.active and ap.remoteOwner then self.owner=ap.remoteOwner end

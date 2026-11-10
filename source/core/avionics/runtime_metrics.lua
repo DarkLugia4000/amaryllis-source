@@ -1,9 +1,9 @@
--- @ama-section: Runtime metrics | Bounded elapsed-work observations.
+-- Section: Runtime metrics | Bounded elapsed-work observations.
 -- Bounded in-memory elapsed timings. No disk/peripheral I/O.
 local Metrics={};Metrics.__index=Metrics
 function Metrics.new(clock,observer) return setmetatable({clock=clock or function() return os.epoch("utc") end,jobs={},observer=observer},Metrics) end
--- @ama-section: Runtime metrics | Bounded elapsed-work observations.
--- @ama-summary: Record elapsed work time and return the measured operation result.
+-- Section: Runtime metrics | Bounded elapsed-work observations.
+-- Summary: Record elapsed work time and return the measured operation result.
 function Metrics:measure(name,fn,...)
  local started=self.clock()
  if self.observer then pcall(self.observer.beginWork,self.observer,name,started/1000) end

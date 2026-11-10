@@ -1,17 +1,18 @@
--- @ama-section: Systems recording | Cached startup/hold observations appended to CSV.
+local Mathx = require("avionics.mathx")
+-- Section: Systems recording | Cached startup/hold observations appended to CSV.
 -- START SYSTEMS flight recorder. Appends one CSV row per published core
 -- snapshot while a systems run is active, so launch behaviour (attitude,
 -- leveling, lift per chamber, climb control) can be analysed afterwards.
 -- Read-only with respect to flight: it never changes control state.
 local Recorder={}
 Recorder.__index=Recorder
-local QUADS={"FL","FR","RL","RR"}
+local QUADS={"FL","FR","BL","BR"}
 local COLUMNS={"clock","phase","altitude","target","vs","vsTarget","limiter","ackWait","lag",
-    "pitchDeg","rollDeg","yFL","yFR","yRL","yRR","rollBlocks","pitchBlocks","rollRate","pitchRate",
-    "coarseRoll","coarsePitch","coarseRollI","coarsePitchI","fineFL","fineFR","fineRL","fineRR",
-    "liftFL","liftFR","liftRL","liftRR","ceilFL","ceilFR","ceilRL","ceilRR","liftRatio","fwdSpeed","fwdAlongBow",
+    "pitchDeg","rollDeg","yFL","yFR","yBL","yBR","rollBlocks","pitchBlocks","rollRate","pitchRate",
+    "coarseRoll","coarsePitch","coarseRollI","coarsePitchI","fineFL","fineFR","fineBL","fineBR",
+    "liftFL","liftFR","liftBL","liftBR","ceilFL","ceilFR","ceilBL","ceilBR","liftRatio","fwdSpeed","fwdAlongBow",
     "primL","primR","propIdle","desiredRatio","effort","stallBoost","reqAccel","reason"}
-local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
+local finite = Mathx.finite
 local function cell(v)
     if v==nil then return "" end
     if type(v)=="number" then return finite(v) and string.format("%.4g",v) or "" end
@@ -23,8 +24,8 @@ function Recorder.new(options)
     return setmetatable({fs=options.fs or fs,path=options.path or "/avionics/data/flight-log.csv",
         maxBytes=options.maxBytes or 100000,active=false},Recorder)
 end
--- @ama-section: Systems recording | Cached startup/hold observations appended to CSV.
--- @ama-summary: Create the systems-run recording and write its column header.
+-- Section: Systems recording | Cached startup/hold observations appended to CSV.
+-- Summary: Create the systems-run recording and write its column header.
 function Recorder:open()
     local fsApi=self.fs
     if type(fsApi)~="table" then return false end
@@ -41,7 +42,7 @@ function Recorder:open()
     self.bytes=0;self.active=true
     return true
 end
--- @ama-summary: Append the current systems-run snapshot to the flight recording.
+-- Summary: Append the current systems-run snapshot to the flight recording.
 function Recorder:record(flight,io,now)
     local s=flight and flight.systemsRun
     if not s then self.active=false;return end
@@ -62,14 +63,14 @@ function Recorder:record(flight,io,now)
         ceil[q]=sum
     end
     local rollBlocks,pitchBlocks
-    if finite(y.FL) and finite(y.FR) and finite(y.RL) and finite(y.RR) then
-        rollBlocks=(y.FL+y.RL-y.FR-y.RR)/4;pitchBlocks=(y.FL+y.FR-y.RL-y.RR)/4
+    if finite(y.FL) and finite(y.FR) and finite(y.BL) and finite(y.BR) then
+        rollBlocks=(y.FL+y.BL-y.FR-y.BR)/4;pitchBlocks=(y.FL+y.FR-y.BL-y.BR)/4
     end
     local thrust=io.thrust;local requested=thrust and thrust.requested or {}
     local row={finite(now) and string.format("%.2f",now) or "",s.phase,v.altitude,s.target,v.verticalSpeed,flight.verticalTarget,s.speedLimiter,
-        s.lastAckWaitSeconds,s.responseLagSeconds,v.pitch,v.roll,y.FL,y.FR,y.RL,y.RR,rollBlocks,pitchBlocks,
+        s.lastAckWaitSeconds,s.responseLagSeconds,v.pitch,v.roll,y.FL,y.FR,y.BL,y.BR,rollBlocks,pitchBlocks,
         rates.roll,rates.pitch,coarse.roll,coarse.pitch,coarseI.roll,coarseI.pitch,
-        trim.FL,trim.FR,trim.RL,trim.RR,lift.FL,lift.FR,lift.RL,lift.RR,ceil.FL,ceil.FR,ceil.RL,ceil.RR,
+        trim.FL,trim.FR,trim.BL,trim.BR,lift.FL,lift.FR,lift.BL,lift.BR,ceil.FL,ceil.FR,ceil.BL,ceil.BR,
         s.dynamics and s.dynamics.actualRatio,v.forwardSpeed,v.forwardSpeedAlongBow,
         requested["primary-left"],requested["primary-right"],io.propulsionHoldSuppressed~=nil,
         s.lastDesiredRatio,flight.effort,s.climbStallBoost,s.lastRequestedAcceleration,s.reason}

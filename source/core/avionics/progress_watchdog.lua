@@ -1,4 +1,5 @@
--- @ama-section: Worker supervision | Completion tracking and paced replacement decisions.
+local Mathx = require("avionics.mathx")
+-- Section: Worker supervision | Completion tracking and paced replacement decisions.
 -- Progress watchdog. Each controller has gates that pause or freeze it while
 -- some precondition is unmet; one that never clears leaves the vessel holding
 -- still while the controller believes it is working (logged 2026-10-21: an
@@ -9,7 +10,7 @@
 -- told so it can lean harder (see Flight HOLD support bias).
 local Watchdog={}
 Watchdog.__index=Watchdog
-local function finite(v) return type(v)=="number" and v==v and math.abs(v)<math.huge end
+local finite = Mathx.finite
 local function wrap(d) return (d+180)%360-180 end
 -- name -> {minimum error to watch, improvement that counts, seconds allowed}
 local RULES={
@@ -22,8 +23,8 @@ function Watchdog.new() return setmetatable({tracks={},stalls={}},Watchdog) end
 local function log(text)
     if type(os)=="table" and type(os.__amaryllisLog)=="function" then pcall(os.__amaryllisLog,text,"core.watchdog") end
 end
--- @ama-section: Worker supervision | Completion tracking and paced replacement decisions.
--- @ama-summary: Record a worker's completion progress for stall detection.
+-- Section: Worker supervision | Completion tracking and paced replacement decisions.
+-- Summary: Record a worker's completion progress for stall detection.
 function Watchdog:observe(name,error,now,detail)
     local rule=RULES[name];local track=self.tracks[name]
     if not finite(error) or math.abs(error)<rule.floor then
@@ -51,7 +52,7 @@ function Watchdog:observe(name,error,now,detail)
     end
 end
 local function f(v,d) return finite(v) and string.format("%."..(d or 3).."f",v) or "--" end
--- @ama-summary: Evaluate worker progress and advance the paced restart decision.
+-- Summary: Evaluate worker progress and advance the paced restart decision.
 function Watchdog:update(io,flight,now)
     local v=io.vessel or {}
     -- Altitude: READY hold away from its target.

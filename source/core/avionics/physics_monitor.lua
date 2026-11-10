@@ -1,16 +1,13 @@
--- @ama-section: Physics observations | Consistency of measured acceleration, lift and pressure.
--- Physics consistency monitor. The lift model multiplies the balloons' lift
--- by air pressure, so a bad pressure source makes every altitude decision
--- wrong while looking perfectly valid (logged 2026-10-21 near Y 306: the
--- altitude sensor read 0.003 against Sable's 0.21, the model said 2% of
--- weight while she was plainly floating). Newton gives an independent check:
--- support/weight must equal 1 + vertical acceleration / g. While holding,
--- if the modelled support is far from that for 5 s, the other pressure
--- source is tried; if it fits much better the composer is told to prefer
--- it. Otherwise the inconsistency is reported (core log, snapshot).
+local Mathx = require("avionics.mathx")
+-- Section: Physics observations | Consistency of measured acceleration, lift and pressure.
+-- Compare pressure-scaled balloon lift with support inferred from vertical
+-- acceleration: support/weight = 1 + acceleration/g. After a five-second
+-- mismatch, prefer an available pressure source that halves the error and
+-- meets the tolerance; otherwise publish the inconsistency. Pressure readings
+-- at different sampling heights can differ substantially in the upper taper.
 local Monitor={}
 Monitor.__index=Monitor
-local function finite(v) return type(v)=="number" and v==v and math.abs(v)<math.huge end
+local finite = Mathx.finite
 -- Legitimate lift-model error reaches ~17% at Y 306 (hover memory learns
 -- it), so only a gross mismatch counts.
 local TOLERANCE,DWELL=0.35,5
@@ -18,8 +15,8 @@ function Monitor.new() return setmetatable({},Monitor) end
 local function log(text)
     if type(os.__amaryllisLog)=="function" then pcall(os.__amaryllisLog,text,"core.physics") end
 end
--- @ama-section: Physics observations | Consistency of measured acceleration, lift and pressure.
--- @ama-summary: Compare measured motion and lift with the current gravity/pressure model.
+-- Section: Physics observations | Consistency of measured acceleration, lift and pressure.
+-- Summary: Compare measured motion and lift with the current gravity/pressure model.
 function Monitor:update(io,flight,now)
     local s=flight and flight.systemsRun
     local v=io.vessel or {}

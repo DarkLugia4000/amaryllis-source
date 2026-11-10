@@ -1,31 +1,36 @@
-# Track maintained project inputs; generated and historical local files stay outside Git.
-/*
-!/.gitignore
-!/.gitattributes
-!/README.md
-!/project.py
-!/requirements-dev.txt
-!/source/
-!/tests/
-!/docs/
-!/disk-builder/
+# Track everything except generated, local and historical files.
 
+# Python
 __pycache__/
 *.py[cod]
 .venv/
 .env
 .env.*
+
+# Agent notes
 **/AGENTS.md
 **/.agents/
-**/.git/
-!/.gitignore
-/disk-builder/Backups/
-/disk-builder/Installers/
 
+# Local work and outputs at the top level
+/.cache/
+/calibration/
+/diagnostics/
+/output/
+/releases/
+/repair-backups/
+/tmp/
+/debug.log
 
-!/tools/
-!/archive/
+# Archive: only its README is tracked
 /archive/*
 !/archive/README.md
 
+# Disk Builder working folders
 /disk-builder/.cache/
+/disk-builder/Backups/
+/disk-builder/Installers/
+/disk-builder/Logs/
+
+# Test leftovers
+/tests/.cache/
+/tests/windows-builder-tests-*/

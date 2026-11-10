@@ -62,10 +62,10 @@ Agreed display sequence:
 
 | Existing phase/portion | Planned display | Meaning |
 |---|---|---|
-| CONTROL_START | OPENING STEAM VENTS | Establishing the bulk steam-vent stage. |
+| VENT_IGNITION | OPENING STEAM VENTS | Establishing the bulk steam-vent stage. |
 | Initial filling and lift establishment | STATIC INFLATION | Initial inflation portion of startup. |
 | Existing LAUNCH settling interval | CAPTURING PITCH ZERO | Altitude acquisition is paused while existing trim/leveling continues. |
-| Initial startup BUILDING_LIFT after settling, before acquisition display ends | ACQUIRING SEL ALT | Initial acquisition of the startup selected altitude; switches to READY when capture completes or the user changes selected altitude. |
+| Initial startup MAIN_LIFT after settling, before acquisition display ends | ACQUIRING SEL ALT | Initial acquisition of the startup selected altitude; switches to READY when capture completes or the user changes selected altitude. |
 | READY, including user-ended startup acquisition display | READY | Normal altitude control; responding to a user-selected altitude does not imply the vessel has already reached that altitude. |
 
 Implementation requirements:

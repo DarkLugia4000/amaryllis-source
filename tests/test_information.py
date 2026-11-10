@@ -1,27 +1,25 @@
 """Navigator information and assembly/identity regression scenarios."""
 from pathlib import Path
-import copy,json,sys,unittest
+import json,sys,unittest
 ROOT=Path(__file__).resolve().parents[1];HOME=ROOT/'disk-builder'
 sys.path.insert(0,str(HOME))
 import builder
-from tests.test_runtime_bundling import LuaRuntime,table,python_value
+from tests.test_runtime_bundling import LuaRuntime,table
 from tests.test_bridge_presentation import HARNESS
 from tests.test_persistent_modes import fixture_source
 
-from project import fixture
-BASE=fixture("legacy")
 _CACHE=None
 
 def collected():
     global _CACHE
-    if _CACHE is None:_CACHE=builder.collect(fixture())
+    if _CACHE is None:_CACHE=builder.collect_project(ROOT)
     return _CACHE
 
 def runtime():
     source=collected()
     lua=LuaRuntime(unpack_returned_tuples=True)
     lua.globals().SOURCES=table(lua,{p:d.decode('utf-8')for p,d in source['payload'].items()if p.endswith('.lua')})
-    lua.globals().CONFIG=table(lua,json.loads((BASE/'avionics/config.json').read_bytes()))
+    lua.globals().CONFIG=table(lua,json.loads((ROOT/'source/core/avionics/config.json').read_bytes()))
     lua.execute('''
 NOW=1;os.clock=function()return NOW end;os.__amaryllisLog=function()end
 local loaded={}
@@ -129,14 +127,14 @@ check(f.systemsSnapshot.recovery.state=="RETRYING (7)" and not s.telemetryRecove
         lua=runtime()
         lua.execute(fixture_source()+'''
 local io,f,p,clock=setup()
-f.systemsRun={phase="CONTROL_START",target=160,currentTargets={}}
-f.systemsSnapshot={phase="CONTROL_START",active=true}
+f.systemsRun={phase="VENT_IGNITION",target=160,currentTargets={}}
+f.systemsSnapshot={phase="VENT_IGNITION",active=true}
 f.initialAcquisitionTarget=160;f.controls.targets.altitude=160
 local function phase()
  local s={targets={},nodes={},updatedAt=10};f:decorate(s,io,10);return s.systemsStartup.displayPhase
 end
 check(phase()=="OPENING STEAM VENTS","opening label")
-f.systemsRun.phase="BUILDING_LIFT";check(phase()=="STATIC INFLATION","initial fill")
+f.systemsRun.phase="MAIN_LIFT";check(phase()=="STATIC INFLATION","initial fill")
 f.systemsRun.launchStartedAt=8;f.systemsRun.launchDurationSeconds=10
 f.systemsRun.launchMotionVerified=true
 check(phase()=="CAPTURING PITCH ZERO","settling wins over movement")
@@ -171,7 +169,7 @@ v=S.compose(io,10);check(v.reason=="VESSEL DISASSEMBLED","fresh explicit false")
         lua=runtime()
         lua.execute('''
 local P=require("avionics.display_payload")
-local value=P.heading({systemsStartup={phase="BUILDING_LIFT",displayPhase="READY"}})
+local value=P.heading({systemsStartup={phase="MAIN_LIFT",displayPhase="READY"}})
 check(value.systemsStartup.displayPhase=="READY","heading receives display phase")
 ''')
         source=collected()
@@ -189,31 +187,6 @@ check(value.systemsStartup.displayPhase=="READY","heading receives display phase
         self.assertTrue(source["sourceDocumentation"])
         self.assertTrue(all(x["summarized"]==x["majorFunctions"] for x in source["sourceDocumentation"]))
 
-
-
-    def test_existing_provider_shutdown_and_pid_code_is_unchanged(self):
-        names=["flight.lua","telemetry_recovery.lua","controls.lua","autopilot.lua","anchor.lua","remote_ap.lua"]
-        baseline={"/avionics/"+name:(BASE/"avionics"/name).read_bytes()for name in names}
-        builder.lift_recovery_overlays(baseline)
-        builder.vessel_recovery_overlays(baseline)
-        builder.control_persistence_overlays(baseline)
-        before=baseline["/avionics/flight.lua"].decode()
-        after=collected()["payload"]["/avionics/flight.lua"].decode()
-        spans=lambda text:{f["name"]:text[f["start"]:f["end"]]for f in builder.source_notes.functions(text)}
-        old,new=spans(before),spans(after)
-        checked=[]
-        for name in old:
-            if any(key in name.lower()for key in ("emergency","kill","disarm","shutdown","vent","pid","gasprovider")) or name=="Flight:stop":
-                self.assertIn(name,new)
-                self.assertEqual([x[0]for x in builder.source_notes.tokens(old[name])],
-                                 [x[0]for x in builder.source_notes.tokens(new[name])],name)
-                checked.append(name)
-        self.assertGreaterEqual(len(checked),15)
-        for path in ("pid.lua","systems_restart.lua"):
-            key="/avionics/"+path
-            if key in collected()["payload"]:
-                self.assertEqual([x[0]for x in builder.source_notes.tokens((BASE/"avionics"/path).read_text())],
-                                 [x[0]for x in builder.source_notes.tokens(collected()["payload"][key].decode())],path)
 
 class InformationUiTests(unittest.TestCase):
     def setUp(self):
@@ -281,7 +254,7 @@ for _,item in ipairs(ui.currentIssues)do if item.id=="assembly-unverified"then c
         self.run_lua('''
 local ui,s,draw=fixture();running(s)
 for _,phase in ipairs({"OPENING STEAM VENTS","STATIC INFLATION","CAPTURING PITCH ZERO","ACQUIRING SEL ALT"})do
- s.systemsStartup.phase="BUILDING_LIFT";s.systemsStartup.displayPhase=phase;draw()
+ s.systemsStartup.phase="MAIN_LIFT";s.systemsStartup.displayPhase=phase;draw()
  check(ui.previous.rows[20].text:find(phase,1,true),"startup "..phase)
 end
 ''')
@@ -314,6 +287,34 @@ for _,item in ipairs(ui.currentIssues)do
  if item.id==ui.issueFocus then check(item.text=="FIRST FAULT","focus follows displayed warning");found=true end
 end
 check(found,"focused issue remains in list")
+""")
+
+    def test_disassembled_vessel_shows_only_that_issue(self):
+        self.run_lua("""
+local ui,s,draw=fixture();healthy(s)
+local message="VESSEL DISASSEMBLED: physics_assembler_1.isAssembled() = false"
+s.assembly={state="DISASSEMBLED",assembled=false,message=message,reason="physics_assembler_1.isAssembled() = false"}
+s.faults={message,"VESSEL DISASSEMBLED","CHAMBER FL SILENT 12 S; CHECK POWER AND LINK"}
+draw()
+check(#ui.currentIssues==1,"one issue, found "..#ui.currentIssues)
+check(ui.currentIssues[1].id=="assembly-lock" and ui.currentIssues[1].text=="ASSEMBLE VESSEL TO ENABLE CONTROLS","the assembly instruction")
+check(ui.currentIssues[1].detail==message,"the assembly check's message is the detail")
+check(ui.previous.rows[21].text:find("ASSEMBLE VESSEL TO ENABLE CONTROLS",1,true),"bottom line")
+local page={}
+for y=5,20 do page[#page+1]=ui.previous.rows[y].text end
+page=table.concat(page," ")
+check(page:find("Core module reports physics assembler is not engaged.",1,true),"panel explains the cause")
+check(page:find("Please assemble the vessel",1,true) and page:find("Previous gas levels will be carried over.",1,true),"panel instruction")
+check(ui.previous.rows[9].text:find("Core module reports",1,true),"cause on row 9")
+check(ui.previous.rows[13].text:find("Please assemble the vessel to enable controls.",1,true),"instruction on row 13")
+check(ui.previous.rows[14].text:find("Previous gas levels will be carried over.",1,true),"gas levels on row 14")
+for _,old in ipairs({"Source: physics","Blocked:","Applied lift ceilings","Nothing resumes","isAssembled() = false","Lift maintenance"}) do
+ check(not page:find(old,1,true),"removed: "..old)
+end
+s.assembly={state="ASSEMBLED",assembled=true};draw()
+local listed=false
+for _,item in ipairs(ui.currentIssues)do if item.text:find("CHAMBER FL SILENT",1,true)then listed=true end end
+check(listed,"other faults return once assembled")
 """)
 
 if __name__=='__main__':unittest.main(verbosity=2)

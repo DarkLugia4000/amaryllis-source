@@ -1,14 +1,13 @@
--- @ama-section: Lift recovery | Retained target reconciliation and authority renewal.
+local Mathx = require("avionics.mathx")
+-- Section: Lift recovery | Retained target reconciliation and authority renewal.
 -- Navigator information retry revision v1
 -- Recoverable vessel telemetry v1
 -- Pure lifecycle helpers for resuming an existing START SYSTEMS run after
 -- telemetry loss. The caller remains responsible for coordinating commands.
 local Recovery={}
-local QUADS={"FL","FR","RL","RR"}
+local QUADS={"FL","FR","BL","BR"}
 
-local function finite(value)
-    return type(value)=="number" and value==value and math.abs(value)<math.huge
-end
+local finite = Mathx.finite
 local function copyMap(source)
     local result={}
     for key,value in pairs(source or {}) do result[key]=value end
@@ -30,8 +29,8 @@ local function boundedFingerprint(value)
     return type(value)=="string" and #value>0 and #value<=1024 and not value:find("[%c]")
 end
 
--- @ama-section: Lift recovery | Retained target reconciliation and authority renewal.
--- @ama-summary: Compare observed provider identities, roles and bounds with the retained signature.
+-- Section: Lift recovery | Retained target reconciliation and authority renewal.
+-- Summary: Compare observed provider identities, roles and bounds with the retained signature.
 local function sameProviderSignature(s,node,q)
     local roles=s.providerRoles and s.providerRoles[q]
     local limits=s.providerLimits and s.providerLimits[q]
@@ -79,7 +78,7 @@ end
 -- must still reconcile the physical target maps before issuing a fresh lease.
 -- An unavailable UUID is not evidence of another vessel. Do not
 -- authorize writes until a fresh complete sample confirms the retained UUID.
--- @ama-summary: Classify fresh vessel observations against the retained identity.
+-- Summary: Classify fresh vessel observations against the retained identity.
 function Recovery.vesselState(io,s,now)
     local vessel=io and io.vessel
     local stale=io and io.config and io.config.network and io.config.network.sensor_stale_seconds
@@ -100,7 +99,7 @@ function Recovery.vesselState(io,s,now)
     return "trusted"
 end
 
--- @ama-summary: Validate a changed chamber boot against registry, bindings and recent core Hello.
+-- Summary: Validate a changed chamber boot against registry, bindings and recent core Hello.
 function Recovery.nodeBootState(io,s,q,now,flight)
     local node=io and io.nodes and io.nodes[q]
     if not node then return "wait","LIFT TELEMETRY UNAVAILABLE" end
@@ -147,10 +146,10 @@ function Recovery.nodeBootState(io,s,q,now,flight)
     return "trusted"
 end
 
--- Classify only missing/old telemetry as resumable. A valid readback that
--- reports a changed identity, unattached balloon, wrong gas, output signal,
--- or provider limit must still reach the existing terminal guard.
--- @ama-summary: Classify only missing/old telemetry as resumable. A valid readback that reports a changed identity, unattached balloon, wrong gas, output signal, or provider limit must still reach the existing terminal guard.
+-- Missing observations and renewable output disagreements suspend control.
+-- Verified vessel, binding and provider identity changes remain terminal.
+-- Recovery revalidates provider targets before resuming control.
+-- Summary: Classify guard faults for telemetry and command-authority recovery.
 function Recovery.isTransientGuardFault(io,s,now,reason,flight)
     if type(reason)~="string" then return false end
     if contains(reason,"PROVIDER CEILING CHANGED") then return true end
@@ -158,7 +157,7 @@ function Recovery.isTransientGuardFault(io,s,now,reason,flight)
     if contains(reason,"REPORTS INACTIVE") then return true end
     if contains(reason,"LIMIT READBACK UNAVAILABLE") then return true end
     local q=reason:match("^(%u%u) LIFT TELEMETRY STALE$")
-    if q and (q=="FL" or q=="FR" or q=="RL" or q=="RR") then
+    if q and (q=="FL" or q=="FR" or q=="BL" or q=="BR") then
         return not io or type(io.nodeFresh)~="function" or not io:nodeFresh(q,now)
     end
     q=reason:match("^(%u%u) LIFT BOOT CHANGED$") or
@@ -166,7 +165,7 @@ function Recovery.isTransientGuardFault(io,s,now,reason,flight)
         reason:match("^(%u%u) LIFT BINDING DATA UNAVAILABLE$") or
         reason:match("^(%u%u) LIFT PROVIDER SIGNATURE UNAVAILABLE$") or
         reason:match("^(%u%u) LIFT PROVIDER LIMIT READBACK UNAVAILABLE$")
-    if q and (q=="FL" or q=="FR" or q=="RL" or q=="RR") then
+    if q and (q=="FL" or q=="FR" or q=="BL" or q=="BR") then
         local node=io and io.nodes and io.nodes[q]
         if reason:find("BINDING DATA UNAVAILABLE",1,true) and node and
             node.bindingFingerprintValid~=true and type(io.nodeFresh)=="function" and io:nodeFresh(q,now) then
@@ -207,7 +206,7 @@ end
 -- Convert provider readback into the core's logical target map. A fine
 -- provider's logical zero may be stored at its minimum ceiling while its
 -- signal is off; accept that representation only when zero was expected.
--- @ama-summary: Convert provider readback into the core's logical target map. A fine provider's logical zero may be stored at its minimum ceiling while its signal is off; accept that representation only when zero was expected.
+-- Summary: Convert provider readback into the core's logical target map. A fine provider's logical zero may be stored at its minimum ceiling while its signal is off; accept that representation only when zero was expected.
 function Recovery.readTargetMap(node,expected,roles)
     if type(node)~="table" or type(node.providers)~="table" then
         return nil,"LIFT PROVIDER MAP UNAVAILABLE"
@@ -239,7 +238,7 @@ function Recovery.readTargetMap(node,expected,roles)
     return actual
 end
 
--- @ama-summary: Compare complete provider target maps.
+-- Summary: Compare complete provider target maps.
 function Recovery.mapsEqual(left,right)
     if type(left)~="table" or type(right)~="table" then return false end
     local count=0
@@ -255,7 +254,7 @@ end
 -- Core retains command authority across lost ACKs and partial application.
 -- Validate live providers before returning the last intended absolute map;
 -- never adopt an unexplained auxiliary target as a new control baseline.
--- @ama-summary: Resolve physical target maps suitable for retained-run reconciliation.
+-- Summary: Resolve physical target maps suitable for retained-run reconciliation.
 function Recovery.authoritativeTargetMaps(s,nodes)
     local recovery=s.telemetryRecovery or {}
     local retained=recovery.targetMaps or s.currentTargets or s.probeTargets or s.controlStartTargets
@@ -308,59 +307,11 @@ function Recovery.authoritativeTargetMaps(s,nodes)
     return targets,nil,coarse,mismatch,mismatchReason
 end
 
--- If a batch was pending when telemetry vanished, every live target must be
--- exactly either the previous acknowledged map or that pending map. Unknown
--- changes stay fail-closed. The returned maps represent what is physically
--- present now, including already-applied quadrants from a partial batch.
--- @ama-summary: If a batch was pending when telemetry vanished, every live target must be exactly either the previous acknowledged map or that pending map. Unknown changes stay fail-closed. The returned maps represent what is physically present now, including already-applied quadrants from a partial batch.
-function Recovery.reconcileTargetMaps(s,nodes,trustedRebinds)
-    local retained=type(s)=="table" and
-        (s.currentTargets or s.probeTargets or s.controlStartTargets) or nil
-    if type(s)~="table" or type(retained)~="table" then
-        return nil,"RETAINED SYSTEMS TARGET MAP UNAVAILABLE"
-    end
-    local actualMaps,actualCoarseTrim={},{ }
-    for _,q in ipairs(QUADS) do
-        local node=nodes and nodes[q]
-        local expected=retained[q]
-        local observed,reason=Recovery.readTargetMap(node,expected,s.providerRoles and s.providerRoles[q])
-        if not observed then return nil,q.." "..tostring(reason) end
-        local pending=s.pending and s.pending[q]
-        local pendingTargets=pending and pending.targets
-        local matchesCurrent=Recovery.mapsEqual(observed,expected)
-        local matchesPending=pendingTargets and Recovery.mapsEqual(observed,pendingTargets)
-        if not matchesCurrent and not matchesPending then
-            return nil,q.." PROVIDER CEILING CHANGED DURING TELEMETRY LOSS"
-        end
-        local pendingApplied=pending and matchesPending and
-            (node.lastAppliedSeq==pending.seq or
-                (trustedRebinds and trustedRebinds[q]==true and not matchesCurrent))
-        if pending and matchesPending and not matchesCurrent and not pendingApplied then
-            return nil,q.." PENDING SYSTEMS SEQUENCE NOT CONFIRMED"
-        end
-        actualMaps[q]=observed
-        local coarseSource=s.coarseTrimApplied or {}
-        if pendingApplied and s.batchStage=="control" and type(s.batchCoarseTrimApplied)=="table" then
-            coarseSource=s.batchCoarseTrimApplied
-        end
-        actualCoarseTrim[q]=copyMap(coarseSource[q])
-    end
-    return actualMaps,nil,actualCoarseTrim
-end
-
-function Recovery.needsLeaseRearm(nodes)
-    for _,q in ipairs(QUADS) do
-        local node=nodes and nodes[q]
-        if not node or node.systemsStage~="control" or node.systemsProbeReady~=true then return true end
-    end
-    return false
-end
-
 -- Freeze/re-anchor derivative history without changing a target, baseline,
 -- learned trim, or any actuator map. Existing integral values remain bounded
 -- and are frozen during suspension, so resumption has no derivative kick or
 -- unbounded stale-error accumulation.
--- @ama-summary: Reset recovery measurements to the newly verified physical targets.
+-- Summary: Reset recovery measurements to the newly verified physical targets.
 local function reanchor(pid,measurement)
     if type(pid)~="table" then return end
     if finite(pid.g and pid.g.integral_limit) and finite(pid.i) then
@@ -371,7 +322,7 @@ local function reanchor(pid,measurement)
     pid.d=0
 end
 
--- @ama-summary: Commit verified recovery targets and resume the retained control phase.
+-- Summary: Commit verified recovery targets and resume the retained control phase.
 function Recovery.complete(flight,io,s,now,actualMaps,actualCoarseTrimApplied)
     local recovery=s.telemetryRecovery
     local suspendedFor=recovery and finite(recovery.since) and math.max(0,now-recovery.since) or 0
@@ -395,8 +346,8 @@ function Recovery.complete(flight,io,s,now,actualMaps,actualCoarseTrimApplied)
     end
     if heights then
         local config=flight.config or {}
-        local roll=(heights.FL+heights.RL-heights.FR-heights.RR)/4
-        local measuredPitch=(heights.FL+heights.FR-heights.RL-heights.RR)/4
+        local roll=(heights.FL+heights.BL-heights.FR-heights.BR)/4
+        local measuredPitch=(heights.FL+heights.FR-heights.BL-heights.BR)/4
         local deadband=finite(config.trim_deadband_blocks) and math.max(0,config.trim_deadband_blocks) or 0
         if math.abs(roll)<deadband then roll=0 end
         local manualBias=finite(config.manual_fore_aft_trim_blocks) and
@@ -433,11 +384,11 @@ function Recovery.complete(flight,io,s,now,actualMaps,actualCoarseTrimApplied)
     s.responseProbe=nil
     s.liftResponseLagSeconds=nil
     s.fillResponseLagSeconds=nil
-    if s.phase=="BUILDING_LIFT" then s.hoverSince=nil;s.wideHoverSince=nil end
+    if s.phase=="MAIN_LIFT" then s.hoverSince=nil;s.wideHoverSince=nil end
     return true
 end
 
--- @ama-summary: Retain current operation intent and expose its retry state.
+-- Summary: Retain current operation intent and expose its retry state.
 function Recovery.suspend(flight,s,now,reason)
     if not s.telemetryRecovery then
         s.telemetryRecovery={since=now,lastRetryAt=now,retryCount=0,reason=reason,
@@ -460,11 +411,6 @@ function Recovery.suspend(flight,s,now,reason)
         retryCount=recovery.attemptCount or 0,reason=reason,background=true,
         resumePhase=recovery.resumePhase,sampleGapDetails=recovery.sampleGapDetails}
     return true,s.reason
-end
-
-function Recovery.attach(Flight)
-    Flight.telemetryRecoveryHelpers=Recovery
-    return Flight
 end
 
 return Recovery

@@ -161,7 +161,8 @@ function App:draw()
         computers="COMPUTERS",computer="COMPUTER",errors="ERRORS",details="DETAILS",related="RELATED LOGS",logs="LOGS",
         ap="AUTOPILOT",route="ROUTE PROGRESS",destination="DESTINATION",review="REVIEW",tools="TOOLS",connection="CONNECTION"}
     put(1,1,"AMARYLLIS / REMOTE",w,WHITE,BLACK)
-    put(2,2,(self.online and"CONNECTED"or"OFFLINE").." #"..self.cfg.coreID,w-2,self.online and WHITE or YELLOW)
+    local reachable=self.lastReply and os.clock()>=self.lastReply and os.clock()-self.lastReply<=10
+    put(2,2,reachable and ("CONNECTED #"..self.cfg.coreID) or "CORE UNREACHABLE",w-2,reachable and WHITE or YELLOW)
     if self.page~="home"then put(2,3,"< Back",7,BLACK,LIGHT)end
     put(self.page=="home"and 2 or 10,3,titles[self.page]or"REMOTE",w-(self.page=="home"and 2 or 10))
     local function list(rows,first,last,key)
@@ -260,7 +261,7 @@ function App:draw()
         button(6,"Refresh","refresh");button(8,"Reconnect","reconnect");button(10,"Connection details >","go:connection")
         if fs.exists("/admin.lua")then button(12,"Administration >","admin")end
     elseif self.page=="connection"then
-        list({"Core #"..self.cfg.coreID,"Link: "..(self.online and"CONNECTED"or"OFFLINE"),
+        list({"Core #"..self.cfg.coreID,"Link: "..(reachable and"CONNECTED"or"CORE UNREACHABLE"),
             "Last reply: "..(self.lastReply and age(os.clock()-self.lastReply)or"--"),
             "Round trip: "..(self.roundTrip and string.format("%.0fms",self.roundTrip*1000)or"--"),
             "Protocol: "..self.cfg.protocol})
@@ -313,6 +314,7 @@ function App:event(event,a,b,c)
     if event=="rednet_message"and self.pending and a==self.cfg.coreID and c==self.cfg.protocol and type(b)=="table"and
         b.v==1 and b.coreID==self.cfg.coreID and b.requestID==self.pending.id and type(b.boot)=="string"then
         local pending=self.pending;os.cancelTimer(self.timeout);self.pending=nil
+        self.lastReply=os.clock()
         if pending.action~="hello"and b.boot~=self.boot then
             self.boot=nil;self.online=false;self.review=nil;self.notice="Core restarted; reconnecting"
         elseif not b.ok and pending.action=="status"and b.error=="Status requested too quickly"then

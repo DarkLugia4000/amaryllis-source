@@ -1,7 +1,6 @@
-# Amaryllis
+# Amaryllis Lua Source
 
-Maintained source and development tools for Amaryllis's ComputerCraft control
-software. The Git baseline imports the delivered 2.8.0 behavior on 29 October 2026.
+Source Code, installer mediums and a bunch of other tools for testing/setting up A.E.V. Amaryllis: An airship powered by CC: Tweaked and magic.
 
 ## Project layout
 
@@ -22,25 +21,21 @@ software. The Git baseline imports the delivered 2.8.0 behavior on 29 October 20
 
 Logs, recordings, installer exports, release ZIPs, backups and older one-off
 scripts remain available locally and are excluded from the repository. The
-existing Windows builder folder keeps its current name and launcher. The
-top-level Git allowlist is explicit: add new maintained directories or root
-tools to .gitignore when extending the project layout.
+existing Windows builder folder keeps its current name and launcher.
 
 Browse the [documentation index](docs/README.md) for guides, architecture, plans and history.
 
 ## Development setup
 
-Use Python 3.12 for the validated development environment. The builder itself
-retains its existing supported Python versions.
+Use Python 3.12 for the dev environment.
 
     python -m venv .venv
     .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
     .\.venv\Scripts\python.exe project.py check
     .\.venv\Scripts\python.exe project.py test --quick
 
-The test dependency is pinned to Lupa 2.6 and its Lua 5.2 engine. Test fixtures
-use synthetic computer assignments under .cache/fixtures. They require no
-Minecraft save, previous installer folder or account credentials.
+The test dependency is pinned to Lupa 2.6 with its Lua 5.2 engine. Test fixtures
+use synthetic computer assignments under .cache/fixtures, enabling tests to be run without a minecraft save or similar.
 
 ## Authoritative source, installation disks and updates
 
@@ -51,6 +46,12 @@ Five shared modules have one editing location in the builder's `assets/` folder:
 and `remote-panel.lua`. Their installed paths are mapped by `source/baseline.json`.
 The migration fingerprints in that file are historical reference values.
 
+Auxillary computer packages live in `source/library/packages/common/`.
+The `sharedModules` mapping in `source/baseline.json` expands each implementation
+to its role destinations during collection. Edit the canonical file once; the
+build checks family membership and rejects conflicting destination copies.
+Role-specific configuration remains beside each role's package directory.
+
 ### Windows interface
 
 Open `disk-builder/Start Builder.cmd`. **Project source** is
@@ -58,19 +59,17 @@ selected automatically when maintained source is present. Select the project
 folder and choose:
 
 - **Build installer** to create a new commissioning disk package.
-- **Update existing ship…** to build current project software and open the
-  updater with that release already selected. Select the target save, choose
-  an external backup folder, and review the update before applying it.
+- **Update existing ship…** to open the updater with maintained source selected.
+  Select the target save and an external backup folder. **Preview update** bundles
+  current source for review; **Apply update** installs that reviewed snapshot.
 
 Both actions read software from the project. A world folder is needed only as
 the update destination. Existing IDs, stored settings, PID configuration,
 learning and restart records are retained by the updater. Managed programs are
 overwritten and obsolete managed files are removed after an external backup.
-Minecraft must be fully closed before applying an update under the updater's
-current process checks. Building and previewing are read-only with respect to saves.
-
-**Saved ship export** is a separate mode for capturing the software and portable
-configuration currently installed on a ship. Its source is that saved installation.
+The world may stay open while applying: running computers keep their program until
+they reboot, and runtime files (`installer/install_status.json`, `avionics/data/`) are
+never touched.
 
 ### Project commands
 
@@ -78,11 +77,12 @@ configuration currently installed on a ship. Its source is that saved installati
     python project.py update --target "D:\Minecraft\saves\Amaryllis"
     python project.py gui
 
-`build` creates a verified installer under `output/installers/`. `update` builds
-from the same source and prints a preview; it leaves the target unchanged.
+`build` creates a verified installer under `output/installers/`. `update` bundles
+current source in a temporary workspace and prints a preview; it leaves the target
+unchanged and removes the temporary payload when the command finishes.
 To apply that replacement with an external backup:
 
-    python project.py update --target "D:\Minecraft\saves\Amaryllis" --apply --backup "D:\Amaryllis Backups" --minecraft-closed
+    python project.py update --target "D:\Minecraft\saves\Amaryllis" --apply --backup "D:\Amaryllis Backups"
 
 Project builds read maintained inputs directly and use a temporary compatibility
 adapter for the existing packager. The adapter is removed after collection.

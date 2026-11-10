@@ -1,5 +1,6 @@
 {
   "altitude_control": {
+    "altitude_ceiling": 280,
     "altitude_pid": {
       "derivative_filter_seconds": 1,
       "integral_limit": 20,
@@ -15,6 +16,8 @@
     "hover_capture_seconds": 5,
     "hover_max_vertical_speed": 0.2,
     "launch_settle_seconds": 10,
+    "level_boost_max": 10,
+    "level_boost_start_blocks": 0.5,
     "level_damping_gain": 3,
     "level_lead_seconds": 6,
     "lift_balance_tolerance_fraction": 0.2,
@@ -22,14 +25,12 @@
     "max_feed_fraction": 0.15,
     "max_trim_ceiling_change": 25,
     "max_vertical_speed": 5,
-    "maximum_world_y": 314,
     "minimum_world_y": 100,
     "startup_acceleration_seconds": 20,
     "startup_braking_lookahead_seconds": 15,
     "startup_gas_target_m3_per_chamber": 12000,
     "startup_max_vertical_speed": 5,
     "startup_vertical_speed_limit": 20,
-    "target_rate_blocks_per_second": 1,
     "trim_ceiling_per_block": 5,
     "trim_deadband_blocks": 0.15,
     "trim_pid": {
@@ -67,6 +68,7 @@
     "input_interval_seconds": 0.2,
     "input_stale_seconds": 7,
     "lateral_adjustment_blocks_per_second": 1,
+    "lateral_brake_minimum_speed": 2,
     "lateral_hold_delay_seconds": 0.5,
     "lateral_offset_step_blocks": 0.5,
     "lateral_strength_percent": 50,
@@ -90,6 +92,11 @@
       "z": 0
     },
     "orientation_verified": true,
+    "sable_bow_axis": {
+      "x": 1,
+      "y": 0,
+      "z": 0
+    },
     "velocity_forward": {
       "x": 1,
       "y": 0,
@@ -154,17 +161,26 @@
       "position_gain": 0.15,
       "position_tolerance": 0.5,
       "settle_seconds": 2,
-      "speed_tolerance": 0.05,
+      "speed_tolerance": 0.2,
+      "brake_stop_bps": 2,
+      "brake_rearm_bps": 3,
       "velocity_ki": 0.003,
       "velocity_kp": 0.05
     },
     "autopilot": {
       "arrival_radius": 12,
-      "cross_gain": 0.2,
+      "capture_position_tolerance": 2.5,
+      "capture_speed_tolerance": 0.4,
+      "capture_settle_seconds": 3,
+      "drift_heading_rate": 0.1,
+      "drift_heading_limit": 2,
+      "drift_observation_seconds": 8,
+      "drift_minimum_speed": 1,
+      "cross_gain": 0.5,
       "maximum_cross_speed": 1.5,
-      "output_slew": 0.25,
+      "output_slew": 0.5,
       "speed_ramp": 0.5,
-      "velocity_gain": 0.35
+      "velocity_gain": 0.8
     }
   },
   "network": {
@@ -201,8 +217,10 @@
   "schema_version": 1,
   "thrust": {
     "command_ttl_seconds": 1,
+    "zero_brake_stop_bps": 2,
     "direct_max_request": 1,
     "enabled": false,
+    "front_back_strafe_percent": 100,
     "heading_control": {
       "heading_rate_per_degree": 0.5,
       "maximum_yaw_rate_degrees_per_second": 10,
@@ -267,6 +285,7 @@
     "speed_control_enabled": true,
     "speed_control_verified": false,
     "speed_output_slew_per_second": 0.25,
+    "speed_overspeed_release_per_second": 0.1,
     "speed_pid": {
       "derivative_filter_seconds": 1,
       "integral_limit": 100,

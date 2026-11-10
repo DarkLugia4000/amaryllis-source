@@ -1,7 +1,7 @@
 # Amaryllis Disk Builder
 
-Build installation media from maintained Amaryllis source, export a configured
-ship, and update an existing installation. The utility works offline on Windows.
+Build installation media from maintained Amaryllis source and update an existing
+installation. The utility works offline on Windows.
 
 Release history is in [CHANGELOG.md](CHANGELOG.md).
 
@@ -10,26 +10,22 @@ Release history is in [CHANGELOG.md](CHANGELOG.md).
 - Python 3.11 or newer with Tcl/Tk.
 - A writable utility folder. Keep the extracted utility, `assets/` and any
   included `source/` directory together.
-- Access to the world's files when exporting or updating a ship.
+- Access to the world's files when updating a ship.
 
 Double-click **Start Builder.cmd**. The launcher uses an available local Python
 runtime or the installed Windows Python launcher/PATH. The window title shows
 the utility version, and build logs identify the interpreter used.
 
-## Choose the software source
+## Software source
 
-| Mode | Program and configuration source | Learning defaults |
-|---|---|---|
-| **Project source** | Maintained Lua and configuration in the selected project | Optional shipped hover and leveling defaults |
-| **Saved ship export** | Software and portable configuration in the selected saved installation | Optional learning saved by that ship |
-
-Project source is selected automatically when maintained source is present.
+The builder reads programs and configuration from the maintained project source.
+The project folder is selected automatically when maintained source is present.
 Standalone utility ZIPs include their release's source snapshot and revision
 record. Git is optional.
 
 ## Build from project source
 
-1. Open **Start Builder.cmd** and select **Project source**.
+1. Open **Start Builder.cmd**.
 2. Check **Amaryllis project folder**. In the repository, select the folder
    containing `project.py` and `source/`. In a standalone utility, select the
    extracted utility folder containing `source/`.
@@ -45,27 +41,6 @@ Project releases record the source commit, uncommitted-change status and input
 fingerprint in release metadata, the generated README and the local build report.
 The updater displays this provenance and retains it in installation records.
 
-## Export a saved ship
-
-1. Set **Software source** to **Saved ship export**.
-2. Select the save containing the configured Amaryllis. The chooser also accepts
-   its ComputerCraft directory, computer directory or numeric core folder.
-3. Choose whether to **Include this ship's saved hover and leveling corrections**.
-4. Click **Build installer**, then open the result.
-
-The exporter captures saved programs, PID configuration, input tuning, portable
-settings and the selected learning. It reads core's package library or recovers
-auxiliary sources from verified installed bundles. Recovered packages must match
-core's catalogue and their committed role receipts.
-
-If installed recovery is incomplete, the exporter searches saved floppy disks
-and installer directories for matching media. The command-line `--library` option
-supplies another matching location. Catalogue identities and object hashes are
-checked before accepting recovered files.
-
-Save and exit the source world before export for a consistent snapshot. The
-exporter reads saved files and stops if its inputs change during the build.
-
 ## Build output
 
 Graphical builds create a separate `Amaryllis-...` folder under `Installers/`
@@ -78,6 +53,7 @@ beside the utility.
 | `README.md` | Release instructions and required storage capacity |
 | `windows-settings/` | Standalone ComputerCraft settings utility |
 | `windows-update/` | Standalone updater and backup restore utility |
+| `python/` | Bundled Windows Python with Tcl/Tk used by both helpers (present when built on Windows) |
 | `build-report.json` | Local source paths, hashes, versions, learning and verification results |
 
 Share `amaryllis-installer.zip`. The local build report contains source paths
@@ -96,22 +72,30 @@ identified by the verification message.
 
 ## Update an existing ship
 
-In **Project source** mode, **Update existing ship...** builds the selected
-project and opens the updater with that release's media selected.
+**Update existing ship...** opens the updater with the maintained project folder
+selected. **Preview update** bundles the current source in a temporary workspace
+and shows the exact replacement files. No installation disk, distribution ZIP or
+Windows helper package is exported for this operation. Applying checks that the
+project inputs still match the preview. Source edits require a fresh preview.
+Temporary update files are removed after completion, replacement of the preview
+or closing the updater.
 
-To use an existing installer, open the updater from **Saved ship export** mode
-and select its media, or run `windows-update/Update Amaryllis.cmd` from the
-installation package. The distributed helper selects adjacent media automatically.
+The distributed `windows-update/Update Amaryllis.cmd` helper uses its adjacent
+installer release. An explicit `--media` argument also selects a released installer.
 
 1. Select the destination save or its numeric core folder.
-2. Check the selected installer media.
-3. Select a backup folder outside the save and installer media. The utility can
+2. Check the Amaryllis project folder, or the release media in a distributed helper.
+3. Select a backup folder outside the save and temporary update files. The utility can
    create its default `Backups/` folder.
 4. Click **Preview update** and review the Add, Replace, Remove and Keep entries.
-5. Save and fully close Minecraft and any server using the save.
-6. Select **I have saved and fully closed Minecraft**, click **Apply update**
-   and confirm the reviewed replacement.
-7. Wait for **Update complete and verified**, then reopen the world.
+5. Click **Apply update** and confirm the reviewed replacement. The world can stay
+   open: ComputerCraft supports replacing a running computer's files and every
+   write is atomic. Files the running computers rewrite on their own
+   (`installer/install_status.json` and everything under `avionics/data/`) are never
+   touched, backed up or compared. If a program or stored setting changes between
+   preview and apply, the update stops and names the file; preview again.
+6. Wait for **Update complete and verified**. Running computers keep their current
+   program until they reboot; reboot each one (or reload the world) to use the new one.
 
 All 16 registered computers are updated together. Programs are overwritten and
 obsolete managed files are removed. IDs and assignments are retained. Stored
@@ -133,17 +117,49 @@ Each update creates an `Amaryllis-update-...` folder outside the save containing
 the originals, hashes, preview and transaction journal. A write failure restores
 the originals. Replacement staging is removed after successful completion.
 
-To restore, close Minecraft, select **Restore backup...** and choose the transaction
+To restore, select **Restore backup...** and choose the transaction
 folder. Restore verifies the backup and checks for newer target edits. Interrupted
 updates are recorded in `computercraft/computer/.amaryllis-update.json`; use its
 named backup to finish recovery before applying another update.
 
-### Startup launcher repair
+## Web install (Pastebin)
 
-**Preview startup repair** prepares the supported launcher replacement for the
-14 auxiliary computers. It uses the same preview, external backup and closed-game
-workflow. Installed bundles, settings and learning are retained. It uses the
-utility's launcher asset and requires no installer media.
+Every push to `main` on GitHub runs `.github/workflows/release.yml`, which builds
+the media folder from the repository source and publishes it on the `release`
+branch. The Pastebin loader (`media/loader.lua`, with the repository filled in)
+looks up the newest release commit and runs `web-setup.lua` from it, so every
+computer of one installation uses the same build. Computers need HTTP (on by
+default) and a modem.
+
+1. On core, run `pastebin run <code>` and choose **1 Install core**. Core
+   downloads its programs, installs, and opens its registration screen. Until
+   the assignments are imported, core boots back into this screen.
+2. On each other computer, run `pastebin run <code>` and choose **2 Register
+   this computer**. It finds core over rednet, downloads core's release, and
+   lists the roles with their holders. Pick a role: core records it, and the
+   computer installs its wireless receiver (the state reader installs its own
+   programs) and reboots to wait for core.
+3. Back on core, once all 16 roles are registered, press **Enter** to import
+   the assignments. Core restarts with its own startup and installs each
+   computer's role package over wireless, fetching the packages from its
+   pinned web release.
+
+Fixing mistakes:
+
+- A computer's screen after registering is its commissioning screen. Hold
+  Ctrl+T to stop it, then run the loader again.
+- Wrong role, before import: run the loader on that computer and pick the
+  right role; core moves its assignment. Backspace on core's screen clears the
+  selected role.
+- **3 Remove this computer's registration** on a computer deletes its receiver
+  (or the state reader's programs) and asks core to clear its role. A computer
+  that already runs its role package keeps it; use a reset instead.
+- **R** on core's screen resets the installation: core restarts into
+  registration with every assignment cleared. Computers keep their programs
+  and settings and register again with the same roles.
+- **U** on core's screen uninstalls core before import and deletes its files. Package objects stay on the `release` branch across releases,
+so an installed core keeps serving its own release. The floppy-disk route below
+still works and is kept as a fallback.
 
 ## Installer floppy disk
 
@@ -224,23 +240,23 @@ Capacity changes only increase limits and require at least 4,000,000 bytes.
 Use the larger requirement from the generated installer README. The worker
 selector supports 1-64. Unrelated settings, comments and line endings are preserved.
 
-Close Minecraft/server fully before applying and acknowledge this in the
-interface. Each change creates a verified `.amaryllis-...bak` and JSON hash
+Minecraft/server must stay fully closed while applying (unlike ship updates), and
+the interface asks you to acknowledge this. Each change creates a verified `.amaryllis-...bak` and JSON hash
 record beside the configuration. **Restore backup...** verifies the saved copy
 and current file before restoring it. Restart Minecraft/server after editing.
 
 ## Verification and troubleshooting
 
-Build verification covers supported source layouts, JSON, roles, package
+Build verification covers the project source layout, JSON, roles, package
 manifests, transfer bounds, state-reader dependencies, learning records, object
 checksums, source consistency and ZIP contents. Lua compilation, regression tests
 and in-game acceptance are separate project checks.
 
 | Result | Action |
 |---|---|
-| Source changed during build | Finish source edits, or save and exit the source world, then build again. |
-| Missing or mismatched package source | Restore matching source or provide matching media through `--library`. |
-| Incomplete installation or transaction | Finish the recorded operation before export or update. |
+| Source changed during build | Finish source edits, then build again. |
+| Missing or mismatched package source | Restore the project's package source files. |
+| Incomplete installation or transaction | Finish the recorded operation before updating. |
 | GUI build error | Read the message and its private traceback report under `Logs/` beside the utility. |
 | Unsupported schema or bundle format | Use builder support that matches the source format. |
 
@@ -251,16 +267,13 @@ Run these commands from the utility directory. The output parent must exist.
 ```text
 py -3 builder.py --project "D:\Amaryllis Source" --output "D:\Amaryllis Installers"
 py -3 builder.py --project "D:\Amaryllis Source" --output "D:\Amaryllis Installers" --without-learning
-py -3 builder.py --source "D:\Minecraft\saves\My Amaryllis" --output "D:\Amaryllis Installers"
-py -3 builder.py --source "D:\Minecraft\saves\My Amaryllis" --library "D:\Previous Installer\media" --output "D:\Amaryllis Installers"
 py -3 updater.py --source "D:\Minecraft\saves\My Amaryllis" --media "D:\New Installer\media"
-py -3 updater.py --source "D:\Minecraft\saves\My Amaryllis" --media "D:\New Installer\media" --apply --backup "D:\Amaryllis Backups" --minecraft-closed
-py -3 updater.py --restore "D:\Amaryllis Backups\Amaryllis-update-..." --minecraft-closed
-py -3 updater.py --source "D:\Minecraft\saves\My Amaryllis" --repair-startup
+py -3 updater.py --source "D:\Minecraft\saves\My Amaryllis" --media "D:\New Installer\media" --apply --backup "D:\Amaryllis Backups"
+py -3 updater.py --restore "D:\Amaryllis Backups\Amaryllis-update-..."
 ```
 
 From the repository root, `python project.py build` builds current source and
 `python project.py update --target "D:\Minecraft\saves\My Amaryllis"` builds
 and previews an update. See the [project README](https://github.com/DarkLugia4000/amaryllis-source/blob/main/README.md)
-for development commands and the [owner's guide draft](https://github.com/DarkLugia4000/amaryllis-source/blob/main/docs/installation/Amaryllis-Owner-Installation-and-First-Flight-DRAFT.md)
+for development commands and the [owner's guide draft](https://github.com/DarkLugia4000/amaryllis-source/blob/main/docs/installation/Amaryllis-Owner-Installation-and-First-Flight-DRAFT-v3.md)
 for vessel installation and operation.

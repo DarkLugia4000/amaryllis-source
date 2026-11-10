@@ -12,6 +12,7 @@ import re
 import shutil
 import stat
 import tempfile
+import time
 import uuid
 import zlib
 
@@ -21,12 +22,14 @@ FOLDERS = {"navigator": "navigation", **{f"heading-{x}": f"heading/{x}" for x in
            **{f"primary_{x}": f"primary/{'left' if x == 'l' else 'right'}" for x in ("l", "r")},
            **{f"thrust-{x}": f"thrust/{x}" for x in ("lb", "rb", "ls", "rs")}}
 ROLES = {"core", "state", *FOLDERS}
-LEGACY_LAUNCHER_SHA256 = "c81acc02b1cc88599c499021fb4082ae05db22a72a418b19be937dde595d9e61"
 RECEIPT_FIELDS = {"role": "installedRole", "packageId": "installedPackageId", "version": "installedVersion",
                   "manifestChecksum": "installedManifestChecksum", "computerID": "installedComputerID",
                   "coreID": "installedCoreID", "label": "installedLabel", "installID": "installedInstallID",
                   "clientSession": "installedClientSession", "serverSession": "installedServerSession",
                   "coreSession": "installedCoreSession"}
+
+# Release fields a running installer only refreshes at its next boot after a live update.
+LIVE_REFRESHED_RECEIPT_FIELDS = frozenset({"version", "manifestChecksum"})
 
 
 class UpdateError(Exception):
@@ -112,6 +115,30 @@ def scan(root):
     return result
 
 
+# Files the running computers rewrite on their own while the world is open. They are not part of an
+# update: they are left untouched, never backed up and never compared, so a live ship can be updated.
+VOLATILE_FILES = frozenset({"installer/install_status.json", "installer/status.json.bak",
+                            "installer/boot-counter", "installer/boot-counter.bak", "installer/auto-reboot.json"})
+VOLATILE_FOLDERS = ("avionics/data/",)
+
+
+def volatile(path):
+    """True for runtime state owned by the running computer (relative to its own folder)."""
+    return path in VOLATILE_FILES or path.startswith(VOLATILE_FOLDERS) or (path.startswith("installer/") and path.endswith(".tmp"))
+
+
+
+# Snapshot one computer folder without its volatile runtime files.
+def scan_computer(root):
+    return {p: d for p, d in scan(root).items() if not volatile(p)}
+
+
+# A running installer rewrites its own status.json (state, heartbeat, active package) at any time. The update still
+# writes the refreshed receipt fields, but verification and restore checks leave that one file out.
+def quiet(files):
+    return {p: d for p, d in files.items() if not p.endswith("/installer/status.json")}
+
+
 def merged(defaults, stored):
     """Retain every stored value, adding defaults only for absent settings."""
     need(isinstance(defaults, dict) and isinstance(stored, dict), "Configuration must be an object")
@@ -119,14 +146,6 @@ def merged(defaults, stored):
     for key, value in stored.items():
         result[key] = merged(result[key], value) if isinstance(result.get(key), dict) and isinstance(value, dict) else copy.deepcopy(value)
     return result
-
-
-def current_launcher():
-    path = HOME / "assets/bootstrap-launcher.lua"; unlinked(path)
-    hashes = decode((HOME / "assets/asset-hashes.json").read_bytes(), "builder assets")
-    data = path.read_bytes()
-    need(sha(data) == hashes.get("bootstrap-launcher.lua"), "Startup launcher support asset is damaged")
-    return data
 
 
 # Resolve the selected ship and its registered core computer.
@@ -243,6 +262,9 @@ def valid_receipt(before, role, computer_id, core_id, label):
     need(status.get("hasInstalled") is True and status.get("recoveryRequired") is False
          and status.get("state") not in ("committing", "recovery_required"), f"{role} has an unfinished installation")
     for key, field in RECEIPT_FIELDS.items():
+        # A computer that has not rebooted since a live update still reports its old release in status.json.
+        if key in LIVE_REFRESHED_RECEIPT_FIELDS and key in receipt:
+            continue
         need(key in receipt and status.get(field) == receipt[key], f"{role} receipt/status mismatch: {key}")
     for field in ("clientSession", "serverSession", "coreSession", "installID"):
         need(isinstance(receipt[field], str) and re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", receipt[field]), f"Invalid {role} receipt token")
@@ -253,7 +275,23 @@ class Plan:
     def __init__(self, core, computers, media, release):
         self.core, self.computers, self.media, self.release = core, computers, media, release
         self.before, self.after, self.roles = {}, {}, {}
-        self.operation = "update"
+        self.project_root = None
+        self.source_snapshot = None
+        self._staging = None
+
+    def close(self):
+        """Release the temporary source payload owned by this reviewed update."""
+        if self._staging is not None:
+            self._staging.cleanup()
+            self._staging = None
+
+    def check_source(self):
+        """Require maintained source inputs to match the reviewed source snapshot."""
+        if self.source_snapshot is not None:
+            try:
+                self.source_snapshot.check_unchanged()
+            except Exception as error:
+                raise UpdateError("Project source changed after preview. Preview again.\n" + str(error)) from error
 
     # Format the operation, per-computer file changes and preserved-data counts.
     def report(self):
@@ -264,7 +302,7 @@ class Plan:
             rows.append(f"{action:7} #{key}")
         rows += [f"Add     #{key}" for key in sorted(self.after.keys() - self.before.keys())]
         counts = {k: sum(row.startswith(k) for row in rows) for k in ("Add", "Replace", "Remove", "Keep")}
-        heading = "Startup launcher repair" if self.operation == "repair-startup" else "Existing ship update"
+        heading = "Existing ship update"
         source = self.release.get("source", {})
         provenance = ""
         if source.get("kind") == "project-source":
@@ -274,16 +312,54 @@ class Plan:
             provenance += "\nSource fingerprint: " + source["sourceTreeSHA256"]
         return (f"{heading}: {self.release['releaseId']}\nTarget: {self.computers}\n"
                 f"Computers: {len(self.roles)} | " + " | ".join(f"{k}: {v}" for k, v in counts.items()) +
-                provenance +
+                provenance + ("\nProject: " + str(self.project_root) if self.project_root else "") +
                 "\nStored settings and all avionics/data files are retained.\n"
                 "Old program files are backed up outside the save, then replaced/removed.\n\n" + "\n".join(rows))
+
+
+def default_project():
+    """Find maintained source beside the updater when the project builder is available."""
+    if not (HOME / "builder.py").is_file():
+        return None
+    return next((path for path in (HOME.parent, HOME) if (path / "source/baseline.json").is_file()), None)
+
+
+def preview_project(selection, project_selection, *, workspace=None, log=lambda message: None):
+    """Bundle current source into temporary verified media and preview its fleet replacement."""
+    try:
+        import builder
+    except ImportError as error:
+        raise UpdateError("Project updates require the project Disk Builder. Open disk-builder/Start Builder.cmd.") from error
+    core, computers = locate(selection)
+    save = computers.parent.parent if computers.parent.name == "computercraft" else computers.parent
+    parent = Path(workspace) if workspace is not None else HOME / ".cache"
+    parent = parent.expanduser().absolute()
+    unlinked(parent)
+    need(not parent.is_relative_to(save), "Update workspace must be outside the Minecraft save")
+    snapshot = builder.ProjectSnapshot(project_selection)
+    need(not parent.is_relative_to(snapshot.root / "source"), "Update workspace must be outside editable source")
+    parent.mkdir(parents=True, exist_ok=True)
+    staging = tempfile.TemporaryDirectory(prefix="source-update-", dir=parent)
+    try:
+        release, _ = builder.build(snapshot.root, Path(staging.name), log=log, installer_package=False)
+        snapshot.check_unchanged()
+        plan = preview(core, release / "media")
+        plan.project_root, plan.source_snapshot, plan._staging = snapshot.root, snapshot, staging
+        return plan
+    except builder.BuildError as error:
+        staging.cleanup()
+        detail = str(error).split("\nIncomplete output retained at:", 1)[0]
+        raise UpdateError("Source update could not be prepared: " + detail) from error
+    except BaseException:
+        staging.cleanup()
+        raise
 
 
 # Compute replacement files while preserving stored configuration and data.
 def preview(selection, media_selection):
     core, computers = locate(selection)
     need(not (computers / ".amaryllis-update.json").exists(),
-         "An update transaction needs recovery. Keep Minecraft closed and use Restore backup with the folder named in .amaryllis-update.json")
+         "An update transaction needs recovery. Use Restore backup with the folder named in .amaryllis-update.json")
     media, release, groups = read_media(media_selection)
     need(not media.is_relative_to(computers) and not computers.is_relative_to(media), "Installer media must be outside computer folders")
     fleet = decode((core / "fleet.json").read_bytes(), "fleet.json")
@@ -297,7 +373,7 @@ def preview(selection, media_selection):
     for role, record in registered.items():
         need(isinstance(record.get("label"), str) and record["label"] == release["roles"][role]["label"], f"Fleet label differs for {role}")
         computer_id = record["id"]; folder = computers / str(computer_id)
-        before = scan(folder)
+        before = scan_computer(folder)
         need(not any(p.startswith("installer/commit.json") for p in before), f"#{computer_id} has an unfinished commit; repair it first")
         journal = decode(before.get("amaryllis-install.json", b""), f"#{computer_id} installation record")
         need(journal.get("pending") is False and journal.get("role") == role and journal.get("id") == computer_id,
@@ -328,8 +404,6 @@ def preview(selection, media_selection):
                             "/avionics/config.json": groups["library"][prefix + "config.json"],
                             "/avionics/common/console.lua": groups["library"]["/packages/common/console.lua"],
                             "/startup.lua": groups["bootstrap"]["/startup.lua"], "/installer.lua": groups["bootstrap"]["/installer.lua"]}
-            if sha(replacements["/startup.lua"]) == LEGACY_LAUNCHER_SHA256:
-                replacements["/startup.lua"] = current_launcher()
             # Checksum describes the release payload in the server's fixed manifest order.
             checksum_rows = b"".join(p.encode() + b"\0" + str(len(replacements[p])).encode() + b"\0" +
                                      f"{zlib.adler32(replacements[p]):08X}".encode() + b"\n" for p in manifest["files"])
@@ -363,37 +437,16 @@ def preview(selection, media_selection):
     return plan
 
 
-# Prepare the supported launcher replacement for registered fleet computers.
-def preview_startup_repair(selection):
-    core, computers = locate(selection)
-    need(not (computers / ".amaryllis-update.json").exists(), "An update transaction needs recovery first")
-    fleet = decode((core / "fleet.json").read_bytes(), "fleet.json").get("computers", {})
-    need(set(fleet) == ROLES, "A complete registered fleet is required")
-    ids = [r.get("id") for r in fleet.values()]
-    need(all(type(i) is int and i >= 0 for i in ids) and len(set(ids)) == 16, "Invalid or duplicate registered computer IDs")
-    need(core.name == str(fleet["core"]["id"]), "Core identity mismatch")
-    replacement = current_launcher()
-    plan = Plan(core, computers, HOME / "assets", {"releaseId": "startup-launcher-repair-v1"})
-    plan.operation = "repair-startup"
-    for role, record in fleet.items():
-        cid = str(record["id"]); before = scan(computers / cid)
-        journal = decode(before.get("amaryllis-install.json", b""), role + " registration")
-        need(journal.get("id") == record["id"] and journal.get("role") == role and journal.get("pending") is False,
-             f"Conflicting registration for #{cid}")
-        after = dict(before)
-        if role in FOLDERS:
-            installed = before.get("startup.lua", b"")
-            need(sha(installed) == LEGACY_LAUNCHER_SHA256 or installed == replacement,
-                 f"#{cid} has a different startup program; targeted repair refused")
-            after["startup.lua"] = replacement
-        plan.roles[cid] = role
-        plan.before.update({f"{cid}/{p}": d for p, d in before.items()})
-        plan.after.update({f"{cid}/{p}": d for p, d in after.items()})
-    return plan
-
-
 def current(plan):
-    return {f"{cid}/{p}": d for cid in plan.roles for p, d in scan(plan.computers / cid).items()}
+    return {f"{cid}/{p}": d for cid in plan.roles for p, d in scan_computer(plan.computers / cid).items()}
+
+
+# Name the files that differ from the reviewed state, for a precise "preview again" message.
+def drift(plan, expected):
+    now = quiet(current(plan))
+    expected = quiet(expected)
+    names = sorted(p for p in now.keys() | expected.keys() if now.get(p) != expected.get(p))
+    return ", ".join(names[:6]) + (f" and {len(names) - 6} more" if len(names) > 6 else "")
 
 
 # Flush a temporary sibling file and atomically replace its target.
@@ -408,7 +461,13 @@ def atomic_write(path, data, transaction=None):
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(data); handle.flush(); os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        # A running ComputerCraft computer can hold the file open for a moment (Windows refuses the swap).
+        for attempt in range(40):
+            try:
+                os.replace(temporary, path); break
+            except PermissionError:
+                if attempt == 39: raise
+                time.sleep(0.25)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
@@ -425,24 +484,30 @@ def hash_map(files):
     return {p: sha(data) for p, data in files.items()}
 
 
-def closed_check(path):
-    import cc_settings
-    cc_settings.assert_game_closed(path)
+def save_folder(computers):
+    """Return the Minecraft save that contains a computercraft/computer folder."""
+    return computers.parent.parent if computers.parent.name == "computercraft" else computers.parent
 
 
 # Back up the verified fleet, commit the preview and roll back interrupted writes.
-def apply(plan, backup_parent, *, closed_ack=False, process_check=closed_check, fault=None):
-    need(closed_ack is True, "Save and fully close Minecraft before applying the update")
+def apply(plan, backup_parent, *, fault=None):
+    """Apply a reviewed plan. The world may stay open: ComputerCraft supports replacing a running
+    computer's files, every write is atomic, and running computers keep their current program until
+    they reboot. The update marker stops two updaters working on one save."""
     parent = Path(backup_parent).expanduser().absolute()
     unlinked(parent)
     # Keep backups/staging outside the whole save and installer source.
-    save = plan.computers.parent.parent if plan.computers.parent.name == "computercraft" else plan.computers.parent
+    save = save_folder(plan.computers)
     need(parent.is_dir() and not parent.is_relative_to(save) and not parent.is_relative_to(plan.media),
          "Choose an existing backup folder outside the Minecraft save and installer media")
-    process_check(plan.core)
-    need(current(plan) == plan.before, "Computer files changed after preview. Preview again")
-    fresh = preview_startup_repair(plan.core) if plan.operation == "repair-startup" else preview(plan.core, plan.media)
-    need(fresh.before == plan.before and fresh.after == plan.after, "Installer/target changed after preview")
+    plan.check_source()
+    if plan.project_root is not None:
+        need(not parent.is_relative_to(plan.project_root / "source"), "Backup must be outside editable project source")
+    if plan._staging is not None:
+        need(not parent.is_relative_to(Path(plan._staging.name)), "Backup must be outside the temporary update workspace")
+    need(quiet(current(plan)) == quiet(plan.before), "Computer files changed after preview (" + drift(plan, plan.before) + "). Preview again")
+    fresh = preview(plan.core, plan.media)
+    need(quiet(fresh.before) == quiet(plan.before) and quiet(fresh.after) == quiet(plan.after), "Installer/target changed after preview")
     required = sum(map(len, plan.before.values())) + sum(map(len, plan.after.values())) + 1_000_000
     need(shutil.disk_usage(parent).free > required and shutil.disk_usage(plan.computers).free > sum(map(len, plan.after.values())) + 1_000_000,
          "Insufficient free space for verified backup and staged replacement")
@@ -461,8 +526,8 @@ def apply(plan, backup_parent, *, closed_ack=False, process_check=closed_check, 
     journal_path = backup / "update.json"
     atomic_write(journal_path, encode(journal))
     (backup / "preview.txt").write_text(plan.report(), encoding="utf-8")
-    process_check(plan.core)
-    need(current(plan) == plan.before, "Target changed while preparing the backup. No computer files were changed")
+    plan.check_source()
+    need(quiet(current(plan)) == quiet(plan.before), "Target changed while preparing the backup (" + drift(plan, plan.before) + "). No computer files were changed")
     marker = plan.computers / ".amaryllis-update.json"
     unlinked(marker)
     try:
@@ -473,7 +538,7 @@ def apply(plan, backup_parent, *, closed_ack=False, process_check=closed_check, 
         raise UpdateError("Another update is in progress or needs recovery") from error
     try:
         journal["phase"] = "applying"; atomic_write(journal_path, encode(journal))
-        # Startup files go last; Minecraft remains closed throughout the transaction.
+        # Startup files go last so a computer that reboots mid-update still finds a complete program set.
         for index, relative in enumerate(sorted(changed, key=lambda p: (p.endswith("/startup.lua"), p))):
             target = plan.computers / relative; unlinked(target)
             if relative in plan.after:
@@ -482,7 +547,7 @@ def apply(plan, backup_parent, *, closed_ack=False, process_check=closed_check, 
                 target.unlink()
             if fault:
                 fault(index, relative)
-        need(current(plan) == plan.after, "Final installation verification failed")
+        need(quiet(current(plan)) == quiet(plan.after), "Final installation verification failed")
         folders = {str(Path(p).parent).replace("\\", "/") for p in changed if p not in plan.after}
         folders |= {str(Path(p).parent).replace("\\", "/") for p in folders}
         prune(plan.computers, folders)
@@ -490,7 +555,7 @@ def apply(plan, backup_parent, *, closed_ack=False, process_check=closed_check, 
         marker.unlink()
     except Exception as error:
         try:
-            restore(backup, closed_ack=True, process_check=process_check)
+            restore(backup)
         except Exception as recovery_error:
             raise UpdateError(f"Update stopped: {error}. Recovery required: {backup}. {recovery_error}") from error
         raise UpdateError(f"Update stopped and the previous installation was restored. Backup: {backup}. {error}") from error
@@ -516,8 +581,8 @@ def discard_stage(backup, expected):
 
 
 # Verify a backup and restore its exact recorded computer files.
-def restore(selection, *, closed_ack=False, process_check=closed_check):
-    need(closed_ack is True, "Fully close Minecraft before restoring")
+def restore(selection):
+    """Restore a verified backup. The world may stay open, as for apply."""
     backup = Path(selection).expanduser().absolute(); unlinked(backup)
     record = decode((backup / "update.json").read_bytes(), "update backup")
     need(record.get("schemaVersion") == 1 and record.get("phase") in ("prepared", "applying", "applied", "restoring", "restored"), "Unsupported backup journal")
@@ -539,15 +604,24 @@ def restore(selection, *, closed_ack=False, process_check=closed_check):
     # already be partly discarded when recovering an interrupted final cleanup.
     changed = sorted(p for p in record["before"].keys() | record["after"].keys() if record["before"].get(p) != record["after"].get(p))
     need(changed == record["changed"], "Backup change list mismatch")
-    process_check(target / record["core"])
-    actual = {f"{cid}/{p}": d for cid in roles for p, d in scan(target / cid).items()}
+    return _restore_verified(backup, record, target, roles, marker, before, changed)
+
+
+def _restore_verified(backup, record, target, roles, marker, before, changed):
+    # Backups made before volatile files existed may list them; they are never restored or compared.
+    def kept(files): return {p: d for p, d in files.items() if not volatile(p.split("/", 1)[1])}
+    before = kept(before)
+    record_before, record_after = kept(record["before"]), kept(record["after"])
+    changed = [p for p in changed if not volatile(p.split("/", 1)[1])]
+    actual = {f"{cid}/{p}": d for cid in roles for p, d in scan_computer(target / cid).items()}
     temporary_paths = {(Path(p).parent / (".amaryllis-write-" + record["transaction"] + ".tmp")).as_posix() for p in changed}
     leftovers = actual.keys() & temporary_paths
     for relative in leftovers: actual.pop(relative)
-    actual_hashes = hash_map(actual)
-    need(not (actual_hashes.keys() - (record["before"].keys() | record["after"].keys())), "New files exist in the target. Restore refused to protect newer changes")
-    for p in record["before"].keys() | record["after"].keys():
-        need(actual_hashes.get(p) in (record["before"].get(p), record["after"].get(p)), f"Newer edits detected: {p}. Restore refused")
+    actual_hashes = hash_map(quiet(actual))
+    record_before, record_after = quiet(record_before), quiet(record_after)
+    need(not (actual_hashes.keys() - (record_before.keys() | record_after.keys())), "New files exist in the target. Restore refused to protect newer changes")
+    for p in record_before.keys() | record_after.keys():
+        need(actual_hashes.get(p) in (record_before.get(p), record_after.get(p)), f"Newer edits detected: {p}. Restore refused")
     if not marker.exists():
         try:
             with marker.open("xb") as handle:
@@ -563,7 +637,7 @@ def restore(selection, *, closed_ack=False, process_check=closed_check):
             atomic_write(path, before[relative], record["transaction"])
         elif path.exists():
             path.unlink()
-    need({f"{cid}/{p}": d for cid in roles for p, d in scan(target / cid).items()} == before, "Restore verification failed")
+    need(quiet({f"{cid}/{p}": d for cid in roles for p, d in scan_computer(target / cid).items()}) == quiet(before), "Restore verification failed")
     record["phase"] = "restored"; atomic_write(backup / "update.json", encode(record))
     if marker.exists(): marker.unlink()
     discard_stage(backup, record["after"])
@@ -571,15 +645,21 @@ def restore(selection, *, closed_ack=False, process_check=closed_check):
 
 
 # Create the update preview, commit and backup-restore interface.
-def open_dialog(parent, source="", media=""):
+def open_dialog(parent, source="", media="", project=""):
     import tkinter as tk
     from tkinter import ttk, filedialog, messagebox
     window = tk.Toplevel(parent); window.title("Update existing Amaryllis"); window.geometry("940x760")
     frame = ttk.Frame(window, padding=18); frame.pack(fill="both", expand=True)
     ttk.Label(frame, text="Update existing ship", font=("Segoe UI", 17, "bold")).pack(anchor="w")
     ttk.Label(frame, text="Replaces installed programs, removes obsolete files and retains stored settings and learning.", wraplength=850).pack(anchor="w", pady=(4, 12))
-    variables = [tk.StringVar(value=source), tk.StringVar(value=media), tk.StringVar(value=str(HOME / "Backups"))]
-    for label, variable in zip(("Target Minecraft save or core folder", "New installer media folder", "Backup folder outside the save"), variables):
+    project_root = project or (str(default_project() or "") if not media else "")
+    project_mode = bool(project_root)
+    software_label = "Amaryllis project folder" if project_mode else "Installer media folder"
+    if project_mode:
+        ttk.Label(frame, text="Preview bundles the current project source. Temporary build files are removed when this update closes.",
+                  wraplength=850).pack(anchor="w", pady=(0, 10))
+    variables = [tk.StringVar(value=source), tk.StringVar(value=project_root if project_mode else media), tk.StringVar(value=str(HOME / "Backups"))]
+    for label, variable in zip(("Target Minecraft save or core folder", software_label, "Backup folder outside the save"), variables):
         ttk.Label(frame, text=label).pack(anchor="w")
         row = ttk.Frame(frame); row.pack(fill="x", pady=(3, 10))
         ttk.Entry(row, textvariable=variable).pack(side="left", fill="x", expand=True)
@@ -587,14 +667,20 @@ def open_dialog(parent, source="", media=""):
             selected = filedialog.askdirectory(parent=window, initialdir=v.get() if Path(v.get()).is_dir() else str(HOME))
             if selected: v.set(selected)
         ttk.Button(row, text="Browse…", command=choose).pack(side="right", padx=(8, 0))
-    closed = tk.BooleanVar(value=False)
-    ttk.Checkbutton(frame, text="I have saved and fully closed Minecraft", variable=closed).pack(anchor="w", pady=6)
+    ttk.Label(frame, text="The world can stay open: ComputerCraft picks up replaced files and running computers keep their "
+                          "current program until they reboot. Settings the computers write while you work are never touched.",
+              wraplength=850).pack(anchor="w", pady=6)
     row = ttk.Frame(frame); row.pack(fill="x")
     text = tk.Text(frame, wrap="none", font=("Consolas", 10)); text.pack(fill="both", expand=True, pady=10)
     bar = ttk.Scrollbar(text, command=text.yview); bar.pack(side="right", fill="y"); text.configure(yscrollcommand=bar.set)
     text.configure(state="disabled")
     state = {"plan": None, "inputs": None, "busy": False}
     window._amaryllis_update_state = state
+    def discard_plan():
+        """Release the reviewed source payload before replacing or closing its preview."""
+        if state["plan"] is not None:
+            state["plan"].close()
+        state["plan"] = None
     def show(value):
         text.configure(state="normal"); text.delete("1.0", "end"); text.insert("end", value); text.configure(state="disabled")
     import queue, threading
@@ -609,35 +695,28 @@ def open_dialog(parent, source="", media=""):
             except Exception as error: events.put(("error", str(error)))
         threading.Thread(target=work, daemon=True).start()
     def make_preview():
-        state["plan"] = None
+        if state["busy"]: return
+        discard_plan()
         inputs = tuple(v.get() for v in variables)
         def work():
-            plan = preview(inputs[0], inputs[1]); return ("preview", plan, inputs)
+            plan = preview_project(inputs[0], inputs[1]) if project_mode else preview(inputs[0], inputs[1])
+            return ("preview", plan, inputs)
         run(work)
-    def make_repair_preview():
-        state["plan"] = None
-        inputs = tuple(v.get() for v in variables)
-        run(lambda: ("preview", preview_startup_repair(inputs[0]), inputs))
-    # Review the preview and submit the acknowledged offline update.
+    # Confirm the preview and submit the live update.
     def update():
         plan = state["plan"]
         if not plan or state["inputs"] != tuple(v.get() for v in variables):
             messagebox.showerror("Preview required", "Preview the current choices before applying", parent=window); return
-        if not closed.get():
-            messagebox.showerror("Close Minecraft", "Save and fully close Minecraft, then select the checkbox", parent=window); return
         parent_path = Path(variables[2].get())
         if parent_path == HOME / "Backups": parent_path.mkdir(exist_ok=True)
         if not messagebox.askyesno("Apply reviewed update", "Replace the files shown in the preview and save a verified backup?", parent=window): return
-        run(lambda: ("applied", apply(plan, parent_path, closed_ack=True)))
+        run(lambda: ("applied", apply(plan, parent_path)))
     def recover():
         selected = filedialog.askdirectory(parent=window, title="Choose an Amaryllis-update backup folder")
         if not selected: return
-        if not closed.get():
-            messagebox.showerror("Close Minecraft", "Fully close Minecraft and select the checkbox before restoring", parent=window); return
         if messagebox.askyesno("Restore installation", "Restore the selected backup after checking for newer changes?", parent=window):
-            run(lambda: ("restored", restore(selected, closed_ack=True)))
+            run(lambda: ("restored", restore(selected)))
     buttons = [ttk.Button(row, text="Preview update", command=make_preview),
-               ttk.Button(row, text="Preview startup repair", command=make_repair_preview),
                ttk.Button(row, text="Apply update", command=update), ttk.Button(row, text="Restore backup…", command=recover)]
     for button in buttons: button.pack(side="left", padx=(0, 8))
     # Consume update-worker events and refresh buttons, logs and results.
@@ -646,18 +725,22 @@ def open_dialog(parent, source="", media=""):
             kind, value = events.get_nowait(); state["busy"] = False
             for button in buttons: button.configure(state="normal")
             if kind == "error":
-                state["plan"] = None; show(value); messagebox.showerror("Update could not complete", value, parent=window)
+                discard_plan(); show(value); messagebox.showerror("Update could not complete", value, parent=window)
             elif value[0] == "preview":
                 state["plan"], state["inputs"] = value[1:]; show(value[1].report())
             else:
-                state["plan"] = None
+                discard_plan()
                 show(("Update complete and verified.\nBackup: " if value[0] == "applied" else "Backup restored and verified.\nTarget: ") + str(value[1]) +
-                     "\n\nLoad the world. The existing computers will use the replacement programs.\nKeep the matching installer disk for later installation or repair.")
+                     "\n\nReboot each computer (or load the world) to run the replacement programs.")
         window.after(100, poll)
     def close():
         if state["busy"]: messagebox.showinfo("Operation in progress", "Let the current operation finish before closing", parent=window)
-        else: window.destroy()
-    window.protocol("WM_DELETE_WINDOW", close); window.after(100, poll)
+        else:
+            discard_plan()
+            window.destroy()
+    window.protocol("WM_DELETE_WINDOW", close)
+    window.bind("<Destroy>", lambda event: discard_plan() if event.widget == window else None, add="+")
+    window.after(100, poll)
     if parent.winfo_viewable(): window.transient(parent)
     return window
 
@@ -667,27 +750,34 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gui", action="store_true")
     parser.add_argument("--source", type=Path)
-    parser.add_argument("--media", type=Path)
+    software = parser.add_mutually_exclusive_group()
+    software.add_argument("--project", type=Path, help="Maintained project source; detected automatically in a checkout")
+    software.add_argument("--media", type=Path, help="Use a specific distributed installer release")
     parser.add_argument("--apply", action="store_true", help="Apply the previewed replacement with a verified backup")
     parser.add_argument("--backup", type=Path, help="Existing backup parent outside the save")
     parser.add_argument("--restore", type=Path, help="Restore/recover a transaction backup folder")
-    parser.add_argument("--repair-startup", action="store_true", help="Replace the known faulty auxiliary launcher only")
-    parser.add_argument("--minecraft-closed", action="store_true")
     args = parser.parse_args()
-    if args.gui or not any((args.source, args.media, args.restore)):
+    selected_project = args.project or (default_project() if not args.media else None)
+    if args.gui or not any((args.source, args.media, args.project, args.restore)):
         import tkinter as tk
         root = tk.Tk(); root.withdraw()
-        default_media = str(HOME.parent / "media") if (HOME.parent / "media/release.json").is_file() else ""
-        window = open_dialog(root, str(args.source or ""), str(args.media or default_media))
-        window.bind("<Destroy>", lambda event: root.destroy() if event.widget == window else None)
+        default_media = str(HOME.parent / "media") if not selected_project and (HOME.parent / "media/release.json").is_file() else ""
+        window = open_dialog(root, source=str(args.source or ""), media=str(args.media or default_media),
+                             project=str(selected_project or ""))
+        window.bind("<Destroy>", lambda event: root.destroy() if event.widget == window else None, add="+")
         root.mainloop(); return
     if args.restore:
-        print(restore(args.restore, closed_ack=args.minecraft_closed)); return
-    need(args.source and (args.media or args.repair_startup), "--source and --media are required for a full update")
-    plan = preview_startup_repair(args.source) if args.repair_startup else preview(args.source, args.media); print(plan.report())
-    if args.apply:
-        need(args.backup, "--backup is required when applying")
-        print("Verified backup:", apply(plan, args.backup, closed_ack=args.minecraft_closed))
+        print(restore(args.restore)); return
+    need(args.source and (selected_project or args.media),
+         "Select --source and maintained --project source, or an explicit --media release")
+    plan = preview_project(args.source, selected_project) if selected_project else preview(args.source, args.media)
+    try:
+        print(plan.report())
+        if args.apply:
+            need(args.backup, "--backup is required when applying")
+            print("Verified backup:", apply(plan, args.backup))
+    finally:
+        plan.close()
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
--- @ama-section: Boot entry | Load the installed console and role application environment.
+-- Section: Boot entry | Load the installed console and role application environment.
 local programEnv = _ENV
 if type(programEnv) ~= "table" and type(getfenv) == "function" then
     local envOK, currentEnv = pcall(getfenv, 1)

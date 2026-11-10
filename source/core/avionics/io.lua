@@ -1,4 +1,5 @@
--- @ama-section: Core boundary | Hardware observations, trusted fleet packets and bounded commands.
+local Mathx = require("avionics.mathx")
+-- Section: Core boundary | Hardware observations, trusted fleet packets and bounded commands.
 -- Sable-first assembly verification v1
 -- Identity conflict advisory v1
 local IdentityWatch=require("avionics.identity_watch")
@@ -23,8 +24,8 @@ local ROLE_MANIFESTS={
     primary_r="/installer/library.json",
 }
 
-local QUADRANTS = { "FL", "FR", "RL", "RR" }
-local QUADRANT_ROLE = {FL="chamber_fl", FR="chamber_fr", RL="chamber_bl", RR="chamber_br"}
+local QUADRANTS = { "FL", "FR", "BL", "BR" }
+local QUADRANT_ROLE = {FL="chamber_fl", FR="chamber_fr", BL="chamber_bl", BR="chamber_br"}
 local CONTROL_CONTEXT_LEASE_SECONDS = 1.5
 local HEADING_ROLES = {
     {key="heading-main", role="heading", description="center heading / altitude"},
@@ -36,9 +37,7 @@ local INPUT_ORDER = {
     "prop_reverse", "ap_disconnect", "altitude_up", "altitude_down",
 }
 
-local function finite(value)
-    return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
-end
+local finite = Mathx.finite
 
 local function integer(value, minimum, maximum)
     return finite(value) and value % 1 == 0 and value >= minimum and value <= maximum
@@ -65,8 +64,8 @@ local function boundedString(value, limit)
     return type(value) == "string" and #value > 0 and #value <= (limit or 128)
 end
 
--- @ama-section: Core context | Registry, hardware discovery and protocol identity.
--- @ama-summary: Add a measured value, source and timestamp to the current vessel snapshot.
+-- Section: Core context | Registry, hardware discovery and protocol identity.
+-- Summary: Add a measured value, source and timestamp to the current vessel snapshot.
 local function field(value, name, index)
     if type(value) ~= "table" and type(value) ~= "userdata" then return nil end
     local ok, result = pcall(function() return value[name] end)
@@ -90,7 +89,7 @@ local function safeCall(api, method, ...)
     return result
 end
 
--- @ama-summary: Run independent getter jobs and collect their completion results.
+-- Summary: Run independent getter jobs and collect their completion results.
 local function runParallel(parallelApi, tasks)
     -- Keep peripheral calls in the sampling coroutine. The top-level runtime
     -- runs this worker beside its rednet/event loop, so a yielding API call
@@ -108,7 +107,7 @@ local function runParallel(parallelApi, tasks)
     return true
 end
 
--- @ama-summary: Return the shared runtime clock in seconds.
+-- Summary: Return the shared runtime clock in seconds.
 local function nowSeconds(osApi)
     if osApi and type(osApi.epoch) == "function" then
         local ok, ms = pcall(osApi.epoch, "utc")
@@ -121,7 +120,7 @@ local function nowSeconds(osApi)
     return 0
 end
 
--- @ama-summary: Generate the bounded session identifier used to correlate core traffic.
+-- Summary: Generate the bounded session identifier used to correlate core traffic.
 local function newSession(id,osApi)
     local epoch=math.floor(nowSeconds(osApi)*1000)
     local uptime=0
@@ -143,7 +142,7 @@ local function inList(list, wanted)
     return false
 end
 
--- @ama-summary: Initialize a registered chamber's status, sequence and command state.
+-- Summary: Initialize a registered chamber's status, sequence and command state.
 local function newNode(id, quadrant)
     return {id=id,quadrant=quadrant,boot=nil,retiredBoots={},statusSeq=nil,lastAppliedSeq=-1,
         lastReceivedSeq=0,lastSeen=nil,ready=false,armed=false,operationBusy=false,faults={"NO STATUS"},providers={},
@@ -155,7 +154,7 @@ local function newNode(id, quadrant)
         emergencyStopLatched=false,emergencyStopVerified=false,emergencyStopFault=nil}
 end
 
--- @ama-summary: Normalize reported peripheral types into a bounded list.
+-- Summary: Normalize reported peripheral types into a bounded list.
 local function typeList(peripheralApi, name)
     if not peripheralApi or type(peripheralApi.getType) ~= "function" then return {} end
     local result = { pcall(peripheralApi.getType, name) }
@@ -181,7 +180,7 @@ local function hasPeripheralType(peripheralApi, name, wanted)
     return inList(typeList(peripheralApi, name), wanted)
 end
 
--- @ama-summary: Construct core hardware, network and sensor state from the configured fleet.
+-- Summary: Construct core hardware, network and sensor state from the configured fleet.
 function IO.new(config, dependencies)
     dependencies = dependencies or {}
     local self = setmetatable({}, { __index = IO })
@@ -235,7 +234,7 @@ function IO.new(config, dependencies)
     return self
 end
 
--- @ama-summary: Read expected package identities from the local installer catalog.
+-- Summary: Read expected package identities from the local installer catalog.
 function IO:loadRoleManifests()
     local previous=self.expectedPackages or {}
     self.expectedPackages,self.packageErrors={},{}
@@ -266,7 +265,7 @@ function IO:loadRoleManifests()
     end
 end
 
--- @ama-summary: Apply the configured role-to-computer registry to core routing state.
+-- Summary: Apply the configured role-to-computer registry to core routing state.
 function IO:setRegistry(computers, initial)
     local valid, reason = Fleet.validateComputers(computers)
     if not valid then return false, reason end
@@ -288,10 +287,10 @@ function IO:setRegistry(computers, initial)
     end
     if self.localID==nil or expectedID~=self.localID then
         self.identityReady=false
-        self.identityReason="CORE ID DOES NOT MATCH THE FLEET REGISTRY"
+        self.identityReason="CORE ID DOES NOT MATCH FLEET REGISTRY"
     elseif not boundedString(expectedLabel,64) or self.localLabel~=expectedLabel then
         self.identityReady=false
-        self.identityReason="CORE LABEL DOES NOT MATCH THE FLEET REGISTRY"
+        self.identityReason="CORE LABEL DOES NOT MATCH FLEET REGISTRY"
     else
         self.identityReady=true
         self.identityReason=nil
@@ -382,7 +381,7 @@ function IO:setRegistry(computers, initial)
     return true
 end
 
--- @ama-summary: Emit a log entry when the named cached state changes.
+-- Summary: Emit a log entry when the named cached state changes.
 function IO:logState(key, issue)
     local previous=self.loggedStates[key]
     issue=type(issue)=="string" and issue or nil
@@ -397,7 +396,7 @@ function IO:routeAllowed()
     return false,self.identityReason or "CORE IDENTITY IS NOT VERIFIED AGAINST /fleet.json"
 end
 
--- @ama-summary: Build a bounded fleet-registry announcement for the current core session.
+-- Summary: Build a bounded fleet-registry announcement for the current core session.
 function IO:registryPacket()
     self.identityRegistrySeq=((self.identityRegistrySeq or 0)%2147483647)+1
     local ok,epochMs=pcall(function()return self.os.epoch("utc")end)
@@ -412,8 +411,8 @@ function IO:observeIdentityClaim(sender,message,protocol,now,epochMs)
     if self.identityWatch then return self.identityWatch:observe(self,sender,message,protocol,now,epochMs) end
 end
 
--- @ama-section: Commands | Correlated bounded requests and acknowledged application.
--- @ama-summary: Send the current fleet registry to one destination.
+-- Section: Commands | Correlated bounded requests and acknowledged application.
+-- Summary: Send the current fleet registry to one destination.
 function IO:sendRegistry(recipient)
     local allowed,identityReason=self:routeAllowed()
     if not allowed then return false,identityReason end
@@ -424,8 +423,8 @@ function IO:sendRegistry(recipient)
     return true
 end
 
--- @ama-section: Core context | Registry, hardware discovery and protocol identity.
--- @ama-summary: Publish the current registry to the configured fleet.
+-- Section: Core context | Registry, hardware discovery and protocol identity.
+-- Summary: Publish the current registry to the configured fleet.
 function IO:broadcastFleetRegistry()
     local allowed,identityReason=self:routeAllowed()
     if not allowed then return false,identityReason end
@@ -449,7 +448,7 @@ function IO:broadcastFleetRegistry()
     return false,#failures>0 and table.concat(failures,", ") or "no assigned peer IDs"
 end
 
--- @ama-summary: Validate a registry request and reply with the current core identity and assignments.
+-- Summary: Validate a registry request and reply with the current core identity and assignments.
 function IO:handleRegistryRequest(sender,message,protocol)
     if protocol~=self.config.protocol or type(message)~="table" or message.v~=1 or
         message.kind~="registry_request" or message.coreID~=self.config.computer_id or
@@ -472,7 +471,7 @@ function IO:invalidateBridge(reason)
     self.bridgeGeneration=(self.bridgeGeneration or 0)+1
     self.inputs={valid=false,at=self:nowSeconds(),raw={},errors={bridge=reason},reason=reason}
 end
--- @ama-summary: Discover configured sensor, monitor and modem interfaces and record their bindings.
+-- Summary: Discover configured sensor, monitor and modem interfaces and record their bindings.
 function IO:scanHardware()
     -- During state computer failover the core binds the sensors and cockpit
     -- link itself (the pre-split path); otherwise it only finds its wired link.
@@ -588,7 +587,7 @@ function IO:scanHardware()
     return self.inventory
 end
 
--- @ama-summary: Open the configured network channels on discovered modems.
+-- Summary: Open the configured network channels on discovered modems.
 function IO:openModems()
     if not self.inventory or #self.inventory.modems == 0 then self:scanHardware() end
     if not self.rednet or type(self.rednet.open) ~= "function" then return false, "rednet API is unavailable" end
@@ -617,16 +616,9 @@ function IO:openModems()
     return true, errors
 end
 
-function IO:findMainMonitor()
-    if not self.inventory then self:scanHardware() end
-    if not self.mainMonitor or not self.peripheral or type(self.peripheral.wrap) ~= "function" then return nil end
-    local ok, monitor = pcall(self.peripheral.wrap, self.mainMonitor)
-    if ok and monitor then return monitor, self.mainMonitor end
-end
-
 -- Read all nine exact concrete frequencies. Raw levels are retained as-is;
 -- this phase does not translate them into turns, throttle, targets, or modes.
--- @ama-summary: Read each configured cockpit frequency pair and publish a timestamped input batch.
+-- Summary: Read each configured cockpit frequency pair and publish a timestamped input batch.
 function IO:readInputs(now)
     local progress=self.sampling and self.sampling.cockpit
     if progress then progress.pending={};progress.stage="COCKPIT LINK READS" end
@@ -675,7 +667,7 @@ function IO:readInputs(now)
     }
     self.lastInputAttempt=candidate
     -- A failed retry is not a new measurement. Retain the previous coherent
-    -- batch at its original timestamp; existing stale/neutral gates still apply.
+    -- batch at its original timestamp; the existing staleness checks still apply.
     local sameBridge=self.bridge==sampledBridge and self.bridgeGeneration==generation
     if valid or not sameBridge or not self.inputs or not self.inputs.valid or self.inputs.bridgeGeneration~=generation then
         self.inputs=candidate
@@ -685,15 +677,15 @@ end
 
 -- Maintenance shares the command sequence/session boundary. Only core can
 -- request these two fixed operations; no arbitrary program or command is sent.
--- @ama-section: Commands | Correlated bounded requests and acknowledged application.
--- @ama-summary: Send a validated chamber maintenance request with current session correlation.
+-- Section: Commands | Correlated bounded requests and acknowledged application.
+-- Summary: Send a validated chamber maintenance request with current session correlation.
 function IO:sendLiftMaintenance(quadrant,operation)
     local allowed,identityReason=self:routeAllowed()
     if not allowed then return false,identityReason end
     if not self.rednet or type(self.rednet.send)~="function" then return false,"REDNET UNAVAILABLE" end
     local n=self.nodes[quadrant]
-    if operation~="restart" and operation~="recheck" then return false,"INVALID MAINTENANCE OPERATION" end
-    if not n or not self:nodeFresh(quadrant) or type(n.boot)~="string" then return false,"LIFT NODE STALE" end
+    if operation~="restart" and operation~="recheck" and operation~="probe_cycle" then return false,"INVALID MAINTENANCE OPERATION" end
+    if not n or not self:nodeFresh(quadrant) or type(n.boot)~="string" then return false,"WAITING FOR LIFT NODE "..quadrant end
     local seq=self.commandSeq+1
     if not integer(seq,1,self.config.network.max_sequence) then return false,"COMMAND SEQUENCE LIMIT" end
     self.commandSeq=seq;self.lastIssuedSeq=seq
@@ -713,8 +705,8 @@ local function normalize(value)
     return { x = value.x / length, y = value.y / length, z = value.z / length }
 end
 
--- @ama-section: Observations | Independent sensor completion and vessel geometry.
--- @ama-summary: Validate and normalize a quaternion-shaped observation.
+-- Section: Observations | Independent sensor completion and vessel geometry.
+-- Summary: Validate and normalize a quaternion-shaped observation.
 local function asQuaternion(value)
     local v, a = field(value, "v"), field(value, "a")
     local x, y, z, w
@@ -729,12 +721,12 @@ local function asQuaternion(value)
     return { x = x / length, y = y / length, z = z / length, w = w / length }
 end
 
--- @ama-section: Core context | Registry, hardware discovery and protocol identity.
--- @ama-summary: Rotate a vector using the supplied quaternion.
+-- Section: Core context | Registry, hardware discovery and protocol identity.
+-- Summary: Rotate a vector using the supplied quaternion.
 local function rotate(q, v)
     local p = { x = v.x, y = v.y, z = v.z, w = 0 }
     local c = { x = -q.x, y = -q.y, z = -q.z, w = q.w }
-    -- @ama-summary: Multiply quaternion components in the required composition order.
+    -- Summary: Multiply quaternion components in the required composition order.
     local function mul(a, b)
         return {
             x = a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
@@ -747,7 +739,7 @@ local function rotate(q, v)
     return { x = r.x, y = r.y, z = r.z }
 end
 
--- @ama-summary: Convert the horizontal forward vector into a normalized compass heading.
+-- Summary: Convert the horizontal forward vector into a normalized compass heading.
 local function headingFromForward(forward)
     if forward.x * forward.x + forward.z * forward.z < 1e-4 then return nil end
     local y, x = forward.x, -forward.z
@@ -766,88 +758,7 @@ local function headingFromForward(forward)
     return (math.deg(angle) + 360) % 360
 end
 
--- Attitude axis from physical evidence. The four chamber altitude sensors
--- show which way the hull really tilts (front vs rear = pitch, left vs right
--- = roll). The pose-frame horizontal axis whose pitch/roll agree with them is
--- learned, saved to /avionics/data/attitude-axis.json and used from then on.
-local ATTITUDE_AXES={{x=1,y=0,z=0},{x=-1,y=0,z=0},{x=0,y=0,z=1},{x=0,y=0,z=-1}}
-local ATTITUDE_AXIS_PATH="/avionics/data/attitude-axis.json"
-local function axisKey(axis) return tostring(axis.x)..","..tostring(axis.z) end
--- @ama-section: Observations | Independent sensor completion and vessel geometry.
--- @ama-summary: Load the configured or retained vessel attitude-axis calibration.
-function IO:loadAttitudeAxis()
-    self.attitudeAxisLoaded=true
-    if not self.fs or type(self.fs.open)~="function" or not self.json then return end
-    local okExists,exists=pcall(self.fs.exists,ATTITUDE_AXIS_PATH)
-    if not okExists or not exists then return end
-    local ok,handle=pcall(self.fs.open,ATTITUDE_AXIS_PATH,"r")
-    if not ok or not handle then return end
-    local readOK,raw=pcall(handle.readAll);pcall(handle.close)
-    if not readOK or type(raw)~="string" or #raw>1024 then return end
-    local decodeOK,value=pcall(self.json.unserializeJSON,raw)
-    if decodeOK and type(value)=="table" and value.schemaVersion==1 and type(value.bowKey)=="string" and
-        type(value.axis)=="table" then
-        for _,axis in ipairs(ATTITUDE_AXES) do
-            if value.axis.x==axis.x and value.axis.z==axis.z then
-                self.attitudeAxisLearned={axis=axis,bowKey=value.bowKey}
-            end
-        end
-    end
-end
--- @ama-summary: Infer the vessel's body-axis orientation from chamber altitude observations.
-function IO:chamberAttitudeAxis(pose,bowKey)
-    if not self.attitudeAxisLoaded then self:loadAttitudeAxis() end
-    local learned=self.attitudeAxisLearned
-    if learned and learned.bowKey~=bowKey then learned=nil end
-    local function result() return learned and learned.axis or nil,learned and "CHAMBER HEIGHTS" or nil end
-    if not pose or type(self.nodes)~="table" then return result() end
-    local now=self:nowSeconds()
-    local y={}
-    for _,q in ipairs({"FL","FR","RL","RR"}) do
-        local node=self.nodes[q]
-        local value=node and node.altitude and node.altitude.sensorWorldY
-        if not self:nodeFresh(q,now) or not finite(value) then return result() end
-        y[q]=value
-    end
-    local pitchBlocks=(y.FL+y.FR-y.RL-y.RR)/4
-    local rollBlocks=(y.FL+y.RL-y.FR-y.RR)/4
-    if math.abs(pitchBlocks)+math.abs(rollBlocks)<0.3 then return result() end
-    local evidence=self.attitudeEvidence or {}
-    self.attitudeEvidence=evidence
-    for _,axis in ipairs(ATTITUDE_AXES) do
-        local forward=normalize(rotate(pose,axis))
-        local starboard=normalize(rotate(pose,{x=-axis.z,y=0,z=axis.x}))
-        if forward and starboard then
-            local p=math.deg(math.asin(math.max(-1,math.min(1,forward.y))))
-            local r=math.deg(math.asin(math.max(-1,math.min(1,-starboard.y))))
-            local key=axisKey(axis)
-            evidence[key]=(evidence[key] or 0)*0.98+p*pitchBlocks+r*rollBlocks
-        end
-    end
-    local bestAxis,best,second
-    for _,axis in ipairs(ATTITUDE_AXES) do
-        local score=evidence[axisKey(axis)] or 0
-        if not best or score>best then second=best;best,bestAxis=score,axis
-        elseif not second or score>second then second=score end
-    end
-    if bestAxis and best>20 and best>2*math.max(second or 0,0) and
-        (not learned or axisKey(learned.axis)~=axisKey(bestAxis)) then
-        learned={axis=bestAxis,bowKey=bowKey}
-        self.attitudeAxisLearned=learned
-        print("Core attitude axis learned from chamber heights: pose "..axisKey(bestAxis).." (x,z) is the bow")
-        if self.fs and type(self.fs.open)=="function" and self.json and type(self.json.serializeJSON)=="function" then
-            pcall(self.fs.makeDir,"/avionics/data")
-            local ok,handle=pcall(self.fs.open,ATTITUDE_AXIS_PATH,"w")
-            if ok and handle then
-                pcall(handle.write,self.json.serializeJSON({schemaVersion=1,bowKey=bowKey,
-                    axis={x=bestAxis.x,z=bestAxis.z}}))
-                pcall(handle.close)
-            end
-        end
-    end
-    return result()
-end
-
+-- Section: Observations | Independent sensor completion and vessel geometry.
 -- Each configured sensor is checked by exact name and method at read time.
 -- Never infer a missing sensor's value from zero or auto-claim another device.
 function IO:readSensor(name, method)
@@ -858,8 +769,8 @@ function IO:readSensor(name, method)
     return safeCall(wrapped, method)
 end
 
--- @ama-summary: Read Sable vessel fields and configured sensors with per-observation timestamps.
-function IO:sampleVessel(now)
+-- Summary: Collect Sable and peripheral readings within their existing read window and deadlines.
+local function readVesselWindow(self,now)
     if self.config.hardware.discover and not self.sensorBindings then self:scanHardware() end
     local progress=self.sampling and self.sampling.vessel
     if progress then progress.pending={};progress.stage="SABLE GRID CHECK" end
@@ -885,7 +796,7 @@ function IO:sampleVessel(now)
                 values[key] = value
                 if value~=nil then
                     valuesAt[key]=self:nowSeconds()
-                    if self.independentVesselSources then VesselSources.acceptPrimary(self,key,value,valuesAt[key]) end
+                    if self.independentVesselSources then VesselSources.acceptPrimary(self,key,value,valuesAt[key],"core") end
                 end
                 if reason then errors[#errors+1] = reason end
             end
@@ -977,27 +888,11 @@ function IO:sampleVessel(now)
         if progress then progress.pending={} end
     end
     if not complete then errors[#errors+1]="vessel read batch failed: "..text(readIssue) end
-    local navOrientation=asQuaternion(sampled.orientation)
-    local navHeading,height,sensorVS=sampled.heading,sampled.height,sampled.verticalSpeed
-    local gravity,angles,rates=vector(sampled.gravity),sampled.angles,vector(sampled.rates)
-    local pose = values.pose
-    local position, rotationPoint, scale, poseOrientation
-    if type(pose) == "table" then
-        position, rotationPoint, scale = vector(pose.position), vector(pose.rotationPoint), vector(pose.scale)
-        poseOrientation = asQuaternion(pose.orientation)
-    end
-    local com = vector(values.com)
-    local worldCom
-    -- Sable Pose3dc.transformPosition: world = position + Q * ((local - rotationPoint) * scale).
-    -- getCenterOfMass is a local/plot-space point, not already a world coordinate.
-    if com and position and rotationPoint and scale and poseOrientation then
-        local offset = rotate(poseOrientation, {x=(com.x-rotationPoint.x)*scale.x,
-            y=(com.y-rotationPoint.y)*scale.y,z=(com.z-rotationPoint.z)*scale.z})
-        local candidate={x=position.x+offset.x,y=position.y+offset.y,z=position.z+offset.z}
-        worldCom=vector(candidate)
-    end
-    local orientation = navOrientation or poseOrientation
-    local bow = geometry.orientation_verified and normalize(geometry.bow_forward) or nil
+    return geometry,errors,values,valuesAt,sampled,bodyReadings,progress,tracked
+end
+
+-- Summary: Resolve heading, pitch and roll from the sampled transforms and the configured Sable bow axis.
+local function resolveVesselAttitude(self,orientation,bow,poseOrientation,navOrientation,values)
     local forward, heading, pitch, roll
     if orientation and bow then
         forward=normalize(rotate(orientation,bow))
@@ -1013,50 +908,24 @@ function IO:sampleVessel(now)
     -- frame. Raw gimbal readings stay in diagnostics; they must not overwrite
     -- vessel pitch/roll or exchange their axes. Prefer Sable's actual pose.
     local attitudeOrientation=poseOrientation or orientation
+    -- The bow in Sable's pose frame is configured: geometry.sable_bow_axis,
+    -- or geometry.bow_forward when that key is absent.
+    local configured=(self.config.geometry or {}).sable_bow_axis
     local attitudeBow=bow
-    -- The frame offset is a fixed property of the build, so it is resolved
-    -- once per vessel and then latched; later samples never re-pick an axis.
-    local latch=self.attitudeAxisLatch
-    local bowKey=bow and (bow.x..","..bow.y..","..bow.z) or nil
-    if latch and (latch.uuid~=values.uuid or latch.bowKey~=bowKey) then latch=nil;self.attitudeAxisLatch=nil end
-    if latch then attitudeBow=latch.axis
-    elseif poseOrientation and navOrientation and forward and bow and boundedString(values.uuid,128) then
-        -- The navigation table and the Sable pose can report frames rotated
-        -- about the vertical, so the configured bow (valid for the heading
-        -- source) can point sideways in the pose frame and swap pitch with
-        -- roll. Use the pose-frame horizontal axis that points where the
-        -- verified heading forward points. Works for any build orientation.
-        local best,bestDot
-        for _,axis in ipairs({{x=1,y=0,z=0},{x=-1,y=0,z=0},{x=0,y=0,z=1},{x=0,y=0,z=-1}}) do
-            local candidate=rotate(poseOrientation,axis)
-            local scale=candidate and math.sqrt(candidate.x^2+candidate.z^2)*math.sqrt(forward.x^2+forward.z^2) or 0
-            if scale>1e-6 then
-                local dot=(candidate.x*forward.x+candidate.z*forward.z)/scale
-                if not bestDot or dot>bestDot then best,bestDot=axis,dot end
-            end
-        end
-        if best and bestDot>0.7 then
-            attitudeBow=best
-            self.attitudeAxisLatch={uuid=values.uuid,bowKey=bowKey,axis=best}
-        end
+    if type(configured)=="table" and finite(configured.x) and finite(configured.z) then
+        attitudeBow={x=configured.x,y=0,z=configured.z}
     end
-    local attitudeAxisSource=attitudeBow~=bow and "HEADING MATCH" or "CONFIGURED BOW"
-    if poseOrientation then
-        local chamberAxis,chamberSource=self:chamberAttitudeAxis(poseOrientation,bowKey)
-        if chamberAxis then attitudeBow,attitudeAxisSource=chamberAxis,chamberSource end
-    end
-    -- Heading and the bow direction used by anchor and autopilot thrust
-    -- mapping. The navigation table's frame was found rotated 90 degrees about
-    -- vertical from the ship (facing east read ~357). Once the bow axis has
-    -- been learned from chamber heights (signed: FL/FR are fore), take the
-    -- bow from Sable's pose with that axis, the same frame pitch/roll use.
+    local attitudeAxisSource="CONFIGURED"
+    -- With Sable's pose available, heading and the bow direction used by the
+    -- anchor and autopilot come from the pose and the configured bow, the
+    -- same frame pitch and roll use.
     local headingSourceText
-    if poseOrientation and attitudeAxisSource=="CHAMBER HEIGHTS" and attitudeBow then
+    if poseOrientation and attitudeBow then
         local poseForward=normalize(rotate(poseOrientation,attitudeBow))
         local poseHeading=poseForward and headingFromForward(poseForward)
         if poseHeading then
             forward,heading=poseForward,poseHeading
-            headingSourceText="Sable pose / chamber-height bow"
+            headingSourceText="Sable pose / configured bow"
         end
     end
     if attitudeOrientation and attitudeBow then
@@ -1067,6 +936,11 @@ function IO:sampleVessel(now)
             roll=math.deg(math.asin(math.max(-1,math.min(1,-attitudeStarboard.y))))
         end
     end
+    return forward,heading,pitch,roll,attitudeBow,attitudeAxisSource,headingSourceText
+end
+
+-- Summary: Resolve body axes and verified world velocity into horizontal forward and vertical speed.
+local function resolveVesselVelocity(geometry,bodyReadings,errors,values,orientation,bow,forward,pitch,headingSourceText,sensorVS)
     local body, duplicate = {}, {}
     for _, reading in ipairs(bodyReadings) do
         local name,axis,speed=reading.name,reading.axis,reading.speed
@@ -1122,23 +996,11 @@ function IO:sampleVessel(now)
         local pitchRad=math.rad(pitch)
         forwardSpeed=(forwardSpeed-climbRate*math.sin(pitchRad))/math.cos(pitchRad)
     end
-    local sampledAt=self:nowSeconds()
-    -- Tests inject a constant clock; the supplied timestamp is the lower bound.
-    sampledAt=math.max(now or sampledAt,sampledAt)
-    if worldCom and finite(height) and boundedString(values.uuid,128) then
-        self.altitudeOffset={value=worldCom.y-height,at=sampledAt,uuid=values.uuid}
-    elseif self.altitudeOffset and values.uuid~=self.altitudeOffset.uuid then
-        self.altitudeOffset=nil
-    end
-    local altitude=worldCom and worldCom.y or nil
-    local altitudeSource=altitude and "Sable world CoM" or nil
-    -- A recent offset permits a labelled, short-lived estimate, not indefinite
-    -- use of stale geometry. Requires the same positively identified vessel.
-    local offset=self.altitudeOffset
-    if not altitude and finite(height) and offset and values.uuid==offset.uuid and
-        sampledAt>=offset.at and sampledAt-offset.at<=self.config.network.sensor_stale_seconds then
-        altitude=height+offset.value; altitudeSource="ALT SENSOR / ESTIMATED CoM"
-    end
+    return body,velocity,velocityVerified,velocityBow,forwardSpeed,verticalSpeed,forwardSpeedSensor,horizontalForwardSpeed,forwardSpeedAlongBow
+end
+
+-- Summary: Read or reuse gravity, drag and world-CoM pressure with the existing cache limits.
+local function readVesselEnvironment(self,worldCom,errors,progress,tracked)
     local environment={valid=false,reason="CC:Sable aero API unavailable"}
     if progress then progress.stage="ENVIRONMENT READS" end
     if type(self.aero)=="table" then
@@ -1165,7 +1027,7 @@ function IO:sampleVessel(now)
         end
         if not finite(pressure) then
             jobs[#jobs+1]=function()
-                -- Pressure requires a genuine ComputerCraft vector.
+                -- Query pressure at the transformed world CoM through the active aero binding.
                 if not worldCom then pressureError="World CoM position unavailable for pressure query"
                 elseif type(self.vectorApi)~="table" or type(self.vectorApi.new)~="function" then
                     pressureError="ComputerCraft vector.new() unavailable for pressure query"
@@ -1196,6 +1058,56 @@ function IO:sampleVessel(now)
             airPressureError=pressureError,
             valid=vector(gravityWorld)~=nil or finite(drag) or finite(pressure)}
     end
+    return environment
+end
+
+-- Summary: Read Sable vessel fields and configured sensors with per-observation timestamps.
+function IO:sampleVessel(now)
+    local geometry,errors,values,valuesAt,sampled,bodyReadings,progress,tracked = readVesselWindow(self,now)
+    local navOrientation=asQuaternion(sampled.orientation)
+    local navHeading,height,sensorVS=sampled.heading,sampled.height,sampled.verticalSpeed
+    local gravity,angles,rates=vector(sampled.gravity),sampled.angles,vector(sampled.rates)
+    local pose = values.pose
+    local position, rotationPoint, scale, poseOrientation
+    if type(pose) == "table" then
+        position, rotationPoint, scale = vector(pose.position), vector(pose.rotationPoint), vector(pose.scale)
+        poseOrientation = asQuaternion(pose.orientation)
+    end
+    local com = vector(values.com)
+    local worldCom
+    -- Sable Pose3dc.transformPosition: world = position + Q * ((local - rotationPoint) * scale).
+    -- getCenterOfMass is a local/plot-space point, not already a world coordinate.
+    if com and position and rotationPoint and scale and poseOrientation then
+        local offset = rotate(poseOrientation, {x=(com.x-rotationPoint.x)*scale.x,
+            y=(com.y-rotationPoint.y)*scale.y,z=(com.z-rotationPoint.z)*scale.z})
+        local candidate={x=position.x+offset.x,y=position.y+offset.y,z=position.z+offset.z}
+        worldCom=vector(candidate)
+    end
+    local orientation = navOrientation or poseOrientation
+    local bow = geometry.orientation_verified and normalize(geometry.bow_forward) or nil
+    local forward,heading,pitch,roll,attitudeBow,attitudeAxisSource,headingSourceText =
+        resolveVesselAttitude(self,orientation,bow,poseOrientation,navOrientation,values)
+    local body,velocity,velocityVerified,velocityBow,forwardSpeed,verticalSpeed,
+        forwardSpeedSensor,horizontalForwardSpeed,forwardSpeedAlongBow =
+        resolveVesselVelocity(geometry,bodyReadings,errors,values,orientation,bow,forward,pitch,headingSourceText,sensorVS)
+    local sampledAt=self:nowSeconds()
+    -- Tests inject a constant clock; the supplied timestamp is the lower bound.
+    sampledAt=math.max(now or sampledAt,sampledAt)
+    if worldCom and finite(height) and boundedString(values.uuid,128) then
+        self.altitudeOffset={value=worldCom.y-height,at=sampledAt,uuid=values.uuid}
+    elseif self.altitudeOffset and values.uuid~=self.altitudeOffset.uuid then
+        self.altitudeOffset=nil
+    end
+    local altitude=worldCom and worldCom.y or nil
+    local altitudeSource=altitude and "Sable world CoM" or nil
+    -- A recent offset permits a labelled, short-lived estimate, not indefinite
+    -- use of stale geometry. Requires the same positively identified vessel.
+    local offset=self.altitudeOffset
+    if not altitude and finite(height) and offset and values.uuid==offset.uuid and
+        sampledAt>=offset.at and sampledAt-offset.at<=self.config.network.sensor_stale_seconds then
+        altitude=height+offset.value; altitudeSource="ALT SENSOR / ESTIMATED CoM"
+    end
+    local environment=readVesselEnvironment(self,worldCom,errors,progress,tracked)
     local valid=finite(altitude) or heading~=nil or worldCom~=nil
     self.vessel={valid=valid,at=sampledAt,reason=not finite(altitude) and "SABLE CoM ALTITUDE UNAVAILABLE" or nil,
         sableReadAt=valuesAt,sableUuid=boundedString(values.uuid,128) and values.uuid or nil,
@@ -1226,7 +1138,7 @@ end
 -- Sable and peripheral workers have separate deadlines and share only
 -- completed read-only records. A blocked primary never owns backup publication.
 local samplePrimaryVessel=IO.sampleVessel
--- @ama-summary: Read Sable vessel fields and configured sensors with per-observation timestamps.
+-- Summary: Read Sable vessel fields and configured sensors with per-observation timestamps.
 function IO:sampleVessel(now)
     local primary=samplePrimaryVessel(self,now)
     if self.independentVesselSources then
@@ -1241,7 +1153,7 @@ function IO:refreshVesselSources(now)
     return self.vessel
 end
 
--- @ama-summary: Resolve the available pressure observation for the requested world altitude.
+-- Summary: Resolve the available pressure observation for the requested world altitude.
 function IO:airPressureAtWorldY(worldY)
     if self.stateLink then
         if not finite(worldY) then return nil,"STATE PRESSURE TARGET INVALID" end
@@ -1290,8 +1202,8 @@ function IO:airPressureAtWorldY(worldY)
     return pressure
 end
 
--- @ama-section: Core context | Registry, hardware discovery and protocol identity.
--- @ama-summary: Validate and bound a received provider-readback map.
+-- Section: Core context | Registry, hardware discovery and protocol identity.
+-- Summary: Validate and bound a received provider-readback map.
 local function sanitizeProviders(value, limit)
     if type(value) ~= "table" then return nil, "providers must be an object keyed by peripheral name" end
     local result, count = {}, 0
@@ -1341,7 +1253,7 @@ local function sanitizeProviders(value, limit)
     return result
 end
 
--- @ama-summary: Validate and bound a received chamber envelope observation.
+-- Summary: Validate and bound a received chamber envelope observation.
 local function sanitizeBalloon(value)
     if value == nil then return nil end
     if type(value) ~= "table" then return nil end
@@ -1388,7 +1300,7 @@ end
 -- from the slower vessel sample. hardware.physics_assembler may name one
 -- assembler; otherwise every attached physics_assembler is read and all of
 -- them must report true.
--- @ama-summary: ===================== ASSEMBLY GATE ===================== The whole gate is Create Avionics physics_assembler.isAssembled(): fresh Sable UUID       association verified, gate open Sable unavailable       consult the fresh assembler result assembler false         disassembled when Sable association is unavailable unresolved observations gate open, warn after five minutes It is read by its own small worker in main.lua (every 0.25 s), separate from the slower vessel sample. hardware.physics_assembler may name one assembler; otherwise every attached physics_assembler is read and all of them must report true.
+-- Summary: ===================== ASSEMBLY GATE ===================== The whole gate is Create Avionics physics_assembler.isAssembled(): fresh Sable UUID       association verified, gate open Sable unavailable       consult the fresh assembler result assembler false         disassembled when Sable association is unavailable unresolved observations gate open, warn after five minutes It is read by its own small worker in main.lua (every 0.25 s), separate from the slower vessel sample. hardware.physics_assembler may name one assembler; otherwise every attached physics_assembler is read and all of them must report true.
 function IO:findAssemblers()
     local p=self.peripheral
     local configured=self.config.hardware and self.config.hardware.physics_assembler
@@ -1412,8 +1324,8 @@ end
 -- Unresolved verification keeps the gate open and warns after five minutes.
 -- Applied lift settings remain retained through verification uncertainty.
 -- Every change of gate state or read problem is printed to Status/Logs.
--- @ama-section: Observations | Independent sensor completion and vessel geometry.
--- @ama-summary: Read the available physics assemblers and retain their explicit assembled result.
+-- Section: Observations | Independent sensor completion and vessel geometry.
+-- Summary: Read the available physics assemblers and retain their explicit assembled result.
 function IO:sampleAssembly()
     local names,why=self:findAssemblers()
     local definite,reason=nil,why
@@ -1450,8 +1362,8 @@ function IO:sampleAssembly()
 end
 -- Returns gateOpen, message, detail. detail goes into every core snapshot as
 -- `assembly`; message is the display/refusal text when the gate is closed.
--- @ama-section: Core context | Registry, hardware discovery and protocol identity.
--- @ama-summary: Verify Sable association first, then assembler state, and time unresolved assembly warnings.
+-- Section: Core context | Registry, hardware discovery and protocol identity.
+-- Summary: Verify Sable association first, then assembler state, and time unresolved assembly warnings.
 function IO:assemblyGate(now)
     local current=self:nowSeconds()
     if finite(current) and (not finite(now) or current>now) then now=current end
@@ -1492,14 +1404,14 @@ end
 
 -- Normal runtime discovery wakes all four lift nodes. Bench commissioning
 -- passes a quadrant so only the selected node's session is affected.
--- @ama-section: Commands | Correlated bounded requests and acknowledged application.
--- @ama-summary: Normal runtime discovery wakes all four lift nodes. Bench commissioning passes a quadrant so only the selected node's session is affected.
+-- Section: Commands | Correlated bounded requests and acknowledged application.
+-- Summary: Normal runtime discovery wakes all four lift nodes. Bench commissioning passes a quadrant so only the selected node's session is affected.
 function IO:sendHello(quadrant)
     local packet = { v = 1, kind = "hello", session = self.session }
     local ok, reason
     if quadrant ~= nil then
         local node = self.nodes[quadrant]
-        if not node then return false, "quadrant must be FL, FR, RL, or RR" end
+        if not node then return false, "quadrant must be FL, FR, BL, or BR" end
         if not integer(node.id,0,65535) then return false,"lift role ID is unassigned" end
         if not self.rednet or type(self.rednet.send) ~= "function" then return false, "rednet send is unavailable" end
         ok, reason = pcall(self.rednet.send, node.id, packet, self.config.protocol)
@@ -1512,8 +1424,8 @@ function IO:sendHello(quadrant)
     return true
 end
 
--- @ama-section: Status | Validate incoming observations and publish cached fleet state.
--- @ama-summary: Validate a chamber's lift report before accepting its identity and provider data.
+-- Section: Status | Validate incoming observations and publish cached fleet state.
+-- Summary: Validate a chamber's lift report before accepting its identity and provider data.
 function IO:validateLiftStatus(sender, message, now,radioTiming)
     if type(message) ~= "table" or message.v ~= 1 or message.kind ~= "lift_status" then return false, "invalid status envelope" end
     if message.session ~= self.session then return false, "status belongs to another core session" end
@@ -1732,8 +1644,8 @@ function IO:validateLiftStatus(sender, message, now,radioTiming)
     return true
 end
 
--- @ama-section: Commands | Correlated bounded requests and acknowledged application.
--- @ama-summary: Resolve a fresh altitude/input authority context for chamber status.
+-- Section: Commands | Correlated bounded requests and acknowledged application.
+-- Summary: Resolve a fresh altitude/input authority context for chamber status.
 local function validatedLiftControlContext(self,quadrant,context)
     if context==nil then return nil end
     local node=self.nodes[quadrant]
@@ -1744,8 +1656,8 @@ local function validatedLiftControlContext(self,quadrant,context)
     local altitude=context.selectedAltitude
     if altitude~=nil then
         local limits=self.config.altitude_control or {}
-        if not finite(altitude) or not finite(limits.minimum_world_y) or not finite(limits.maximum_world_y) or
-            altitude<limits.minimum_world_y or altitude>limits.maximum_world_y then
+        if not finite(altitude) or not finite(limits.minimum_world_y) or not finite(limits.altitude_ceiling) or
+            altitude<limits.minimum_world_y or altitude>limits.altitude_ceiling then
             return nil,"selected altitude in control context is invalid"
         end
     end
@@ -1756,7 +1668,7 @@ local function validatedLiftControlContext(self,quadrant,context)
         inputsActive=context.inputsActive,leaseSeconds=CONTROL_CONTEXT_LEASE_SECONDS}
 end
 
--- @ama-summary: Publish the current selected-altitude and control-activity lease to a chamber.
+-- Summary: Publish the current selected-altitude and control-activity lease to a chamber.
 function IO:sendLiftControlContext(quadrant,context)
     local allowed,identityReason=self:routeAllowed()
     if not allowed then return false,identityReason end
@@ -1770,8 +1682,8 @@ function IO:sendLiftControlContext(quadrant,context)
     local altitude=context.selectedAltitude
     if altitude~=nil then
         local limits=self.config.altitude_control or {}
-        if not finite(altitude) or not finite(limits.minimum_world_y) or not finite(limits.maximum_world_y) or
-            altitude<limits.minimum_world_y or altitude>limits.maximum_world_y then
+        if not finite(altitude) or not finite(limits.minimum_world_y) or not finite(limits.altitude_ceiling) or
+            altitude<limits.minimum_world_y or altitude>limits.altitude_ceiling then
             return false,"SELECTED ALTITUDE INVALID"
         end
     end
@@ -1795,12 +1707,12 @@ end
 
 -- Shared allowlist/sequence boundary for bench, altitude, and the explicitly
 -- bounded minimum-output startup profile. The bridge sends requests to core.
--- @ama-summary: Shared allowlist/sequence boundary for bench, altitude, and the explicitly bounded minimum-output startup profile. The bridge sends requests to core.
+-- Summary: Shared allowlist/sequence boundary for bench, altitude, and the explicitly bounded minimum-output startup profile. The bridge sends requests to core.
 function IO:buildLiftCommand(quadrant, targets, operatorConfirmation, continuous, controlContext)
     local allowed,identityReason=self:routeAllowed()
     if not allowed then return nil,identityReason end
     local node = self.nodes[quadrant]
-    if not node then return nil, "quadrant must be FL, FR, RL, or RR" end
+    if not node then return nil, "quadrant must be FL, FR, BL, or BR" end
     local startup=continuous=="startup" and self.config.vent_startup_enabled==true and
         operatorConfirmation=="START VENTS AT 50"
     if not startup and (self.config.commissioning.enabled ~= true or self.config.commissioning.confirm_supported ~= true or
@@ -1863,20 +1775,10 @@ function IO:buildLiftCommand(quadrant, targets, operatorConfirmation, continuous
         controlContext=commandContext}
 end
 
--- @ama-summary: Send the bounded initial vent command to its configured chamber.
-function IO:sendVentStartup(quadrant,targets)
-    local packet,reason=self:buildLiftCommand(quadrant,targets,"START VENTS AT 50","startup")
-    if not packet then return false,reason end
-    if not self.rednet or type(self.rednet.send)~="function" then return false,"rednet unavailable" end
-    local ok,sent=pcall(self.rednet.send,self.nodes[quadrant].id,packet,self.config.protocol)
-    if not ok or sent==false then return false,"vent startup send failed" end
-    return true,packet.seq
-end
-
 -- Explicit START SYSTEMS command path. This authority is separate from the
 -- commissioning gates because its node receiver enforces the probe/control
 -- stages, hardware ceilings, session, boot, sequence, and short renewable lease.
--- @ama-summary: Explicit START SYSTEMS command path. This authority is separate from the commissioning gates because its node receiver enforces the probe/control stages, hardware ceilings, session, boot, sequence, and short renewable lease.
+-- Summary: Explicit START SYSTEMS command path. This authority is separate from the commissioning gates because its node receiver enforces the probe/control stages, hardware ceilings, session, boot, sequence, and short renewable lease.
 function IO:sendSystemsCommand(quadrant,targets,stage)
     local allowed,identityReason=self:routeAllowed()
     if not allowed then return false,identityReason end
@@ -1952,7 +1854,7 @@ end
 
 -- Cancelling START SYSTEMS removes controller authority and keeps the most
 -- recently applied ceilings. It deliberately sends no redstone-off signal.
--- @ama-summary: Send a systems lease release or explicitly requested main-lift shutdown.
+-- Summary: Send a systems lease release or explicitly requested main-lift shutdown.
 function IO:sendSystemsStop(quadrant,zeroLift)
     local allowed,identityReason=self:routeAllowed()
     if not allowed then return false,identityReason end
@@ -1979,7 +1881,7 @@ end
 -- The emergency lift kill is deliberately independent of assembly, tuning,
 -- maintenance and controller readiness. It still requires a verified core
 -- identity and a fresh, boot-pinned status from the addressed chamber.
--- @ama-summary: The emergency lift kill is deliberately independent of assembly, tuning, maintenance and controller readiness. It still requires a verified core identity and a fresh, boot-pinned status from the addressed chamber.
+-- Summary: The emergency lift kill is deliberately independent of assembly, tuning, maintenance and controller readiness. It still requires a verified core identity and a fresh, boot-pinned status from the addressed chamber.
 function IO:sendEmergencyLiftStop(quadrant,now)
     local allowed,identityReason=self:routeAllowed()
     if not allowed then return false,identityReason end
@@ -1999,7 +1901,7 @@ function IO:sendEmergencyLiftStop(quadrant,now)
     return true,seq,node.boot
 end
 
--- @ama-summary: Send a session-bound emergency-latch disarm request.
+-- Summary: Send a session-bound emergency-latch disarm request.
 function IO:sendEmergencyLiftDisarm(quadrant,now)
     local allowed,reason=self:routeAllowed()
     if not allowed then return false,reason end
@@ -2016,20 +1918,28 @@ function IO:sendEmergencyLiftDisarm(quadrant,now)
     return true,seq,node.boot
 end
 
--- @ama-section: Core context | Registry, hardware discovery and protocol identity.
--- @ama-summary: Check a chamber's emergency-stop latch and zero-output readbacks.
+-- Section: Core context | Registry, hardware discovery and protocol identity.
+-- Summary: Check a chamber's emergency-stop latch and zero-output readbacks.
 function IO:emergencyLiftStopStateVerified(quadrant,boot,now)
     local node=self.nodes[quadrant]
-    if not node or not self:nodeFresh(quadrant,now) then return false,"LIFT STATUS STALE" end
+    if not node or not self:nodeFresh(quadrant,now) then return false,"WAITING FOR LIFT NODE "..quadrant end
     if node.boot~=boot then return false,"LIFT BOOT CHANGED" end
     if node.emergencyStopMode~="BULK_OFF_PROBE_ON" then return false,"EMERGENCY STOP MODE NOT VERIFIED" end
     if node.emergencyStopLatched~=true or node.emergencyStopVerified~=true or node.armed~=false then
         return false,node.emergencyStopFault or "EMERGENCY STOP NOT VERIFIED"
     end
+    -- Only the trim probe decides whether a balloon is attached. The envelope
+    -- reading must be complete; its hasBalloon flag fails the check only when
+    -- the reading comes from the probe. The probe's own attachment flag is
+    -- checked with the providers below.
     local balloon=node.balloon
-    if type(balloon)~="table" or balloon.hasBalloonValid~=true or balloon.hasBalloon~=true or
+    if type(balloon)~="table" or balloon.hasBalloonValid~=true or
         balloon.gasMixValid~=true or balloon.liftValid~=true or not finite(balloon.lift) or balloon.lift<0 then
-        return false,"ATTACHED BALLOON STATUS NOT VERIFIED"
+        return false,"CHAMBER "..quadrant.." UNCONFIRMED; CHECK PROBE"
+    end
+    local source=type(balloon.source)=="string" and (node.providers or {})[balloon.source]
+    if balloon.hasBalloon~=true and source and source.controlRole=="fine" then
+        return false,quadrant.." PROBE FAIL: CHECK BALLOON INTEGRITY"
     end
     local bulk,fine,count=0,0,0
     for name,provider in pairs(node.providers or {}) do
@@ -2046,9 +1956,8 @@ function IO:emergencyLiftStopStateVerified(quadrant,boot,now)
             -- A disabled bulk vent can stop exposing attached/output telemetry
             -- once it produces nothing. The probe remains the authoritative
             -- attachment proof for the live balloon envelope above.
-            if provider.attachedValid~=true or provider.attached~=true then
-                return false,"FINE PROBE ATTACHMENT NOT VERIFIED"
-            end
+            if provider.attachedValid~=true then return false,"CHAMBER "..quadrant.." UNCONFIRMED; CHECK PROBE" end
+            if provider.attached~=true then return false,quadrant.." PROBE FAIL: CHECK BALLOON INTEGRITY" end
             if provider.minimumNonzeroTarget~=5 or provider.targetAmount~=5 or provider.signalStrength~=15 then
                 return false,"FINE PROBE FLOOR / SIGNAL NOT VERIFIED"
             end
@@ -2060,10 +1969,10 @@ function IO:emergencyLiftStopStateVerified(quadrant,boot,now)
     return true
 end
 
--- @ama-summary: Correlate a chamber's verified emergency stop with the sent sequence.
+-- Summary: Correlate a chamber's verified emergency stop with the sent sequence.
 function IO:emergencyLiftStopWasApplied(quadrant,seq,boot,now)
     local node=self.nodes[quadrant]
-    if not node or not self:nodeFresh(quadrant,now) then return false,"LIFT STATUS STALE" end
+    if not node or not self:nodeFresh(quadrant,now) then return false,"WAITING FOR LIFT NODE "..quadrant end
     if node.boot~=boot then return false,"LIFT BOOT CHANGED" end
     if node.emergencyStopAppliedSeq~=seq then
         return false,node.emergencyStopFault or "WAITING FOR EMERGENCY STOP ACK"
@@ -2076,8 +1985,8 @@ end
 -- commissioning, while allowing subsequent commands to an armed controller.
 -- Tuning has its own bounded packet path. It cannot set commissioning flags,
 -- activate links, alter trim, or extend a node's captured lease on later packets.
--- @ama-section: Commands | Correlated bounded requests and acknowledged application.
--- @ama-summary: Send bounded tuning targets under the current test authority.
+-- Section: Commands | Correlated bounded requests and acknowledged application.
+-- Summary: Send bounded tuning targets under the current test authority.
 function IO:sendTuningCommand(quadrant,targets,id,baseline,first)
  local allowed,identityReason=self:routeAllowed();if not allowed then return false,identityReason end
  local n=self.nodes[quadrant]
@@ -2107,7 +2016,7 @@ function IO:sendTuningCommand(quadrant,targets,id,baseline,first)
  if not ok or sent==false then return false,"TUNING SEND FAILED" end
  return true,seq
 end
--- @ama-summary: Release the chamber tuning lease for the current session.
+-- Summary: Release the chamber tuning lease for the current session.
 function IO:cancelTuning(quadrant,id)
  local allowed=self:routeAllowed();if not allowed then return false end
  local n=self.nodes[quadrant];if not n or not self.rednet then return false end
@@ -2118,7 +2027,7 @@ function IO:cancelTuning(quadrant,id)
  return ok and sent~=false
 end
 
--- @ama-summary: Validate and send a chamber altitude-control command.
+-- Summary: Validate and send a chamber altitude-control command.
 function IO:sendAltitudeCommand(quadrant, targets)
     local context=self.liftControlContexts[quadrant]
     if not context or not finite(context.expiresAt) or self:nowSeconds()>=context.expiresAt then context=nil end
@@ -2131,17 +2040,7 @@ function IO:sendAltitudeCommand(quadrant, targets)
     return true,packet.seq
 end
 
--- @ama-summary: Send the selected chamber's bounded lift target map.
-function IO:sendLiftCommand(quadrant, targets, operatorConfirmation)
-    local packet, reason = self:buildLiftCommand(quadrant, targets, operatorConfirmation)
-    if not packet then return false, reason end
-    if not self.rednet or type(self.rednet.send) ~= "function" then return false, "rednet send is unavailable" end
-    local ok, sendError = pcall(self.rednet.send, self.nodes[quadrant].id, packet, self.config.protocol)
-    if not ok or sendError == false then return false, "lift command send failed: " .. text(sendError) end
-    return true, packet.seq
-end
-
--- @ama-summary: Match a chamber's acknowledged applied sequence with the requested command.
+-- Summary: Match a chamber's acknowledged applied sequence with the requested command.
 function IO:commandWasApplied(quadrant, seq, targets)
     local node = self.nodes[quadrant]
     if not node or node.lastAppliedSeq ~= seq or not self:nodeFresh(quadrant) then return false end
@@ -2170,8 +2069,8 @@ function IO:commandWasApplied(quadrant, seq, targets)
     return true
 end
 
--- @ama-section: Core context | Registry, hardware discovery and protocol identity.
--- @ama-summary: Validate an incoming fleet packet and dispatch it to its role-specific receiver.
+-- Section: Core context | Registry, hardware discovery and protocol identity.
+-- Summary: Validate an incoming fleet packet and dispatch it to its role-specific receiver.
 function IO:processMessage(sender, message, protocol, now,radioTiming)
     if protocol ~= self.config.protocol or type(message) ~= "table" then return false end
     if message.kind=="registry_request" then return self:handleRegistryRequest(sender,message,protocol) end
@@ -2185,8 +2084,8 @@ end
 -- These reports describe role/radio health, not proof that all peripherals work.
 -- Only known display/bridge senders, the active core session and fresh ordering
 -- are accepted. Lift nodes already provide their richer lift_status reports.
--- @ama-section: Status | Validate incoming observations and publish cached fleet state.
--- @ama-summary: Validate and cache a registered subsystem report.
+-- Section: Status | Validate incoming observations and publish cached fleet state.
+-- Summary: Validate and cache a registered subsystem report.
 function IO:acceptSubsystemStatus(sender,message,now)
     local role,label
     if self.fleet then role,label=self.fleet:roleForID(sender) end
@@ -2209,7 +2108,7 @@ function IO:acceptSubsystemStatus(sender,message,now)
     return true
 end
 
--- @ama-summary: Validate and cache a registered computer's runtime report.
+-- Summary: Validate and cache a registered computer's runtime report.
 function IO:acceptRoleStatus(sender,message,now)
     local role
     if self.fleet then role=self.fleet:roleForID(sender) end
@@ -2246,7 +2145,7 @@ function IO:acceptRoleStatus(sender,message,now)
     return true
 end
 
--- @ama-summary: Assemble subsystem availability and reasons from registered role reports.
+-- Summary: Assemble subsystem availability and reasons from registered role reports.
 function IO:buildSubsystems(now)
     local core=self.computers and self.computers.core or {}
     local systems={{id=self.localID,label=core.label or "core",role=self.stateLink and "flight control authority" or "central telemetry / cockpit",
@@ -2254,7 +2153,7 @@ function IO:buildSubsystems(now)
     local roleStates={}
     local stateRank={ONLINE=0,DEGRADED=1,STOPPED=2,["NO FRESH PACKAGE REPORT"]=3,
         ["PACKAGE MANIFEST ERROR"]=3,UNASSIGNED=4}
-    -- @ama-summary: Add one role's validated cached report to the subsystem snapshot.
+    -- Summary: Add one role's validated cached report to the subsystem snapshot.
     local function recordRole(role,id,status)
         local state
         if id==nil then state="UNASSIGNED"
@@ -2263,7 +2162,7 @@ function IO:buildSubsystems(now)
         local previous=roleStates[role]
         if not previous or (stateRank[state] or 2)>(stateRank[previous] or 2) then roleStates[role]=state end
     end
-    -- @ama-summary: Resolve the role's expected package identity and installed status.
+    -- Summary: Resolve the role's expected package identity and installed status.
     local function packageState(role)
         local health=self.roleReports[role]
         local fresh=health and now>=health.at and now-health.at<=self.config.network.node_stale_seconds
@@ -2297,7 +2196,7 @@ function IO:buildSubsystems(now)
         local description=role=="navigator" and "bridge touchscreen" or role:gsub("^heading%-","heading ")
         systems[#systems+1]={id=id,label=label or role,role=description,status=status,ageSeconds=age,detail=detail}
     end
-    local labels={FL="chamber_fl",FR="chamber_fr",RL="chamber_bl",RR="chamber_br"}
+    local labels={FL="chamber_fl",FR="chamber_fr",BL="chamber_bl",BR="chamber_br"}
     for _,quadrant in ipairs(QUADRANTS) do
         local node=self.nodes[quadrant]
         local fresh=self:nodeFresh(quadrant,now)
@@ -2344,7 +2243,27 @@ function IO:buildSubsystems(now)
     return systems
 end
 
--- @ama-summary: Build the timestamped vessel, controls, role-health and lift display snapshot.
+-- Section: Chamber status | Fault wording for chambers that stopped reporting.
+-- A chamber is offline after network.node_stale_seconds without status; its
+-- fault is shown once it has been silent for more than STALE_NOTICE_SECONDS.
+-- A chamber unheard since core start counts from the first snapshot.
+IO.STALE_NOTICE_SECONDS=10
+-- Summary: Word the fault for a silent chamber with its silent time, once that time passes the 10 s notice threshold.
+function IO:staleStatusText(quadrant, age, now)
+    self.silentSince=self.silentSince or {}
+    local sinceStart=not finite(age)
+    if sinceStart then
+        self.silentSince[quadrant]=self.silentSince[quadrant] or now
+        age=finite(now) and finite(self.silentSince[quadrant]) and now-self.silentSince[quadrant] or 0
+    else self.silentSince[quadrant]=nil end
+    if age<=IO.STALE_NOTICE_SECONDS then return nil end
+    if sinceStart then
+        return string.format("CHAMBER %s SILENT SINCE CORE START (%.0f S); CHECK POWER AND LINK",quadrant,age)
+    end
+    return string.format("CHAMBER %s SILENT %.0f S; CHECK POWER AND LINK",quadrant,age)
+end
+
+-- Summary: Build the timestamped vessel, controls, role-health and lift display snapshot.
 function IO:buildSnapshot(now, page)
     local clockNow=self:nowSeconds()
     -- Peripheral calls in the runtime may yield while the independent
@@ -2363,7 +2282,7 @@ function IO:buildSnapshot(now, page)
             ready = fresh and source.ready or false, armed = fresh and source.armed or false,
             operationBusy=fresh and source.operationBusy or false,
             startReady=fresh and source.startReady or false,
-            faults = fresh and source.faults or { "STALE STATUS" },
+            faults = fresh and source.faults or { self:staleStatusText(quadrant, age, now) },
             providers = fresh and source.providers or {}, balloon = fresh and source.balloon or nil,
             phase = fresh and source.phase or nil,
             altitude = fresh and source.altitude or { valid = false },
@@ -2471,7 +2390,14 @@ function IO:buildSnapshot(now, page)
     if not assembled then state.faults[#state.faults + 1] = assemblyMessage end
     if not state.vessel.valid then state.faults[#state.faults + 1] = state.vessel.reason or "VESSEL DATA UNAVAILABLE" end
     if not state.inputs.valid then state.faults[#state.faults + 1] = "COCKPIT INPUT DATA UNAVAILABLE" end
-    for _, quadrant in ipairs(QUADRANTS) do if not nodes[quadrant].online then state.faults[#state.faults + 1] = quadrant .. " LIFT STATUS STALE" end end
+    for _, quadrant in ipairs(QUADRANTS) do
+        if not nodes[quadrant].online then
+            local source=self.nodes[quadrant]
+            local age=source and source.lastSeen and math.max(0,now-source.lastSeen) or nil
+            local silent=self:staleStatusText(quadrant,age,now)
+            if silent then state.faults[#state.faults + 1] = silent end
+        end
+    end
     for _, quadrant in ipairs(QUADRANTS) do
         if nodes[quadrant].online then
             for _, fault in ipairs(nodes[quadrant].faults or {}) do
@@ -2482,7 +2408,7 @@ function IO:buildSnapshot(now, page)
     return state
 end
 
--- @ama-summary: Publish cached display data to navigator and heading receivers.
+-- Summary: Publish cached display data to navigator and heading receivers.
 function IO:broadcastDisplayStatus(state)
     -- The bridge needs chamber detail. Heading displays receive only the
     -- fields their renderer consumes, avoiding three extra provider-table copies.

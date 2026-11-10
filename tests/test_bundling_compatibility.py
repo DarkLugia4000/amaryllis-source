@@ -1,6 +1,6 @@
 """Lua quoting compatibility checks requiring only the Python standard library."""
 from pathlib import Path
-import importlib.util,hashlib,unittest
+import importlib.util,unittest
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('compat_bundling',ROOT/'disk-builder/bundling.py')
 b=importlib.util.module_from_spec(spec);spec.loader.exec_module(b)

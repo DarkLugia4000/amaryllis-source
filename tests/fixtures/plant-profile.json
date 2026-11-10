@@ -1,0 +1,1259 @@
+{
+  "schemaVersion": 1,
+  "recording": "diagnostics/2026-10-24/hold-v145-0-1792843960200/0-1792843960200.csv",
+  "sha256": "e4db0abbcbf1f9d5f12707cfeef924155d3772cfed3e011bce971121f1676580",
+  "rows": 627,
+  "windows": [
+    {
+      "pressureSource": "SABLE AERO",
+      "firstRow": 0,
+      "lastRow": 626,
+      "startEpochMs": "1792843960398",
+      "endEpochMs": "1792844303670",
+      "air_pressure": {
+        "samples": 627,
+        "min": 0.450194331106381,
+        "max": 0.527010037774634
+      },
+      "air_pressure_sensor": {
+        "samples": 627,
+        "min": 0.42485673687493,
+        "max": 0.497648241234929
+      },
+      "air_pressure_sable": {
+        "samples": 627,
+        "min": 0.450194331106381,
+        "max": 0.527010037774634
+      },
+      "altitude": {
+        "samples": 627,
+        "min": 222.930221557617,
+        "max": 262.523864746094
+      },
+      "samplingLocation": "Sable pressure: reported vessel CoM; sensor height offset unverified"
+    }
+  ],
+  "gasResponseFit": {
+    "rmseVolume": 362.2308124874694,
+    "delaySeconds": 0,
+    "lagSeconds": 1,
+    "method": "grid-search full-window first-order applied-target response",
+    "rawLiftPerVolume": 1.4999999999999998,
+    "status": "estimated; aggregate approximation; grid and sampling resolution limit precision"
+  },
+  "parameters": {
+    "dragTauSeconds": {
+      "value": 5.5,
+      "status": "prior measured estimate; exact fit window unestablished"
+    },
+    "verticalDragWeightPerBps": {
+      "value": 0.019,
+      "status": "prior measured estimate; exact fit window unestablished"
+    },
+    "pressureCurve": {
+      "value": "Sable 2.0.5 default; minY -64, logicalHeight 384, seaLevel 63",
+      "status": "inspected default; active-world override unverified"
+    }
+  },
+  "limitations": [
+    "No rotational or lateral dynamics",
+    "Provider allocation and endpoint ramps are outside this aggregate plant",
+    "Source transitions require separate fits",
+    "Fits do not establish physical-flight acceptance"
+  ],
+  "recordingBuild": "amaryllis-debug-disk-v145-lift-ack-priority",
+  "recordingSchemaVersion": 5,
+  "recordingConfig": {
+    "input_frequencies": {
+      "altitude_up": [
+        "minecraft:red_concrete",
+        "minecraft:orange_concrete"
+      ],
+      "prop_reverse": [
+        "minecraft:lime_concrete",
+        "minecraft:yellow_concrete"
+      ],
+      "right_lift": [
+        "minecraft:purple_concrete",
+        "minecraft:green_concrete"
+      ],
+      "prop_forward": [
+        "minecraft:yellow_concrete",
+        "minecraft:lime_concrete"
+      ],
+      "right_press": [
+        "minecraft:green_concrete",
+        "minecraft:purple_concrete"
+      ],
+      "ap_disconnect": [
+        "minecraft:light_blue_concrete",
+        "minecraft:purple_concrete"
+      ],
+      "altitude_down": [
+        "minecraft:orange_concrete",
+        "minecraft:red_concrete"
+      ],
+      "left_lift": [
+        "minecraft:purple_concrete",
+        "minecraft:orange_concrete"
+      ],
+      "left_press": [
+        "minecraft:orange_concrete",
+        "minecraft:purple_concrete"
+      ]
+    },
+    "protocol": "amaryllis.v1",
+    "tuning": {
+      "enabled": true,
+      "duration_seconds": 30,
+      "altitude_step": 1,
+      "speed_step": 0.1
+    },
+    "thrust": {
+      "speed_control_enabled": true,
+      "manual_acceleration_verified": false,
+      "limits_verified": true,
+      "speed_control_verified": false,
+      "heading_control_verified": false,
+      "heading_control_enabled": true,
+      "manual_acceleration_pid": {
+        "integral_limit": 5,
+        "kd": 0,
+        "derivative_filter_seconds": 1,
+        "ki": 0.1,
+        "kp": 1
+      },
+      "lateral_mixer": {
+        "lb": {
+          "side_gain": 0,
+          "side_sign": -1,
+          "yaw_sign": 1,
+          "yaw_gain": 1
+        },
+        "ls": {
+          "side_gain": 0,
+          "side_sign": -1,
+          "yaw_sign": -1,
+          "yaw_gain": 1
+        },
+        "rb": {
+          "side_gain": 0,
+          "side_sign": -1,
+          "yaw_sign": 1,
+          "yaw_gain": 1
+        },
+        "rs": {
+          "side_gain": 0,
+          "side_sign": -1,
+          "yaw_sign": -1,
+          "yaw_gain": 1
+        }
+      },
+      "speed_pid": {
+        "integral_limit": 100,
+        "kd": 0,
+        "derivative_filter_seconds": 1,
+        "ki": 0.004,
+        "kp": 0.03
+      },
+      "mixer_verified": true,
+      "enabled": true,
+      "manual_acceleration": {
+        "minimum": -0.1,
+        "maximum": 0.1
+      },
+      "direct_max_request": 1,
+      "status_stale_seconds": 10,
+      "speed_output_slew_per_second": 0.25,
+      "primary_max_rpm": 256,
+      "manual_acceleration_enabled": true,
+      "manual_speed_hold_gain": 0.5,
+      "speed_target_rate_bps2": 0.5,
+      "command_ttl_seconds": 1,
+      "primary_input_rpm": 256,
+      "mapping_verified": true,
+      "lateral_max_rpm": 256,
+      "heading_control": {
+        "output_slew_per_second": 0.25,
+        "heading_rate_per_degree": 0.5,
+        "rate_pid": {
+          "integral_limit": 20,
+          "kd": 0,
+          "derivative_filter_seconds": 1,
+          "ki": 0.005,
+          "kp": 0.05
+        },
+        "rate_filter_seconds": 0.5,
+        "maximum_yaw_rate_degrees_per_second": 10
+      }
+    },
+    "role": "core",
+    "vent_startup_ack_seconds": 18,
+    "hardware": {
+      "main_monitor": "",
+      "discover": true,
+      "link_bridge": ""
+    },
+    "role_labels": {
+      "state": "ama-state",
+      "chamber_fl": "chamber_fl",
+      "thrust-lb": "thrust-lb",
+      "thrust-rs": "thrust-rs",
+      "heading-left": "ama-heading-left",
+      "chamber_fr": "chamber_fr",
+      "thrust-rb": "thrust-rb",
+      "primary_r": "primary_r",
+      "heading-main": "ama-heading-main",
+      "chamber_br": "chamber_br",
+      "primary_l": "primary_l",
+      "core": "ama-core",
+      "thrust-ls": "thrust-ls",
+      "navigator": "ama-bridge",
+      "chamber_bl": "chamber_bl",
+      "heading-right": "ama-heading-right"
+    },
+    "altitude_control": {
+      "trim_deadband_blocks": 0.15,
+      "lift_balance_tolerance_fraction": 0.2,
+      "vertical_speed_pid": {
+        "integral_limit": 80,
+        "kd": 0,
+        "kp": 0.012,
+        "ki": 0.0015,
+        "derivative_filter_seconds": 1
+      },
+      "startup_acceleration_seconds": 20,
+      "startup_vertical_speed_limit": 20,
+      "enabled": true,
+      "startup_max_vertical_speed": 5,
+      "altitude_pid": {
+        "integral_limit": 20,
+        "kd": 0.05,
+        "kp": 0.06,
+        "ki": 0.001,
+        "derivative_filter_seconds": 1
+      },
+      "startup_braking_lookahead_seconds": 15,
+      "minimum_world_y": 120,
+      "ceiling_soft_start_rate": 0.005,
+      "level_damping_gain": 3,
+      "verified_gas_lift_strengths": {
+        "default": 1.5,
+        "steam": 1.5
+      },
+      "max_feed_fraction": 0.15,
+      "launch_settle_seconds": 10,
+      "tuning_confirmed": false,
+      "trim_slew_ceiling_per_second": 1,
+      "hover_max_vertical_speed": 0.2,
+      "level_lead_seconds": 6,
+      "startup_gas_target_m3_per_chamber": 12000,
+      "max_trim_ceiling_change": 25,
+      "ceiling_rise_rate": 0.02,
+      "ceiling_fast_rate": 0.08,
+      "manual_fore_aft_trim_blocks": 0,
+      "trim_pid": {
+        "integral_limit": 100,
+        "derivative_filter_seconds": 2,
+        "kd": 1,
+        "ki": 0.25
+      },
+      "trim_ceiling_per_block": 5,
+      "hover_capture_seconds": 5,
+      "climb_trim_boost": 2,
+      "max_vertical_speed": 5
+    },
+    "network": {
+      "broadcast_interval_seconds": 0.5,
+      "commission_ack_seconds": 4,
+      "commission_wait_seconds": 5,
+      "max_providers": 64,
+      "hello_interval_seconds": 1,
+      "max_sequence": 2147483647,
+      "node_stale_seconds": 6,
+      "sample_interval_seconds": 0.5,
+      "sensor_stale_seconds": 12
+    },
+    "role_ids": {
+      "thrust-lb": 9,
+      "thrust-rs": 10,
+      "thrust-ls": 11,
+      "primary-left": 15,
+      "thrust-rb": 6,
+      "primary-right": 14
+    },
+    "commissioning": {
+      "enabled": false,
+      "confirm_supported": false
+    },
+    "bridge_id": 5,
+    "schema_version": 1,
+    "cockpit": {
+      "manual_yaw_sensitivity_percent": 65,
+      "lateral_strength_percent": 50,
+      "minimum_selected_speed": -20,
+      "repeat_delay_seconds": 0.5,
+      "altitude_fast_after_seconds": 5,
+      "altitude_rate_slow": 1,
+      "speed_selection_max_rate": 10,
+      "maximum_selected_speed": 30,
+      "fine_heading_degrees": 1,
+      "input_interval_seconds": 0.2,
+      "lateral_offset_step_blocks": 0.5,
+      "altitude_rate_medium": 5,
+      "heading_repeat_seconds": 0.25,
+      "speed_selection_blocks_per_second_per_second": 0.5,
+      "lateral_adjustment_blocks_per_second": 1,
+      "input_stale_seconds": 7,
+      "altitude_medium_after_seconds": 2,
+      "lateral_hold_delay_seconds": 0.5,
+      "coarse_heading_degrees": 1,
+      "altitude_rate_fast": 10,
+      "maximum_input_gap_seconds": 7,
+      "heading_selection_rate": 40,
+      "heading_selection_acceleration": 0,
+      "speed_selection_acceleration": 0,
+      "heading_selection_max_rate": 45
+    },
+    "vent_startup_enabled": true,
+    "maintenance": {
+      "reconnect_timeout_seconds": 20,
+      "confirmation_seconds": 30,
+      "restart_altitude_limit": 163
+    },
+    "navigation": {
+      "anchor": {
+        "speed_tolerance": 0.05,
+        "position_tolerance": 0.5,
+        "settle_seconds": 2,
+        "output_slew": 0.25,
+        "position_gain": 0.15,
+        "velocity_ki": 0.003,
+        "maximum_speed": 0.5,
+        "velocity_kp": 0.05
+      },
+      "autopilot": {
+        "cross_gain": 0.2,
+        "maximum_cross_speed": 1.5,
+        "velocity_gain": 0.35,
+        "arrival_radius": 12,
+        "output_slew": 0.25,
+        "speed_ramp": 0.5
+      }
+    },
+    "computer_id": 0,
+    "node_ids": {
+      "FL": 9,
+      "FR": 6,
+      "BR": 10,
+      "BL": 11
+    },
+    "label": "ama-core",
+    "geometry": {
+      "velocity_unit": "blocks_per_second",
+      "orientation_verified": true,
+      "bow_forward": {
+        "y": 0,
+        "x": 1,
+        "z": 0
+      },
+      "velocity_frame_verified": true,
+      "velocity_forward": {
+        "y": 0,
+        "x": 1,
+        "z": 0
+      }
+    },
+    "display_ids": {
+      "right": 3,
+      "center": 4,
+      "left": 2
+    }
+  },
+  "replayRows": [
+    {
+      "at": 1792843960.398,
+      "altitude": 222.961761474609,
+      "verticalSpeed": -0.0384521484375,
+      "mass": 147739.375,
+      "pressure": 0.527010037774634,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 283070.7262000517,
+      "appliedRawLift": 283440.0,
+      "selectedAltitude": 222.920000076294
+    },
+    {
+      "at": 1792843960.955,
+      "altitude": 222.961761474609,
+      "verticalSpeed": -0.0384521484375,
+      "mass": 147739.375,
+      "pressure": 0.527010037774634,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 283070.7262000517,
+      "appliedRawLift": 283440.0,
+      "selectedAltitude": 222.920000076294
+    },
+    {
+      "at": 1792843961.504,
+      "altitude": 222.961761474609,
+      "verticalSpeed": -0.0384521484375,
+      "mass": 147739.375,
+      "pressure": 0.527010037774634,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 283070.7262000517,
+      "appliedRawLift": 283440.0,
+      "selectedAltitude": 222.920000076294
+    },
+    {
+      "at": 1792843962.063,
+      "altitude": 222.94255065918,
+      "verticalSpeed": -0.0262451171875,
+      "mass": 147739.375,
+      "pressure": 0.527010037774634,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 283070.7262000517,
+      "appliedRawLift": 283440.0,
+      "selectedAltitude": 222.920000076294
+    },
+    {
+      "at": 1792843962.565,
+      "altitude": 222.930221557617,
+      "verticalSpeed": 0.00946044921875,
+      "mass": 147739.375,
+      "pressure": 0.527010037774634,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 283273.2467052571,
+      "appliedRawLift": 283440.0,
+      "selectedAltitude": 224.341000080109
+    },
+    {
+      "at": 1792843963.072,
+      "altitude": 222.941223144531,
+      "verticalSpeed": 0.023193359375,
+      "mass": 147739.375,
+      "pressure": 0.527010037774634,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 283385.61135117756,
+      "appliedRawLift": 283440.0,
+      "selectedAltitude": 225.084000110626
+    },
+    {
+      "at": 1792843963.602,
+      "altitude": 222.959106445313,
+      "verticalSpeed": 0.03509521484375,
+      "mass": 147739.375,
+      "pressure": 0.527010037774634,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 283398.18103245227,
+      "appliedRawLift": 283440.0,
+      "selectedAltitude": 226.695999860764
+    },
+    {
+      "at": 1792843964.161,
+      "altitude": 222.959106445313,
+      "verticalSpeed": 0.03509521484375,
+      "mass": 147739.375,
+      "pressure": 0.527010037774634,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 283398.18103245227,
+      "appliedRawLift": 283440.0,
+      "selectedAltitude": 226.695999860764
+    },
+    {
+      "at": 1792843964.723,
+      "altitude": 222.959106445313,
+      "verticalSpeed": 0.03509521484375,
+      "mass": 147739.375,
+      "pressure": 0.527010037774634,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 283398.18103245227,
+      "appliedRawLift": 283440.0,
+      "selectedAltitude": 226.695999860764
+    },
+    {
+      "at": 1792843965.258,
+      "altitude": 222.983520507813,
+      "verticalSpeed": 0.04547119140625,
+      "mass": 147739.375,
+      "pressure": 0.527010037774634,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 283404.1942483015,
+      "appliedRawLift": 283440.0,
+      "selectedAltitude": 229.120999336243
+    },
+    {
+      "at": 1792843965.763,
+      "altitude": 223.057144165039,
+      "verticalSpeed": 0.07843017578125,
+      "mass": 147739.375,
+      "pressure": 0.527010037774634,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 283779.00001009053,
+      "appliedRawLift": 284496.0,
+      "selectedAltitude": 235.875999689102
+    },
+    {
+      "at": 1792843966.275,
+      "altitude": 223.110244750977,
+      "verticalSpeed": 0.09735107421875,
+      "mass": 147739.375,
+      "pressure": 0.527010037774634,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 284247.6997682748,
+      "appliedRawLift": 284496.0,
+      "selectedAltitude": 239.545999526978
+    },
+    {
+      "at": 1792843966.804,
+      "altitude": 223.174545288086,
+      "verticalSpeed": 0.1153564453125,
+      "mass": 147739.375,
+      "pressure": 0.527010037774634,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 284310.1149888707,
+      "appliedRawLift": 284496.0,
+      "selectedAltitude": 244.986001014709
+    },
+    {
+      "at": 1792843967.323,
+      "altitude": 223.174545288086,
+      "verticalSpeed": 0.1153564453125,
+      "mass": 147739.375,
+      "pressure": 0.527010037774634,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 284945.6988734165,
+      "appliedRawLift": 291024.0,
+      "selectedAltitude": 244.986001014709
+    },
+    {
+      "at": 1792843967.9,
+      "altitude": 223.25959777832,
+      "verticalSpeed": 0.15167236328125,
+      "mass": 147739.375,
+      "pressure": 0.526465590496068,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 284945.6988734165,
+      "appliedRawLift": 291024.0,
+      "selectedAltitude": 250.09600019455
+    },
+    {
+      "at": 1792843968.422,
+      "altitude": 223.25959777832,
+      "verticalSpeed": 0.15167236328125,
+      "mass": 147739.375,
+      "pressure": 0.526465590496068,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 284945.6988734165,
+      "appliedRawLift": 291024.0,
+      "selectedAltitude": 250.09600019455
+    },
+    {
+      "at": 1792843968.947,
+      "altitude": 223.583435058594,
+      "verticalSpeed": 0.33599853515625,
+      "mass": 147739.375,
+      "pressure": 0.526465590496068,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 287679.26741894614,
+      "appliedRawLift": 291024.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843969.458,
+      "altitude": 223.826843261719,
+      "verticalSpeed": 0.47332763671875,
+      "mass": 147739.375,
+      "pressure": 0.525277887868677,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 293588.8426359319,
+      "appliedRawLift": 300144.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843970.006,
+      "altitude": 224.200332641607,
+      "verticalSpeed": 0.6658935546875,
+      "mass": 147739.375,
+      "pressure": 0.525277887868677,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 295509.9154460418,
+      "appliedRawLift": 300144.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843970.575,
+      "altitude": 224.200332641607,
+      "verticalSpeed": 0.6658935546875,
+      "mass": 147739.375,
+      "pressure": 0.525277887868677,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 295832.4205098201,
+      "appliedRawLift": 300144.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843971.093,
+      "altitude": 224.661865234375,
+      "verticalSpeed": 0.85693359375,
+      "mass": 147739.375,
+      "pressure": 0.523534406237632,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 295832.4205098201,
+      "appliedRawLift": 300144.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843971.671,
+      "altitude": 225.348358154297,
+      "verticalSpeed": 1.0906982421875,
+      "mass": 147739.375,
+      "pressure": 0.522105394571154,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 297184.3829326563,
+      "appliedRawLift": 301152.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843972.191,
+      "altitude": 226.200347900391,
+      "verticalSpeed": 1.32476806640625,
+      "mass": 147739.375,
+      "pressure": 0.520337318026352,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 301673.4958558992,
+      "appliedRawLift": 303936.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843972.699,
+      "altitude": 227.131851196289,
+      "verticalSpeed": 1.5216064453125,
+      "mass": 147739.375,
+      "pressure": 0.518411091460646,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 302538.5057983714,
+      "appliedRawLift": 303936.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843973.207,
+      "altitude": 228.180725097656,
+      "verticalSpeed": 1.68701171875,
+      "mass": 147739.375,
+      "pressure": 0.516250691045256,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 302132.193085985,
+      "appliedRawLift": 296301.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843973.772,
+      "altitude": 228.180725097656,
+      "verticalSpeed": 1.68701171875,
+      "mass": 147739.375,
+      "pressure": 0.516250691045256,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 301084.74446254247,
+      "appliedRawLift": 296301.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843974.616,
+      "altitude": 228.180725097656,
+      "verticalSpeed": 1.68701171875,
+      "mass": 147739.375,
+      "pressure": 0.516250691045256,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 301010.2144495641,
+      "appliedRawLift": 296301.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843975.123,
+      "altitude": 230.478668212891,
+      "verticalSpeed": 1.7877197265625,
+      "mass": 147739.375,
+      "pressure": 0.511548896612018,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 301010.2144495641,
+      "appliedRawLift": 296301.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843975.718,
+      "altitude": 231.620895385742,
+      "verticalSpeed": 1.719970703125,
+      "mass": 147739.375,
+      "pressure": 0.509227691220574,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 296146.6206246858,
+      "appliedRawLift": 293421.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843976.231,
+      "altitude": 233.678634643555,
+      "verticalSpeed": 1.43218994140625,
+      "mass": 147739.375,
+      "pressure": 0.507049405477137,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 295225.3645228155,
+      "appliedRawLift": 293421.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843976.804,
+      "altitude": 233.678634643555,
+      "verticalSpeed": 1.43218994140625,
+      "mass": 147739.375,
+      "pressure": 0.505072373160124,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 294632.4119569577,
+      "appliedRawLift": 293421.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843977.369,
+      "altitude": 233.678634643555,
+      "verticalSpeed": 1.43218994140625,
+      "mass": 147739.375,
+      "pressure": 0.505072373160124,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 295303.2546346914,
+      "appliedRawLift": 299613.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843977.883,
+      "altitude": 233.678634643555,
+      "verticalSpeed": 1.43218994140625,
+      "mass": 147739.375,
+      "pressure": 0.505072373160124,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 295783.9549350023,
+      "appliedRawLift": 299613.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843978.407,
+      "altitude": 234.608917236328,
+      "verticalSpeed": 1.2420654296875,
+      "mass": 147739.375,
+      "pressure": 0.503204844675228,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 295955.7841591719,
+      "appliedRawLift": 299613.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843978.911,
+      "altitude": 236.178253173828,
+      "verticalSpeed": 0.95245361328125,
+      "mass": 147739.375,
+      "pressure": 0.500069886879306,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 300185.378170067,
+      "appliedRawLift": 307630.5,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843979.426,
+      "altitude": 236.773574829102,
+      "verticalSpeed": 0.89385986328125,
+      "mass": 147739.375,
+      "pressure": 0.498885702568021,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 302303.7119360445,
+      "appliedRawLift": 307630.5,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843979.967,
+      "altitude": 237.392791748047,
+      "verticalSpeed": 0.8819580078125,
+      "mass": 147739.375,
+      "pressure": 0.498885702568021,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 302303.7119360445,
+      "appliedRawLift": 307630.5,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843980.58,
+      "altitude": 237.392791748047,
+      "verticalSpeed": 0.8819580078125,
+      "mass": 147739.375,
+      "pressure": 0.497656918983985,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 304086.82248859026,
+      "appliedRawLift": 307630.5,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843981.12,
+      "altitude": 237.392791748047,
+      "verticalSpeed": 0.8819580078125,
+      "mass": 147739.375,
+      "pressure": 0.497656918983985,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 304086.82248859026,
+      "appliedRawLift": 307630.5,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843981.628,
+      "altitude": 237.974807739263,
+      "verticalSpeed": 0.9173583984375,
+      "mass": 147739.375,
+      "pressure": 0.496504674030659,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 305445.2942040969,
+      "appliedRawLift": 315264.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843982.138,
+      "altitude": 239.403030395508,
+      "verticalSpeed": 1.13067626953125,
+      "mass": 147739.375,
+      "pressure": 0.493688254043348,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 312351.22238690266,
+      "appliedRawLift": 315264.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843982.643,
+      "altitude": 239.403030395508,
+      "verticalSpeed": 1.13067626953125,
+      "mass": 147739.375,
+      "pressure": 0.493688254043348,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 312718.340951694,
+      "appliedRawLift": 315264.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843983.205,
+      "altitude": 240.176239013672,
+      "verticalSpeed": 1.2384033203125,
+      "mass": 147739.375,
+      "pressure": 0.492170052572336,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 313255.4893504165,
+      "appliedRawLift": 315264.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843983.765,
+      "altitude": 240.176239013672,
+      "verticalSpeed": 1.2384033203125,
+      "mass": 147739.375,
+      "pressure": 0.492170052572336,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 313010.7168259907,
+      "appliedRawLift": 310896.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843984.276,
+      "altitude": 240.176239013672,
+      "verticalSpeed": 1.2384033203125,
+      "mass": 147739.375,
+      "pressure": 0.492170052572336,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 313010.7168259907,
+      "appliedRawLift": 310896.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843984.785,
+      "altitude": 241.275192260742,
+      "verticalSpeed": 1.3275146484375,
+      "mass": 147739.375,
+      "pressure": 0.490020112826917,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 312779.9535522409,
+      "appliedRawLift": 310896.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843985.29,
+      "altitude": 243.146224975586,
+      "verticalSpeed": 1.319580078125,
+      "mass": 147739.375,
+      "pressure": 0.486380802545518,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 310284.8618369835,
+      "appliedRawLift": 306525.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843985.802,
+      "altitude": 243.982360839844,
+      "verticalSpeed": 1.2493896484375,
+      "mass": 147739.375,
+      "pressure": 0.484762978278133,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 309335.9843103708,
+      "appliedRawLift": 306525.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843986.421,
+      "altitude": 243.982360839844,
+      "verticalSpeed": 1.2493896484375,
+      "mass": 147739.375,
+      "pressure": 0.484762978278133,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 309335.9843103708,
+      "appliedRawLift": 306525.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843986.945,
+      "altitude": 243.982360839844,
+      "verticalSpeed": 1.2493896484375,
+      "mass": 147739.375,
+      "pressure": 0.484762978278133,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 309335.9843103708,
+      "appliedRawLift": 306525.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843987.453,
+      "altitude": 243.982360839844,
+      "verticalSpeed": 1.2493896484375,
+      "mass": 147739.375,
+      "pressure": 0.484762978278133,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 309174.22999173286,
+      "appliedRawLift": 306525.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843987.959,
+      "altitude": 246.175750732422,
+      "verticalSpeed": 0.83038330078125,
+      "mass": 147739.375,
+      "pressure": 0.480543825159147,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 308428.2207790087,
+      "appliedRawLift": 306525.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843988.463,
+      "altitude": 246.667053222656,
+      "verticalSpeed": 0.69244384765625,
+      "mass": 147739.375,
+      "pressure": 0.479603655762584,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 308319.2094254791,
+      "appliedRawLift": 308304.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843989.008,
+      "altitude": 247.069671630859,
+      "verticalSpeed": 0.55755615234375,
+      "mass": 147739.375,
+      "pressure": 0.478834520394837,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 308316.8380127478,
+      "appliedRawLift": 308304.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843989.522,
+      "altitude": 247.069671630859,
+      "verticalSpeed": 0.55755615234375,
+      "mass": 147739.375,
+      "pressure": 0.478834520394837,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 308312.841860149,
+      "appliedRawLift": 308304.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843990.123,
+      "altitude": 247.407531738281,
+      "verticalSpeed": 0.421142578125,
+      "mass": 147739.375,
+      "pressure": 0.478190014334591,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 308312.841860149,
+      "appliedRawLift": 308304.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843990.65,
+      "altitude": 247.407531738281,
+      "verticalSpeed": 0.421142578125,
+      "mass": 147739.375,
+      "pressure": 0.478190014334591,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 308483.6151094181,
+      "appliedRawLift": 311184.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843991.153,
+      "altitude": 247.870178222656,
+      "verticalSpeed": 0.35980224609375,
+      "mass": 147739.375,
+      "pressure": 0.477308822008602,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 311591.1092270523,
+      "appliedRawLift": 319296.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843991.667,
+      "altitude": 248.114044189453,
+      "verticalSpeed": 0.39215087890625,
+      "mass": 147739.375,
+      "pressure": 0.477308822008602,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 316739.7194339705,
+      "appliedRawLift": 319296.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843992.217,
+      "altitude": 248.114044189453,
+      "verticalSpeed": 0.39215087890625,
+      "mass": 147739.375,
+      "pressure": 0.477308822008602,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 316739.7194339705,
+      "appliedRawLift": 319296.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843992.777,
+      "altitude": 248.114044189453,
+      "verticalSpeed": 0.39215087890625,
+      "mass": 147739.375,
+      "pressure": 0.477308822008602,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 316739.7194339705,
+      "appliedRawLift": 319296.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843993.304,
+      "altitude": 248.669570922852,
+      "verticalSpeed": 0.5029296875,
+      "mass": 147739.375,
+      "pressure": 0.476370734508971,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 316739.7194339705,
+      "appliedRawLift": 319296.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843993.807,
+      "altitude": 248.995559692383,
+      "verticalSpeed": 0.57830810546875,
+      "mass": 147739.375,
+      "pressure": 0.475171860131504,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 318814.4685253167,
+      "appliedRawLift": 322560.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843994.32,
+      "altitude": 249.401077270508,
+      "verticalSpeed": 0.6622314453125,
+      "mass": 147739.375,
+      "pressure": 0.474404090074564,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 321270.4217046238,
+      "appliedRawLift": 322560.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843995.28,
+      "altitude": 249.401077270508,
+      "verticalSpeed": 0.6622314453125,
+      "mass": 147739.375,
+      "pressure": 0.474404090074564,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 321270.4217046238,
+      "appliedRawLift": 322560.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843995.816,
+      "altitude": 249.859008789063,
+      "verticalSpeed": 0.7391357421875,
+      "mass": 147739.375,
+      "pressure": 0.473538516843864,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 321270.4217046238,
+      "appliedRawLift": 322560.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843996.322,
+      "altitude": 250.482055664063,
+      "verticalSpeed": 0.8050537109375,
+      "mass": 147739.375,
+      "pressure": 0.472363278725339,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 321671.4778569414,
+      "appliedRawLift": 322560.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843996.851,
+      "altitude": 251.580337524414,
+      "verticalSpeed": 0.80291748046875,
+      "mass": 147739.375,
+      "pressure": 0.470298415742315,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 319882.70283550187,
+      "appliedRawLift": 319104.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843997.379,
+      "altitude": 251.580337524414,
+      "verticalSpeed": 0.80291748046875,
+      "mass": 147739.375,
+      "pressure": 0.470298415742315,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 319733.7724994021,
+      "appliedRawLift": 319104.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843997.928,
+      "altitude": 251.580337524414,
+      "verticalSpeed": 0.80291748046875,
+      "mass": 147739.375,
+      "pressure": 0.470298415742315,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 319672.7952100989,
+      "appliedRawLift": 319104.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843998.443,
+      "altitude": 251.580337524414,
+      "verticalSpeed": 0.80291748046875,
+      "mass": 147739.375,
+      "pressure": 0.470298415742315,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 319672.7952100989,
+      "appliedRawLift": 319104.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843998.954,
+      "altitude": 253.017364501953,
+      "verticalSpeed": 0.6500244140625,
+      "mass": 147739.375,
+      "pressure": 0.467609702966868,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 319387.6787363473,
+      "appliedRawLift": 318816.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792843999.489,
+      "altitude": 253.411697387695,
+      "verticalSpeed": 0.56793212890625,
+      "mass": 147739.375,
+      "pressure": 0.466874461813619,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 318195.44061877474,
+      "appliedRawLift": 317616.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792844000.044,
+      "altitude": 253.411697387695,
+      "verticalSpeed": 0.56793212890625,
+      "mass": 147739.375,
+      "pressure": 0.466874461813619,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 318113.208416027,
+      "appliedRawLift": 317616.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792844000.971,
+      "altitude": 253.411697387695,
+      "verticalSpeed": 0.56793212890625,
+      "mass": 147739.375,
+      "pressure": 0.466874461813619,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 318113.208416027,
+      "appliedRawLift": 317616.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792844001.545,
+      "altitude": 254.252883911133,
+      "verticalSpeed": 0.313720703125,
+      "mass": 147739.375,
+      "pressure": 0.465309725322654,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 317920.7738134434,
+      "appliedRawLift": 317616.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792844002.2,
+      "altitude": 254.438537597656,
+      "verticalSpeed": 0.264892578125,
+      "mass": 147739.375,
+      "pressure": 0.465309725322654,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 320060.519073221,
+      "appliedRawLift": 321648.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792844002.714,
+      "altitude": 254.438537597656,
+      "verticalSpeed": 0.264892578125,
+      "mass": 147739.375,
+      "pressure": 0.465309725322654,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 320060.519073221,
+      "appliedRawLift": 321648.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792844003.404,
+      "altitude": 254.438537597656,
+      "verticalSpeed": 0.264892578125,
+      "mass": 147739.375,
+      "pressure": 0.465309725322654,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 320060.519073221,
+      "appliedRawLift": 321648.0,
+      "selectedAltitude": 261.765999317169
+    },
+    {
+      "at": 1792844003.912,
+      "altitude": 254.759567260742,
+      "verticalSpeed": 0.20416259765625,
+      "mass": 147739.375,
+      "pressure": 0.4643696203827,
+      "pressureSource": "SABLE AERO",
+      "rawLift": 320506.29221511004,
+      "appliedRawLift": 321648.0,
+      "selectedAltitude": 261.765999317169
+    }
+  ],
+  "replayAssumptions": [
+    "Applied volume converted with recorded raw lift/volume ratio 1.5",
+    "Aggregate gas mixture supplied to controller; full historical worker/supervisor state is unavailable"
+  ]
+}

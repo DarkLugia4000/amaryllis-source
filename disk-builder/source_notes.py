@@ -4,6 +4,68 @@ import re
 LONG=re.compile(r"\[(=*)\[")
 WORD=re.compile(r"[A-Za-z_][A-Za-z_0-9]*")
 
+# Family membership spans package groups where the implementation is shared.
+PACKAGE_FAMILIES = {
+    **{"chamber-" + name: ["packages/chamber/" + role + "/" + name + ".lua"
+                           for role in ("fl", "fr", "bl", "br")]
+       for name in ("hardware", "lift", "main", "thrust", "relay")},
+    "chamber-link": ["packages/common/chamber_link.lua"] +
+        ["packages/" + group + "/" + role + "/chamber_link.lua"
+         for group, roles in (("chamber", ("fl", "fr", "bl", "br")),
+                              ("thrust", ("lb", "rb", "ls", "rs"))) for role in roles],
+    **{"thrust-" + name: ["packages/thrust/" + role + "/" + name + ".lua"
+                          for role in ("lb", "rb", "ls", "rs")]
+       for name in ("hardware", "thrust")},
+    "heading-main": ["packages/heading/" + role + "/main.lua" for role in ("left", "main", "right")],
+    **{"primary-" + name: ["packages/primary/" + role + "/" + name + ".lua"
+                           for role in ("left", "right")] for name in ("main", "hardware")},
+}
+BYTE_IDENTICAL_FAMILIES = {"chamber-lift", "chamber-link"}
+
+
+def expand_shared_modules(files, mappings):
+    """Expand canonical package implementations into their registered role destinations."""
+    if not isinstance(mappings, dict):
+        raise ValueError("sharedModules must be an object")
+    result = {name: data for name, data in files.items() if name not in mappings}
+    assigned = set()
+    for source, destinations in mappings.items():
+        if (not isinstance(source, str) or not source.startswith("packages/common/") or
+                not source.endswith(".lua") or ".." in source.split("/") or "\\" in source or source not in files):
+            raise ValueError("Invalid shared implementation source: " + str(source))
+        if not isinstance(destinations, list) or not all(isinstance(name, str) for name in destinations):
+            raise ValueError("Invalid shared implementation destinations: " + source)
+        members = set(destinations)
+        if len(members) != len(destinations) or not any(members == set(group) for group in PACKAGE_FAMILIES.values()):
+            raise ValueError("Shared implementation must map one complete registered family: " + source)
+        for name in destinations:
+            if name in assigned or name in result:
+                raise ValueError("Duplicated shared implementation destination: " + name)
+            result[name] = files[source]
+            assigned.add(name)
+    return result
+
+
+def validate_package_families(files):
+    """Reject executable drift across explicit sibling families before packaging."""
+    for family, members in PACKAGE_FAMILIES.items():
+        for name in members:
+            if name not in files:
+                raise ValueError(f"Package family {family}: missing {name}")
+        reference = members[0]
+        expected = tokens(files[reference].decode("utf-8-sig"))
+        for name in members[1:]:
+            actual = tokens(files[name].decode("utf-8-sig"))
+            for index in range(max(len(expected), len(actual))):
+                left = expected[index] if index < len(expected) else ("<EOF>", 0, 0, 0)
+                right = actual[index] if index < len(actual) else ("<EOF>", 0, 0, 0)
+                if left[0] != right[0]:
+                    raise ValueError(f"Package family {family}: {reference}:{left[3]} token {left[0]!r} "
+                                     f"differs from {name}:{right[3]} token {right[0]!r}")
+            if family in BYTE_IDENTICAL_FAMILIES and files[reference] != files[name]:
+                raise ValueError(f"Package family {family}: normalized comments/bytes differ: {reference}, {name}")
+    return len(PACKAGE_FAMILIES)
+
 def tokens(text, comments=False):
     """Scan Lua tokens while preserving source offsets and line numbers."""
     out=[];i=0;line=1;n=len(text)
@@ -40,7 +102,7 @@ def tokens(text, comments=False):
         line+=text.count("\n",start,i)
     return out
 
-def functions(text):
+def functions(text, min_lines=8):
     """Find named function spans using Lua block nesting."""
     seq=tokens(text);stack=[];result=[]
     for index,token in enumerate(seq):
@@ -68,7 +130,7 @@ def functions(text):
             frame=stack.pop()
             if frame["kind"]=="function" and frame["name"]:
                 frame.update(end=end,endline=line)
-                if line-frame["line"]>=7:
+                if line-frame["line"]>=min_lines-1:
                     result.append(frame)
     return sorted(result,key=lambda item:item["start"])
 
@@ -78,6 +140,57 @@ def canonical(path):
 
 PURPOSES={}
 SUMMARIES={}
+
+SHORT_SUMMARIES = {'/avionics/common/console.lua#requestRegistry': 'Request fleet assignments from the selected core and boot '
+                                                 'session.',
+ '/avionics/common/console.lua#startWorker': 'Reuse a live service tab or start and register its '
+                                             'replacement.',
+ '/avionics/control_presets.lua#Presets:cancelRestore': 'Cancel pending preset restoration and release its '
+                                                        'resume gate.',
+ '/avionics/flight.lua#Flight:cancelLateral': 'Cancel lateral guidance, set its manual mode and apply the '
+                                              'requested stop lock.',
+ '/avionics/lateral.lua#Lateral:cancel': 'Clear lateral demand and guidance history; strafe input acts from the next sample.',
+ '/avionics/main.lua#request': 'Dispatch the paired remote packet to remote AP request handling.',
+ '/avionics/motion_warnings.lua#M:reset': 'Clear obstruction tracking and establish the current measurement '
+                                          'gate.',
+ '/avionics/pid.lua#PID:reset': 'Clear integral and derivative state and seed the previous measurement.',
+ '/avionics/remote_ap.lua#Ops:setEnabled': 'Change remote AP permission for this boot and advance its '
+                                           'command generation.',
+ '/avionics/remote_install.lua#save': 'Atomically persist the paired-remote registry.',
+ '/avionics/remote_install.lua#write': 'Write and close the selected file, then verify its stored bytes.',
+ '/avionics/storage.lua#readDocument': 'Read and decode JSON through the configured filesystem.',
+ '/avionics/storage.lua#readState': 'Resolve current core state and recover a verified backup with conservative authority.',
+ '/avionics/storage.lua#writeDocument': 'Verify a JSON replacement and retain the previous valid document.',
+ '/avionics/storage.lua#importState': 'Import legacy core records and their backups into independent sections.',
+ '/avionics/restart.lua#Restart:cancel': 'Clear the restart job and persist its inactive checkpoint.',
+ '/avionics/restart.lua#Restart:write': 'Persist a coordinated-restart checkpoint and return its storage '
+                                        'result.',
+ '/avionics/thrust.lua#Thrust:resetHeadingLoop': 'Clear heading-loop integral and rate-derivative history.',
+ '/avionics/thrust.lua#Thrust:resetManualAccelerationLoop': 'Clear both primary acceleration integrals and '
+                                                            'derivatives.',
+ '/avionics/thrust.lua#Thrust:resetSpeedLoop': 'Clear speed-loop integral and derivative history for the '
+                                               'next transfer.',
+ '/avionics/thrust.lua#Thrust:setHeadingUnavailable': 'Reset heading feedback and publish unavailable '
+                                                      'heading-control status.',
+ '/avionics/thrust.lua#Thrust:setSpeedUnavailable': 'Reset speed feedback and publish the unavailable '
+                                                    'measurement or target reason.',
+ '/avionics/thrust.lua#clearPropulsionIssue': 'Clear the recorded propulsion issue and publish its recovery '
+                                              'log entry.',
+ '/installer/server.lua#setState': 'Persist the installation phase, optional message and current timestamp.',
+ '/packages/chamber/*/hardware.lua#Hardware.setPeripheralApi': 'Set the peripheral facade used for chamber '
+                                                               'hardware discovery and calls.',
+ '/packages/chamber/*/lift.lua#clearControlContext': 'Disarm local control ownership and clear its accepted '
+                                                     'sequence.',
+ '/packages/chamber/*/lift.lua#clearIdleProbeFault': 'Clear the recorded idle-probe fault after verified '
+                                                     'recovery.',
+ '/packages/common/console.lua#requestRegistry': 'Request fleet assignments from the selected core and boot '
+                                                 'session.',
+ '/packages/common/console.lua#startWorker': 'Reuse a live service tab or start and register its '
+                                             'replacement.',
+ '/packages/navigation/storage.lua#Storage.saveSettings': 'Validate display settings and save them through '
+                                                          'JSON replacement.',
+ '/packages/thrust/*/hardware.lua#Hardware.setPeripheralApi': 'Set the peripheral facade used for thrust '
+                                                              'hardware discovery and calls.'}
 
 def prior_summary(text, start):
     """Read an existing positive function description immediately above it."""
@@ -95,24 +208,40 @@ def prior_summary(text, start):
 def summary_for(path, frame, text):
     """Resolve a reviewed summary or an existing positive description."""
     name=frame["name"];short=re.split(r"[.:]",name)[-1]
-    return SUMMARIES.get(canonical(path)+"#"+name) or SUMMARIES.get(name) or SUMMARIES.get(short) or prior_summary(text,frame["start"])
+    return SHORT_SUMMARIES.get(canonical(path)+"#"+name) or SUMMARIES.get(canonical(path)+"#"+name) or SUMMARIES.get(name) or SUMMARIES.get(short) or prior_summary(text,frame["start"])
 
 
+SUMMARIES.update({
+ 'AP:resetDriftTrend': "Clear drift qualification while retaining the route's learned heading bias.",
+ 'AP:resetGuidance': 'Restart heading acquisition and route capture from fresh observations.',
+ 'AP:guidanceControls': "Copy pilot selections into the current route's transient propulsion demands.",
+ 'AP:updateRouteLateral': "Slew route-normal correction and project it onto the vessel's lateral axis.",
+ 'refreshLiveUpdateStatus': 'Refresh the stored release version and checksum from the committed receipt after a live update replaced the program.',
+ 'rebootForStatusMismatch': 'Reboot a peripheral computer that stays stuck on a receipt or status mismatch, at most twice per hour.',
+ 'ventBalloonIssue': 'Word a balloon attachment fault from the trim probe reading and send vent faults to the boiler check.',
+ 'autoEnablePropulsion': 'Enable a disabled propulsion once per start sequence after the READY altitude hold has stayed settled for 10 s.',
+ 'IO:staleStatusText': 'Word the fault for a silent chamber with its silent time, once that time passes the 10 s notice threshold.',
+ 'disablePropulsionForStop': 'Save propulsion as disabled when STOP SYSTEMS is confirmed, cancelling AP and the anchor.',
+ 'rawThrustIssue': 'Find the first propulsion issue from the cached thrust snapshot before lease wording is simplified.',
+ 'AP:updateHeadingBias': 'Learn a rate-limited heading bias from a consistent fresh-sample cruise correction.',
+})
+SUMMARIES['speedOutputSlew']='Limit thrust release during selected-speed overspeed correction in either travel direction.'
+SUMMARIES['controlMode']='Resolve controller operating mode, then effective authority and pilot selections.'
 SUMMARIES.update({'AP.new': 'Construct route guidance with its saved draft and destination-library access.',
- 'AP:cancel': 'End route guidance and hand live demands back through the pilot neutral gate.',
+ 'AP:cancel': "End route guidance and hand live demands back to the pilot's levers at their current position.",
  'AP:engage': 'Capture route-start observations and initialize heading/speed acquisition.',
  'AP:ready': 'Check destination, vessel and propulsion readiness for route engagement.',
  'AP:restore': 'Validate and restore the retained route into its recovery phase.',
  'AP:snapshot': 'Build current route progress, destination and engagement availability.',
  'AP:suspend': 'Retain the route and schedule the next counted recovery attempt.',
  'AP:update': 'Advance route heading, speed and arrival guidance from fresh vessel observations.',
- 'Anchor:cancel': "Release position guidance through the pilot's neutral-input handover.",
+ 'Anchor:cancel': 'Release position guidance and hold every lever until it reads neutral.',
  'Anchor:engage': 'Capture the current world position and initialize anchor braking.',
  'Anchor:suspend': 'Retain the anchor point and schedule the next counted recovery attempt.',
  'Anchor:telemetry': 'Validate current world position, velocity and vessel orientation for position '
                      'guidance.',
  'Anchor:update': 'Compute bounded braking and return demand toward the retained anchor point.',
- 'Controls:clear': 'Reset live input history and neutral gates while retaining selected pilot modes.',
+ 'Controls:clear': 'Reset live input history while retaining selected pilot modes and targets.',
  'Controls:decorate': 'Add selected modes, target values and cockpit readiness to the display snapshot.',
  'Controls:fresh': 'Validate the age, identity and completeness of the cockpit sample.',
  'Controls:mode': 'Validate and apply an explicit cockpit-mode selection.',
@@ -133,13 +262,13 @@ SUMMARIES.update({'AP.new': 'Construct route guidance with its saved draft and d
  'Inbox:snapshot': 'Report bounded inbox depth, drops and service counters.',
  'Lateral:evaluate': 'Compute sideways demand and braking from the current offset and velocity.',
  'Lateral:input': 'Interpret lateral pilot input into bounded displacement and braking intent.',
- 'Lateral:select': 'Capture the lateral origin for selected sideways travel.',
+ 'Lateral:select': 'Start selected sideways travel at zero offset from the current position.',
  'Lateral:telemetry': 'Validate the vessel observations used for sideways position guidance.',
  'Metrics:measure': 'Record elapsed work time and return the measured operation result.',
  'N.ensure': 'Validate and populate supported navigation configuration defaults.',
  'PID:step': 'Advance the PID terms using elapsed time, measured derivative and bounded integration.',
  'Presets.new': 'Construct the persisted mode/target store and load its saved record.',
- 'Presets:update': 'Restore or persist pilot selections using current vessel and neutral-input checks.',
+ 'Presets:update': 'Restore or persist pilot selections once the core identity matches and vessel data is fresh, rereading SEL targets for a new vessel ID.',
  'Presets:valid': 'Validate a stored mode/target record against the supported schema and bounds.',
  'Restart:ack': 'Validate the navigator acknowledgement for the pending restart.',
  'Restart:capture': 'Capture current systems, selections and navigation state for restart.',
@@ -187,7 +316,6 @@ SUMMARIES.update({'AP.new': 'Construct route guidance with its saved draft and d
  'capBalancedTargets': 'Clamp requested chamber target maps to the balanced provider bounds.',
  'capSeededStartupSupportTargets': 'Limit startup fill targets against the measured support envelope.',
  'captureSystemsBaseline': 'Capture stable hover targets and transition the systems run to READY.',
- 'chamberAttitudeAxis': "Infer the vessel's body-axis orientation from chamber altitude observations.",
  'checkpoint': 'Capture the resumable operation state for an intentional systems restart.',
  'chooseWired': 'Select the wired modem that exposes the configured peer computer.',
  'coarseTrimSamplesAligned': 'Check that chamber observations are aligned closely enough for trim '
@@ -207,7 +335,6 @@ SUMMARIES.update({'AP.new': 'Construct route guidance with its saved draft and d
  'distributeInitialGasTotal': "Allocate a chamber's initial gas request across its permitted providers.",
  'edit': 'Apply a permitted destination edit or saved-destination selection.',
  'emergencyKillLift': 'Latch the accepted Kill Lift action and start its dedicated shutdown sequence.',
- 'emergencyLiftRecoveryVerified': 'Verify the retained emergency-stop observations during recovery.',
  'emergencyLiftState': 'Build the current kill, verification and disarm state for displays.',
  'emergencyLiftStopStateVerified': "Check a chamber's emergency-stop latch and zero-output readbacks.",
  'emergencyLiftStopWasApplied': "Correlate a chamber's verified emergency stop with the sent sequence.",
@@ -221,12 +348,11 @@ SUMMARIES.update({'AP.new': 'Construct route guidance with its saved draft and d
  'job': 'Run a named sensor sampling operation with its deadline and repeat interval.',
  'learnedHoverOffset': 'Interpolate the learned hover offset for the current altitude.',
  'legacyInputs': 'Convert existing vessel/sensor observations into independent source records.',
- 'loadAttitudeAxis': 'Load the configured or retained vessel attitude-axis calibration.',
  'loadCalibration': 'Load the sensor-frame calibration that matches vessel identity and hardware bindings.',
  'localModems': 'Inspect attached modems and separate wired from wireless interfaces.',
  'logState': 'Emit a log entry when the named cached state changes.',
  'maintenanceAck': 'Correlate a chamber maintenance reply with the active operation.',
- 'maintenanceRequest': 'Validate and stage chamber restart or hardware-recheck maintenance.',
+ 'maintenanceRequest': 'Validate and stage chamber restart, hardware-recheck or probe-restart maintenance.',
  'manualTrimAvailability': 'Evaluate whether the current vessel observations permit a manual fore/aft bias '
                            'edit.',
  'manualTrimRequest': 'Apply an accepted fore/aft trim adjustment and persist the selected bias.',
@@ -277,7 +403,6 @@ SUMMARIES.update({'AP.new': 'Construct route guidance with its saved draft and d
  'sendAltitudeCommand': 'Validate and send a chamber altitude-control command.',
  'sendEmergencyLiftDisarm': 'Send a session-bound emergency-latch disarm request.',
  'sendEmergencyLiftKill': 'Send the active emergency-stop request to each required chamber.',
- 'sendLiftCommand': "Send the selected chamber's bounded lift target map.",
  'sendLiftControlContext': 'Publish the current selected-altitude and control-activity lease to a chamber.',
  'sendLiftMaintenance': 'Send a validated chamber maintenance request with current session correlation.',
  'sendRecoveryBatch': 'Stage the next verified probe/control recovery batch.',
@@ -286,13 +411,11 @@ SUMMARIES.update({'AP.new': 'Construct route guidance with its saved draft and d
  'sendSystemsStop': 'Send a systems lease release or explicitly requested main-lift shutdown.',
  'sendTuningCommand': 'Send bounded tuning targets under the current test authority.',
  'sendTuningTargets': 'Send the bounded test target maps to their configured chambers.',
- 'sendVentStartup': 'Send the bounded initial vent command to its configured chamber.',
  'setSystemsIntent': "Persist a change to the operator's systems-running intent.",
  'setting': 'Validate a settings edit, save its configured value and update the affected live controller.',
  'snapshot': 'Return the current bounded operation state and available status details.',
  'startSystems': 'Validate startup and initialize its probe, target and retained-identity state.',
  'startSystemsAirborne': 'Adopt verified existing lift into an airborne altitude-control run.',
- 'startVents': 'Validate and send the requested initial vent-start operation.',
  'startupTargets': 'Build bounded startup provider targets from the configured vent request.',
  'stopSystems': 'Release the renewable systems lease and retain the applied provider ceilings.',
  'supportStepFor': 'Calculate a bounded provider change from measured support error and actuator limits.',
@@ -432,7 +555,6 @@ SUMMARIES.update({'App:activate': 'Handle the selected remote page entry or oper
  'buildManifest': 'Build the bounded destination, size, checksum and chunk manifest.',
  'buildOffer': 'Build the role package offer with file bounds and transfer correlation.',
  'cached': 'Resolve the cached status page and its source age.',
- 'checkAuthority': 'Revalidate the current identity/session and transfer authorization.',
  'checkMedia': 'Validate the recording disk and current writable output path.',
  'clearOperationIssue': 'Clear the recovered operation issue and record its recovery message.',
  'cockpitSample': 'Read and publish the current cockpit input batch.',
@@ -571,6 +693,7 @@ SUMMARIES.update({'Console.acceptRegistry': 'Validate and apply a registry annou
  'Console.pageRows': 'Format the rows for a selected role diagnostic page.',
  'Console.pages': 'Build the available diagnostic pages for the current role.',
  'Console.roleStatus': 'Build the current program, hardware and issue status for this role.',
+ 'Console.connectionState': 'Report core reachability from validated incoming traffic on this computer.',
  'Console.rows': 'Format the selected console page from cached runtime state.',
  'Console.runPaged': 'Display a bounded text collection with page navigation.',
  'Console.start': 'Start the role console, registry service and supervised application tasks.',
@@ -653,7 +776,8 @@ SUMMARIES.update({'Console.acceptRegistry': 'Validate and apply a registry annou
  'isCore': 'Identify whether this console belongs to the registered core role.',
  'loadProgram': 'Load a role program with the current CraftOS environment and arguments.',
  'logTimestamp': 'Format the current event time for component logs.',
- 'maintainIdleProbe': 'Maintain the configured low-probe state while main lift control is inactive.',
+ 'clearIdleProbeFault': 'Clear the recovered idle-probe fault while retaining other operation faults.',
+ 'maintainIdleProbe': 'Retry eligible idle probes and clear their faults after cancellation or recovery.',
  'makeRemotePeripheralApi': 'Construct the configured remote-peripheral facade and its method routing.',
  'makeState': "Construct the endpoint's boot, session, target and readback state.",
  'managedReady': 'Evaluate the configured activation and local startup prerequisites.',
@@ -756,7 +880,7 @@ SUMMARIES.update({'Receiver:accept': 'Validate and accept the newest navigator s
  'Requests:enqueue': 'Queue a pilot action and supersede older replaceable requests.',
  'Requests:step': 'Send or retry the active navigator command within its session and expiry.',
  'UI.new': 'Construct renderer navigation, editor, cache and monitor state.',
- 'UI:draw': 'Build and flush the current cached navigator or heading display.',
+ 'UI:draw': 'Build and flush the current cached navigator display.',
  'UI:editorKey': 'Apply local settings-editor input and return a validated save action.',
  'UI:input': 'Route keyboard input to the active local editor or navigation context.',
  'UI:navEditorKey': 'Apply local destination-editor input and return a validated navigation action.',
@@ -782,8 +906,8 @@ SUMMARIES.update({'Receiver:accept': 'Validate and accept the newest navigator s
  'dataReadout': "Format the endpoint's raw speed, thrust, vector or assembly observation.",
  'displayIssue': 'Resolve the current display availability, assembly or role-status issue.',
  'displaySnapshot': 'Resolve the current status snapshot and its stale-display treatment.',
- 'drawAltitudeTape': 'Render the altitude scale and selected-altitude marker.',
- 'drawAssemblyPanel': 'Render assembly status, retained lift information and available maintenance access.',
+ 'drawAltitudeTape': 'Render the altitude scale and selected-altitude marker; levels above the altitude ceiling stay blank.',
+ 'drawAssemblyPanel': 'Render assembly status and the operator instruction.',
  'drawButton': 'Render the label using its selected, enabled, disabled or danger style.',
  'drawCenter': 'Render the center heading/altitude display from the cached snapshot.',
  'drawCenterHeading': 'Render heading, altitude and selected targets on the center instrument.',
@@ -808,7 +932,7 @@ SUMMARIES.update({'Receiver:accept': 'Validate and accept the newest navigator s
  'drawSystemsMenu': 'Render the current Systems dropdown and its available actions.',
  'drawTabs': 'Render the page tabs and return their current touch regions.',
  'drawToMonitor': 'Write the prepared character frame to the configured monitor.',
- 'drawTooSmall': 'Render the required monitor dimensions for the selected display role.',
+ 'drawTooSmall': 'Render the required monitor dimensions for the bridge display.',
  'emergencyLift': 'Resolve kill/disarm progress text, availability and message-specific colour.',
  'errorSurface': 'Build a bounded error display surface for the current monitor.',
  'fillRect': 'Fill the bounded surface rectangle with the selected cell colours.',
@@ -823,7 +947,9 @@ SUMMARIES.update({'Receiver:accept': 'Validate and accept the newest navigator s
  'headingFeedbackDetail': 'Format current heading/yaw feedback and its availability reason.',
  'headingIssue': 'Validate the observations required by the configured heading display.',
  'loadConfig': 'Read and validate the current role configuration.',
+ 'resetLeveling': 'Return learned leveling to the saved level bias, or to zero when none is saved, during the altitude hold.',
  'makeSurface': 'Allocate a character-cell display surface with foreground and background colours.',
+ 'GLYPH.cells': 'Split text into monitor cells: printable ASCII and the delta and degree glyphs as themselves, any other character as one question mark.',
  'manualAccelerationDetail': 'Format measured acceleration feedback and its availability reason.',
  'monitorSize': "Read and validate the monitor's current character dimensions.",
  'newSurface': "Allocate the main renderer's character, foreground and background cells.",
@@ -833,7 +959,6 @@ SUMMARIES.update({'Receiver:accept': 'Validate and accept the newest navigator s
  'openWirelessModems': 'Find and open wireless modems for fleet status reception.',
  'propulsionModeDetail': 'Format propulsion-mode feedback, calibration and thrust-limit information.',
  'propulsionRequestText': 'Format the requested acceleration, selected speed or direct drive value.',
- 'providerPairs': 'Return provider observations in deterministic name order.',
  'readbackRaw': 'Read a validated raw value from the cached propulsion endpoint.',
  'render': 'Build and flush the selected cached display view.',
  'reportHeadingIssue': 'Record changes in heading-display availability.',
@@ -849,7 +974,6 @@ SUMMARIES.update({'Receiver:accept': 'Validate and accept the newest navigator s
  'speedControlStatus': 'Resolve the supported selected-speed feedback state for display.',
  'speedTarget': 'Resolve the current selected-speed target from feedback or pilot selection.',
  'speedTrend': 'Filter successive speed observations into an increasing/decreasing trend marker.',
- 'suffixText': 'Format the distinguishing end of a long peripheral name.',
  'syncRegistry': 'Reconcile the current role identity with a trusted registry announcement.',
  'tabRegions': 'Calculate the current page-tab touch rectangles.',
  'touchSystemsMenu': "Resolve dropdown touches against the current snapshot's action availability.",
@@ -866,7 +990,7 @@ PURPOSES.update({
  "/avionics/state_reader.lua":"State service | Independent sensor workers and wired telemetry publication.",
  "/avionics/state_wire.lua":"State transport | Correlated wired frames, source ages and core configuration.",
  "/avionics/telemetry_recovery.lua":"Lift recovery | Retained target reconciliation and authority renewal.",
- "/avionics/controls.lua":"Cockpit interpretation | Selected targets, pilot modes and neutral handover.",
+ "/avionics/controls.lua":"Cockpit interpretation | Selected targets, pilot modes and lever handover.",
  "/avionics/autopilot.lua":"Route guidance | Destination acquisition, cruise and arrival control.",
  "/avionics/anchor.lua":"Position guidance | Captured world point, braking and return demand.",
  "/avionics/lateral.lua":"Sideways guidance | Selected displacement, braking and pilot handover.",
@@ -998,8 +1122,10 @@ def annotate(payload, strict=True):
     for path,data in list(payload.items()):
         if not path.endswith(".lua"):continue
         text=data.decode("utf-8")
-        if "-- @ama-summary:" in text:continue
-        frames=functions(text);insertions={};last_section=None
+        if any(marker in text for marker in ("-- Summary:", "-- @ama-summary:")):continue
+        frames=[f for f in functions(text, min_lines=1)
+                if f["endline"]-f["line"]>=7 or canonical(path)+"#"+f["name"] in SHORT_SUMMARIES]
+        insertions={};last_section=None
         for frame in frames:
             summary=summary_for(path,frame,text)
             if not summary:
@@ -1009,10 +1135,10 @@ def annotate(payload, strict=True):
             lines=insertions.setdefault(line,[])
             section=section_name(path,frame["name"])
             if not indent and section!=last_section:
-                lines.append("-- @ama-section: "+section+"\n");last_section=section
-            lines.append(indent+"-- @ama-summary: "+summary+"\n")
+                lines.append("-- Section: "+section+"\n");last_section=section
+            lines.append(indent+"-- Summary: "+summary+"\n")
         purpose=PURPOSES.get(canonical(path))
-        if purpose:insertions.setdefault(0,[]).insert(0,"-- @ama-section: "+purpose+"\n")
+        if purpose:insertions.setdefault(0,[]).insert(0,"-- Section: "+purpose+"\n")
         for offset,lines in sorted(insertions.items(),reverse=True):
             text=text[:offset]+"".join(lines)+text[offset:]
         assert [token[0]for token in tokens(data.decode("utf-8"))]==[token[0]for token in tokens(text)],path
@@ -1300,7 +1426,114 @@ REVISIONS.append(('-- A read that gives no answer (call failed, non-boolean, ass
 
 # Commissioning reset preserves installed programs and retained operating records.
 SUMMARIES.update({
+    "Storage.readValidatedJson": "Load a validated primary JSON document, then its retained backup.",
+    "validFeedforward": "Validate persisted pressure-normalised cruise gains and speed bands.",
+    "/avionics/remote_install.lua#atomic": "Replace a verified file through a temporary sibling and retain its backup.",
+})
+
+SUMMARIES.update({
     "/disk/setup.lua#Setup.unassignCore": "Clear disk and core fleet assignments and retain the roster for recommissioning.",
     "/disk/setup.lua#Setup.installCore": "Install a fresh core or register its retained installation after an assignment reset.",
     "/disk/setup.lua#preflight": "Validate payloads and authorize a fresh, interrupted or explicitly reset registration.",
+})
+
+# Delivery 5 settings registry.
+PURPOSES.update({"/avionics/config_registry.lua": "Settings registry | Units, bounds and fallbacks for altitude_control and thrust settings."})
+SUMMARIES.update({
+    "/avionics/config_registry.lua#Registry.check": "Check a candidate value against the setting's kind and bounds.",
+    "/avionics/config_registry.lua#Registry.number": "Read a runtime-bounded setting with its registered clamp and fallback.",
+})
+
+SUMMARIES.update({
+    "/avionics/thrust.lua#Thrust:rejected": "Record why a propulsion hello or status was refused, for the role page and the core log.",
+})
+
+SUMMARIES.update({
+    "/packages/chamber/*/thrust.lua#bootToken": "Create this boot's node token from the current clock and a per-computer random value.",
+    "/packages/thrust/*/thrust.lua#bootToken": "Create this boot's node token from the current clock and a per-computer random value.",
+    "/packages/primary/*/main.lua#bootToken": "Create this boot's node token from the current clock and a per-computer random value.",
+})
+
+# Selected-speed stages retain the existing equations and sampling rules.
+SUMMARIES.update({
+    '/avionics/thrust.lua#zeroSelectedSpeedDrive': 'Apply SEL 0 coast hysteresis and speed-proportional braking through the output slew.',
+    '/avionics/thrust.lua#advanceSpeedGoal': 'Advance retained speed-output slew between distinct measurements and publish its status.',
+    '/avionics/thrust.lua#updateSpeedFeedback': 'Transfer speed feedback history, calculate bounded drive and update steady-cruise learning.',
+})
+
+# Vessel sampling stages preserve getter order and clock reads.
+SUMMARIES.update({
+    '/avionics/io.lua#readVesselWindow': 'Collect Sable and peripheral readings within their existing read window and deadlines.',
+    '/avionics/io.lua#resolveVesselAttitude': 'Resolve configured and observed bow axes, heading, pitch and roll from the sampled transforms.',
+    '/avionics/io.lua#resolveVesselVelocity': 'Resolve body axes and verified world velocity into horizontal forward and vertical speed.',
+    '/avionics/io.lua#readVesselEnvironment': 'Read or reuse gravity, drag and world-CoM pressure with the existing cache limits.',
+})
+
+# Per-batch support demand is transient; provider allocation preserves the original equations.
+SUMMARIES.update({
+    '/avionics/flight.lua#systemsSupportDemand': 'Calculate projected support error, correction direction and control horizons.',
+    '/avionics/flight.lua#systemsBrakingBudgets': 'Calculate altitude, vertical-speed and lift headroom plus release urgency.',
+    '/avionics/flight.lua#systemsMotionProgress': 'Track demonstrated acquisition motion and its permitted acceleration progress.',
+    '/avionics/flight.lua#systemsProviderTargets': 'Allocate per-provider ceiling changes, trim and fractional correction remainders within current limits.',
+})
+
+# Acquisition PID and support stages preserve established calculation order.
+SUMMARIES.update({
+    '/avionics/flight.lua#acquisitionVerticalDemand': 'Shape altitude-loop demand using measured lag, approach braking and startup motion limits.',
+    '/avionics/flight.lua#acquisitionSpeedEffort': 'Calculate vertical-speed feedback and gate startup integration on supply observations.',
+    '/avionics/flight.lua#acquisitionSupportDemand': 'Combine hover feedforward and speed effort within the existing support and acceleration bounds.',
+    '/avionics/flight.lua#acquisitionStallCorrection': 'Apply measured acquisition shortfall and retained hover-drift corrections, then finalize anti-windup.',
+})
+
+SUMMARIES.update({
+    '/avionics/flight.lua#systemsRecoveryOperations': 'Bind retained-map verification, batch renewal and completion to the current recovery run.',
+})
+
+# Systems dispatch retains entry guards and delegates the existing phase bodies.
+SUMMARIES.update({
+    '/avionics/flight.lua#systemsAcknowledgeBatch': 'Verify pending command results and transfer acknowledged startup or control maps.',
+    '/avionics/flight.lua#systemsVerifyStartup': 'Wait for boiler readiness, verify the startup envelope and send the initial control map.',
+    '/avionics/flight.lua#Flight:systemsBoilersReady': "Check every steam vent's boiler reading against full startup efficiency.",
+    '/avionics/flight.lua#systemsLaunchSettling': 'Maintain leveling and retained targets through the configured startup settling interval.',
+    '/avionics/flight.lua#systemsActiveControl': 'Advance altitude guidance on fresh control intervals, cap provider targets and issue the next batch.',
+})
+
+
+# Worker accessors retain the existing shared os keys across program environments.
+SHORT_SUMMARIES.update({
+    '/avionics/runtime_state.lua#RuntimeState.get': 'Read the current shared value under its existing os-table key.',
+    '/avionics/runtime_state.lua#RuntimeState.set': 'Publish or clear a shared value under its existing os-table key.',
+})
+SUMMARIES.update({
+    '/packages/navigation/ui.lua#systemsMenuItems': 'Build Systems menu actions and availability from the current core snapshot.',
+})
+
+# Web installer-disk downloader (download.lua on the media folder and the disk).
+PURPOSES.update({"/disk/download.lua": "Disk download | Fill an attached installer disk from a release published on the web."})
+SUMMARIES.update({
+    "/disk/download.lua#writeFile": "Write through a temporary sibling, verify it and replace the target.",
+    "/disk/download.lua#validIndex": "Accept a release index with safe relative paths, sizes, checksums and startup.lua last.",
+})
+
+# Web install (web-setup.lua, run by the Pastebin loader from the GitHub release).
+PURPOSES.update({"/disk/web-setup.lua": "Web setup | Core install and registration over rednet from a pinned web release."})
+SUMMARIES.update({
+    "/disk/web-setup.lua#adler": "Compute the Adler-32 checksum, yielding on large files.",
+    "/disk/web-setup.lua#installCore": "Download the release into core, install core and open its registration screen.",
+    "/disk/web-setup.lua#pickRole": "Let the operator choose this computer's role from core's current assignments.",
+    "/disk/web-setup.lua#registerComputer": "Find core, take its release, register the chosen role and install its payload.",
+    "/disk/web-setup.lua#main": "Continue core registration, or offer core install and computer registration.",
+})
+SUMMARIES.update({
+    "/disk/setup.lua#payload": "Read one release object, from the disk or through Setup.readObject, and verify it.",
+    "/disk/setup.lua#writeRoleConfig": "Write the state reader config, or the receiver config bound to core.",
+    "/disk/setup.lua#Setup.registerRole": "Record a role for a computer in core's deployment record (web registration).",
+    "/disk/setup.lua#Setup.clearRole": "Clear one role from core's deployment record before import (web registration).",
+    "/disk/setup.lua#Setup.installRegistered": "Install the payload for a role that core has accepted (web registration).",
+    "/installer/media.lua#Media:openWeb": "Fetch one package object from the web release and check it against the trusted catalog.",
+})
+
+# Fix gas mix lag: restart each chamber's trim probe link.
+SUMMARIES.update({
+    "/packages/chamber/*/hardware.lua#Hardware.cycleProbeLink": "Turn the trim probe link off and back on, then verify its readback.",
 })

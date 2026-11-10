@@ -1,5 +1,8 @@
 -- Read-only package source. Flight never reads removable media through this module.
+-- A web-installed core (/installer/web/source.json) fetches package objects from
+-- its pinned web release; otherwise they come from the matching installer disk.
 local Media={};Media.__index=Media
+local WEB_SOURCE="/installer/web/source.json"
 local function read(native,path,limit)
     local h=native.open(path,"r");if not h then return nil end
     local ok,value=pcall(h.read,limit+1);pcall(h.close)
@@ -9,7 +12,7 @@ local function pathOK(path)
     return type(path)=="string" and path:match("^/packages/[A-Za-z0-9_./%-]+$") and
         not path:find("..",1,true) and not path:find("//",1,true)
 end
-function Media.new(native,peripherals,disks,json,yield)
+function Media.new(native,peripherals,disks,json,yield,web)
     local raw=assert(read(native,"/installer/library.json",65536) or
         read(native,"/installer/library.json.amaryllis-backup",65536),"Trusted package catalog unavailable")
     local catalog=assert(json.unserializeJSON(raw),"Invalid trusted package catalog")
@@ -17,6 +20,10 @@ function Media.new(native,peripherals,disks,json,yield)
         type(catalog.libraryId)=="string" and #catalog.libraryId==64,"Unsupported package catalog")
     local self=setmetatable({native=native,peripherals=peripherals,disks=disks,json=json,yield=yield,
         raw=raw,entries={},generation=0,issue="Insert the matching installer disk"},Media)
+    local source=read(native,WEB_SOURCE,4096);source=source and json.unserializeJSON(source)
+    if type(source)=="table" and type(source.base)=="string" and source.base:match("^https://[%w%.%-]+/[%w%.%-_/]+/$") then
+        self.webBase=source.base;self.http=web;self.issue=web and "" or "HTTP is disabled; web packages unavailable"
+    end
     for _,entry in ipairs(catalog.files) do
         assert(pathOK(entry.path) and not self.entries[entry.path] and type(entry.object)=="string" and
             #entry.object==64 and entry.object:match("^[0-9a-f]+$") and type(entry.bytes)=="number" and
@@ -43,6 +50,7 @@ function Media.new(native,peripherals,disks,json,yield)
     return self
 end
 function Media:valid(generation)
+    if self.webBase then return self.http~=nil and generation==self.generation end
     local current=self.current
     if not current or generation~=self.generation then return false end
     local mountOK,mount=pcall(self.disks.getMountPath,current.name)
@@ -57,6 +65,7 @@ function Media:valid(generation)
     return true
 end
 function Media:refresh()
+    if self.webBase then return self.http~=nil end
     local candidates={}
     local ok,names=pcall(self.peripherals.getNames)
     if ok and type(names)=="table" then
@@ -89,7 +98,8 @@ end
 function Media:open(path)
     local entry=self.entries[path];local generation=self.generation
     if not entry then return nil,"Package is absent from trusted catalog" end
-    if not self:valid(generation) then return nil,"Installer disk unavailable" end
+    if not self:valid(generation) then return nil,self.webBase and self.issue or "Installer disk unavailable" end
+    if self.webBase then return self:openWeb(entry) end
     local native=self.native
     local h,issue=native.open(native.combine(self.current.mount,"objects/"..entry.object),"r")
     if not h then return nil,issue or "Package object missing from disk" end
@@ -116,6 +126,28 @@ function Media:open(path)
         local value=data:sub(offset,offset+(count or 1)-1);offset=offset+#value;return value
     end,readAll=function()
         assert(not closed,"File closed");assert(self:valid(generation),"Installer disk removed or changed")
+        local value=data:sub(offset);offset=#data+1;return value
+    end,close=function() closed=true;data="" end}
+end
+function Media:openWeb(entry)
+    local response,why=self.http.get({url=self.webBase.."objects/"..entry.object,binary=true})
+    if not response then return nil,"Package download failed: "..tostring(why) end
+    local code=response.getResponseCode();local data=response.readAll() or "";response.close()
+    if code~=200 then return nil,"Package download failed: HTTP "..tostring(code) end
+    if #data~=entry.bytes then return nil,"Package object size differs from catalog" end
+    local a,b=1,0
+    for i=1,#data do
+        a=(a+data:byte(i))%65521;b=(b+a)%65521
+        if i%65536==0 then self.yield(0) end
+    end
+    if string.format("%04X%04X",b,a)~=entry.adler32 then return nil,"Package object checksum mismatch" end
+    local offset,closed=1,false
+    return {read=function(count)
+        assert(not closed,"File closed")
+        if offset>#data then return nil end
+        local value=data:sub(offset,offset+(count or 1)-1);offset=offset+#value;return value
+    end,readAll=function()
+        assert(not closed,"File closed")
         local value=data:sub(offset);offset=#data+1;return value
     end,close=function() closed=true;data="" end}
 end

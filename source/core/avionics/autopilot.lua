@@ -1,4 +1,5 @@
--- @ama-section: Route guidance | Destination acquisition, cruise and arrival control.
+local Mathx = require("avionics.mathx")
+-- Section: Route guidance | Destination acquisition, cruise and arrival control.
 -- Navigator information AP retry revision v1
 -- Single-entry route execution; storage, guidance and arrival action are
 -- separate so ordered waypoint routes can extend this without changing I/O.
@@ -6,11 +7,12 @@ local Anchor=require("avionics.anchor")
 local Library=require("avionics.destinations")
 local AP={}
 local NavigationSettings=require("avionics.navigation_settings")
-local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
+local Controls=require("avionics.controls")
+local finite = Mathx.finite
 local function copy(v) if type(v)~="table" then return v end;local r={};for k,x in pairs(v) do r[k]=copy(x) end;return r end
-local function clamp(n,a,b) return math.max(a,math.min(b,n)) end
--- @ama-section: Route guidance | Destination acquisition, cruise and arrival control.
--- @ama-summary: Calculate a normalized compass bearing from horizontal displacement.
+local clamp = Mathx.clamp
+-- Section: Route guidance | Destination acquisition, cruise and arrival control.
+-- Summary: Calculate a normalized compass bearing from horizontal displacement.
 local function bearing(x,z)
     local a
     if math.atan2 then a=math.atan2(x,-z)
@@ -24,33 +26,43 @@ local function log(self,reason)
     if os and type(os.__amaryllisLog)=="function" then os.__amaryllisLog("Core autopilot: "..reason,"core.autopilot")
     else print("Core autopilot: "..reason) end
 end
--- @ama-summary: Construct route guidance with its saved draft and destination-library access.
+-- Summary: Construct route guidance with its saved draft and destination-library access.
 function AP.new(config,storage,deps)
     deps=deps or {}
     local self=setmetatable({config=config,storage=storage,deps=deps,library=Library.new(deps),
-        active=false,state="OFF",draft={name="Destination",cruiseSpeed=3},route=nil},{__index=AP})
-    local f=deps.fs or fs
-    if storage and f and f.exists("/avionics/data/navigation.json") then
-        local ok,value=pcall(storage.readJson,"/avionics/data/navigation.json",deps)
-        if ok and type(value)=="table" and value.schemaVersion==1 and self:validDraft(value.destination,false) then self.draft=copy(value.destination)
-        else self.reason="SAVED NAVIGATION SETTINGS INVALID";log(self,self.reason) end
+        active=false,state="OFF",draft={cruiseSpeed=3},route=nil},{__index=AP})
+    if storage then
+        local ok,value,_,status=pcall(storage.readJson,"/avionics/data/navigation.json",deps)
+        if ok and type(value)=="table" and value.schemaVersion==1 and self:validDraft(value.destination,false) then
+            self.draft=copy(value.destination)
+            -- "Destination" was the earlier default name; such drafts are unnamed and use their coordinates.
+            if self.draft.name=="Destination" then self.draft.name=nil end
+        elseif status~="missing" then self.reason="SAVED NAVIGATION SETTINGS INVALID";log(self,self.reason) end
     end
     return self
 end
--- @ama-summary: Validate destination text, coordinates, cruise speed and altitude bounds.
+-- Summary: Validate destination text, coordinates, cruise speed and altitude bounds.
 function AP:validDraft(d,complete)
     local c=self.config.cockpit or {};local alt=self.config.altitude_control or {}
-    if type(d)~="table" or type(d.name)~="string" or #d.name<1 or #d.name>40 or
-        not d.name:match("%S") or d.name:find("[%c]") or not finite(d.cruiseSpeed) or d.cruiseSpeed<.1 or
+    if type(d)~="table" or (d.name~=nil and (type(d.name)~="string" or #d.name<1 or #d.name>40 or
+        not d.name:match("%S") or d.name:find("[%c]"))) or not finite(d.cruiseSpeed) or d.cruiseSpeed<.1 or
         d.cruiseSpeed>math.min(30,c.maximum_selected_speed or 30) then return false end
     for _,key in ipairs({"x","z"}) do
         if d[key]==nil and complete~=false then return false end
         if d[key]~=nil and (not finite(d[key]) or math.abs(d[key])>30000000) then return false end
     end
     if d.altitude==nil then return complete==false end
-    return finite(d.altitude) and d.altitude>=(alt.minimum_world_y or -64) and d.altitude<=(alt.maximum_world_y or 320)
+    return finite(d.altitude) and d.altitude>=(alt.minimum_world_y or -64) and d.altitude<=2048
 end
--- @ama-summary: Persist a validated navigator destination draft.
+-- Name a destination: its entered name, or "X, Z" from its whole-block coordinates when no name is entered.
+function AP.label(d)
+    if type(d)~="table" then return nil end
+    if type(d.name)=="string" and d.name:match("%S") then return d.name end
+    if finite(d.x) and finite(d.z) then
+        return string.format("%d, %d",math.floor(d.x+.5),math.floor(d.z+.5))
+    end
+end
+-- Summary: Persist a validated navigator destination draft.
 function AP:saveDraft(candidate)
     if not self:validDraft(candidate,false) then return false,"DESTINATION / SPEED / ALTITUDE INVALID" end
     if self.storage then
@@ -59,7 +71,7 @@ function AP:saveDraft(candidate)
     end
     self.draft=copy(candidate);return true,"DESTINATION UPDATED"
 end
--- @ama-summary: Apply a permitted destination edit or saved-destination selection.
+-- Summary: Apply a permitted destination edit or saved-destination selection.
 function AP:edit(io,controls,action,now)
     if self.active then return false,"DISENGAGE AUTOPILOT BEFORE EDITING DESTINATION" end
     local candidate=copy(self.draft)
@@ -73,14 +85,19 @@ function AP:edit(io,controls,action,now)
     elseif action.type=="ap_edit" then
         if action.key~="x" and action.key~="z" and action.key~="name" and action.key~="cruiseSpeed" and action.key~="altitude" then return false,"UNKNOWN DESTINATION FIELD" end
         candidate[action.key]=action.value
+        -- A blank name removes it; the destination is then named by its coordinates.
+        if action.key=="name" and (type(action.value)~="string" or not action.value:match("%S")) then candidate.name=nil end
     elseif action.type=="destination_select" then
         self.library:refresh();local selected=self.library.entries[action.index]
         if not selected then return false,self.library.reason or "SELECT A SAVED DESTINATION" end
         candidate.name=selected.name;candidate.x=selected.x;candidate.z=selected.z
     else return false,"UNKNOWN NAVIGATION ACTION" end
+    -- A destination altitude above the altitude ceiling is set to the ceiling.
+    local ceiling=Controls.altitudeCeiling(self.config.altitude_control)
+    if finite(candidate.altitude) and finite(ceiling) and candidate.altitude>ceiling then candidate.altitude=ceiling end
     return self:saveDraft(candidate)
 end
--- @ama-summary: Check destination, vessel and propulsion readiness for route engagement.
+-- Summary: Check destination, vessel and propulsion readiness for route engagement.
 function AP:ready(io,controls,now,destination,allowAnchorRelease)
     if not self:validDraft(destination or self.draft) then return false,"SET DESTINATION X/Z, CRUISE SPEED AND ALTITUDE" end
     if io.positionAnchor and io.positionAnchor.active and not allowAnchorRelease then return false,"RELEASE ANCHOR BEFORE ENGAGING AUTOPILOT" end
@@ -92,44 +109,57 @@ function AP:ready(io,controls,now,destination,allowAnchorRelease)
     if not finite(v.heading) or not finite(v.forwardSpeed) then return false,"HEADING / SIGNED SPEED UNAVAILABLE" end
     return true
 end
--- @ama-summary: Capture route-start observations and initialize heading/speed acquisition.
+-- Summary: Capture route-start observations and initialize heading/speed acquisition.
 function AP:engage(io,controls,now)
     if self.active then return false,"AUTOPILOT ALREADY ACTIVE" end
     local ready,why=self:ready(io,controls,now);if not ready then return false,why end
     if io.positionAnchor and io.positionAnchor.active then return false,"RELEASE ANCHOR BEFORE ENGAGING AUTOPILOT" end
-    self.route={entries={{name=self.draft.name,x=self.draft.x,z=self.draft.z,arrival="anchor"}},index=1}
+    self.route={entries={{name=AP.label(self.draft),x=self.draft.x,z=self.draft.z,arrival="anchor"}},index=1}
     self.remoteOwner=nil
     self.cruiseSpeed=self.draft.cruiseSpeed;self.uuid=io.vessel.uuid
     self.start={x=io.vessel.position.x,z=io.vessel.position.z};self.active=true;self.state="ACQ"
     self.engagedAt=now;self.updatedAt=nil
+    -- Impacts measured before engagement do not stop this route.
+    self.impactSeqAtEngage=AP.impactSeq(io)
     do
         local tx,tz=self.draft.x-self.start.x,self.draft.z-self.start.z
         self.distance=math.sqrt(tx*tx+tz*tz);self.crossTrack=0
         self.headingTarget=self.distance>.01 and bearing(tx,tz) or io.vessel.heading
     end
-    self.reason=nil;self.since=nil;self.recoveryAttempts=0;self.nextRecoveryAttemptAt=nil;self.lastAt=nil;self.speedTarget=0;self.crossDemand=0;self.turnAnchor=nil;self.turnSettledAt=nil;self.turnSampleAt=nil;self.turnHeading=nil
-    -- A previous arrival left arrivalAnchor set; without clearing it a new
-    -- route skipped heading acquisition and cancelled as "anchor released".
-    self.arrivalAnchor=nil;self.turnLooseAt=nil;self.yawRate=nil;self.acqSince=now;self.acqDetail=nil
-    controls.targets.altitude=self.draft.altitude
+    self.reason=nil;self.since=nil;self.recoveryAttempts=0;self.nextRecoveryAttemptAt=nil
+    self.routeHeading=self.headingTarget
+    self.headingBias=0
+    self.acqSince=now
+    self.acqDetail=nil
+    self:resetGuidance("ACQ")
+    local ceiling=Controls.altitudeCeiling(self.config.altitude_control)
+    controls.targets.altitude=finite(ceiling) and math.min(self.draft.altitude,ceiling) or self.draft.altitude
     io.thrust:resetSpeedLoop();io.thrust:resetHeadingLoop()
-    log(self,"ENGAGED: "..self.draft.name);return true,"AUTOPILOT ENGAGED"
+    log(self,"ENGAGED: "..AP.label(self.draft));return true,"AUTOPILOT ENGAGED"
 end
--- @ama-summary: End route guidance and hand live demands back through the pilot neutral gate.
+-- Summary: Set a SEL heading target to the autopilot's heading, so she keeps that heading after the handover.
+function AP:handHeadingToPilot(io,controls)
+    if not (controls and controls.modes and controls.modes.heading=="SEL" and finite(self.headingTarget)) then return end
+    controls.targets.heading=self.headingTarget;controls.headingTargetUuid=self.uuid
+    if io.thrust and type(io.thrust.resetHeadingLoop)=="function" then io.thrust:resetHeadingLoop() end
+end
+-- Summary: End route guidance and hand live demands back to the pilot's levers at their current position.
 function AP:cancel(io,controls,reason,brake)
     -- End a one-off remote command without retaining its destination.
     if self.remoteOwner then self.route=nil end
     self.remoteOwner=nil
     local active=self.active;self.active=false;self.state="OFF";self.since=nil;self.reason=reason
-    if active and self.arrivalAnchor and io.positionAnchor then io.positionAnchor:cancel(nil,reason) end
-    self.arrivalAnchor=nil
+    self.primaryIdle=false
+    self.captureSettledSeconds=0
+    self:resetDriftTrend()
     if controls and brake~=false then
         -- Keep the pilot's selections; only live authority is handed back.
-        controls.requireNeutral=true;controls.waitThrottle=true;controls.waitHeading=true
-        controls.waitThrottle=true;controls.waitHeading=true;controls.waitSpeedSelection=true
+        -- Levers act at their current position from the next sample.
         controls.request=0;controls.yaw=0;controls.holds={}
+        if type(controls.noteHandover)=="function" then controls:noteHandover() end
         if controls.lateral then controls.lateral:cancel() end
         controls.modes.lateral="MANUAL"
+        if active then self:handHeadingToPilot(io,controls) end
         if io.thrust then
             io.thrust:resetSpeedLoop();io.thrust:resetHeadingLoop()
             io.thrust:resetManualAccelerationLoop()
@@ -137,18 +167,131 @@ function AP:cancel(io,controls,reason,brake)
     end
     if active then log(self,reason or "DISENGAGED; SELECTED MODES RETAINED") end
 end
--- @ama-summary: Retain the route and schedule the next counted recovery attempt.
+-- Summary: Sequence number of the latest POSSIBLE IMPACT from the motion monitor, 0 when none.
+function AP.impactSeq(io)
+    local event=io and io.motionWarnings and io.motionWarnings.lastImpactEvent
+    return event and finite(event.seq) and event.seq or 0
+end
+-- Emergency stop after a measured sudden change in speed or rotation (collision or
+-- similar): the route is cancelled, propulsion demand drops to zero (a SEL speed
+-- target becomes 0) and the pilot takes over once every lever reads neutral.
+-- Summary: End the route after a POSSIBLE IMPACT and hand a stopped ship to the pilot.
+function AP:emergencyStop(io,controls,event)
+    local reason="EMERGENCY STOP: POSSIBLE IMPACT ("..tostring(event.axis or "MOTION")..")"
+    self:cancel(io,controls,reason)
+    self.route=nil
+    if controls then
+        if controls.modes and controls.modes.throttle=="SEL" and controls.targets then controls.targets.speed=0 end
+        controls.requireNeutral=true;controls.neutralCause="EMERGENCY STOP"
+    end
+    log(self,"ROUTE CANCELLED; "..tostring(event.detail or ""))
+end
+-- Summary: Retain the route and schedule the next counted recovery attempt.
 function AP:suspend(now,reason)
     self.since=self.since or now;self.lastAt=nil;self.crossDemand=0;self.reason=reason
+    self.primaryIdle=false
+    self:resetDriftTrend()
     self.recoveryAttempts=(self.recoveryAttempts or 0)+1
     self.nextRecoveryAttemptAt=now+2
     self.state="RETRYING ("..self.recoveryAttempts..")"
     log(self,self.state..": "..reason)
     return nil,reason
 end
--- @ama-summary: Advance route heading, speed and arrival guidance from fresh vessel observations.
+-- Section: Acquisition and capture | Fresh-sample settling with primary engines idle.
+-- Summary: Clear drift qualification while retaining the route's learned heading bias.
+function AP:resetDriftTrend()
+    self.driftFiltered=0
+    self.driftSign=nil
+    self.driftSince=nil
+end
+-- Summary: Restart heading acquisition and route capture from fresh observations.
+function AP:resetGuidance(state)
+    self.state=state or "ACQ"
+    self.primaryIdle=true
+    self.speedTarget=0
+    self.crossDemand=0
+    self.sideways=0
+    self.lastAt=nil
+    self.guidanceAt=nil
+    self.turnSampleAt=nil
+    self.turnHeading=nil
+    self.yawRate=nil
+    self.turnSettledAt=nil
+    self.turnLooseAt=nil
+    self.captureSince=nil
+    self.captureSettledSeconds=0
+    self:resetDriftTrend()
+end
+-- Summary: Copy pilot selections into the current route's transient propulsion demands.
+function AP:guidanceControls(controls)
+    local proxy={}
+    for key,value in pairs(controls) do proxy[key]=value end
+    proxy.modes=copy(controls.modes)
+    proxy.targets=copy(controls.targets)
+    proxy.modes.heading="SEL"
+    proxy.modes.throttle=self.primaryIdle and "DIRECT" or "SEL"
+    proxy.targets.heading=self.headingTarget
+    proxy.targets.speed=self.speedTarget
+    proxy.holdPropulsion=false
+    proxy.speedTargetUuid=self.uuid
+    proxy.headingTargetUuid=self.uuid
+    proxy.request=0
+    proxy.yaw=0
+    proxy.sideways=clamp(self.sideways or 0,-1,1)
+    proxy.routeLateralAuthority=true
+    proxy.routeSpeedAuthority=true
+    proxy.apPrimaryIdle=self.primaryIdle==true
+    proxy.apAcquisition=self.state=="ACQ"
+    return proxy
+end
+-- Summary: Slew route-normal correction and project it onto the vessel's lateral axis.
+function AP:updateRouteLateral(v,nx,nz,tuning,dt)
+    local wantedSpeed=clamp(-self.crossTrack*tuning.cross_gain,
+        -tuning.maximum_cross_speed,tuning.maximum_cross_speed)
+    local wanted=clamp(tuning.velocity_gain*(wantedSpeed-self.crossSpeed),-1,1)
+    local previous=self.crossDemand or 0
+    self.crossDemand=clamp(wanted,previous-tuning.output_slew*dt,previous+tuning.output_slew*dt)
+    local forward=v.forwardDirection
+    local length=math.sqrt(forward.x^2+forward.z^2)
+    self.sideways=self.crossDemand*(nx*(-forward.z)+nz*forward.x)/length
+end
+-- Section: Cruise compensation | Bounded heading adaptation from sustained lateral demand.
+-- The filter time constant is four seconds; its demand deadband is 0.02.
+-- Summary: Learn a rate-limited heading bias from a consistent fresh-sample cruise correction.
+function AP:updateHeadingBias(v,headingError,yawRate,tuning,dt,newSample)
+    if not newSample then return end
+    if dt<=0 or self.state~="CRUISE" or v.forwardSpeed<tuning.drift_minimum_speed or
+        math.abs(headingError)>3 or not finite(yawRate) or yawRate>.5 or math.abs(self.crossTrack)>4 then
+        self:resetDriftTrend()
+        return
+    end
+    local alpha=1-math.exp(-dt/4)
+    self.driftFiltered=(self.driftFiltered or 0)+alpha*(self.crossDemand-(self.driftFiltered or 0))
+    local signal=self.driftFiltered
+    if math.abs(signal)<=.02 then
+        self.driftSign=nil
+        self.driftSince=nil
+        return
+    end
+    local direction=signal>0 and 1 or -1
+    if direction~=self.driftSign then
+        self.driftSign=direction
+        self.driftSince=v.at
+        return
+    end
+    local qualifiedAt=self.driftSince+tuning.drift_observation_seconds
+    local learningSeconds=math.max(0,v.at-math.max(v.at-dt,qualifiedAt))
+    self.headingBias=clamp((self.headingBias or 0)+direction*tuning.drift_heading_rate*learningSeconds,
+        -tuning.drift_heading_limit,tuning.drift_heading_limit)
+end
+-- Summary: Advance route heading, speed and arrival guidance from fresh vessel observations.
 function AP:update(io,now,controls)
     if not self.active then return controls end
+    local impact=io.motionWarnings and io.motionWarnings.lastImpactEvent
+    if impact and AP.impactSeq(io)>(self.impactSeqAtEngage or 0) then
+        self:emergencyStop(io,controls,impact)
+        return nil,self.reason
+    end
     if self.since and self.nextRecoveryAttemptAt and now<self.nextRecoveryAttemptAt and self.recoveryObservedAt==(io.vessel or {}).at then return nil,self.reason end
     self.recoveryObservedAt=(io.vessel or {}).at
     self.updatedAt=now
@@ -182,7 +325,12 @@ function AP:update(io,now,controls)
             end
         end
     end
-    if self.since then log(self,"TELEMETRY RECOVERED; RESUMING RETAINED DESTINATION") end
+    if self.since or self.state=="RECOVERING" then
+        log(self,"TELEMETRY RECOVERED; REACQUIRING RETAINED ROUTE")
+        self:resetGuidance("ACQ")
+        self.acqSince=now
+        io.thrust:resetSpeedLoop()
+    end
     self.since=nil;self.reason=nil;self.recoveryAttempts=0
     local entry=self.route.entries[self.route.index]
     local dx,dz=entry.x-v.position.x,entry.z-v.position.z
@@ -196,118 +344,129 @@ function AP:update(io,now,controls)
     self.crossTrack=(v.position.x-self.start.x)*nx+(v.position.z-self.start.z)*nz
     self.crossSpeed=v.linearVelocity.x*nx+v.linearVelocity.z*nz
     local tuning=NavigationSettings.values(self.config,"autopilot")
-    self.headingTarget=bearing(tx,tz)
+    self.routeHeading=bearing(tx,tz)
+    self.headingBias=clamp(self.headingBias or 0,-tuning.drift_heading_limit,tuning.drift_heading_limit)
+    self.headingTarget=(self.routeHeading+self.headingBias)%360
     local headingError=(self.headingTarget-v.heading+180)%360-180
-    -- Yaw rate only changes with a new vessel sample (every 1-2 s). Keep the
-    -- last measured value instead of reading 0 between samples, which let
-    -- the settle check pass while the bow was still swinging.
+    local previousAt=self.guidanceAt
+    local newSample=previousAt==nil or v.at>previousAt
+    local gap=previousAt~=nil and (v.at<previousAt or v.at-previousAt>3)
+    local dt=newSample and previousAt and not gap and v.at-previousAt or 0
+    if gap then
+        self.turnSettledAt=nil;self.turnLooseAt=nil;self.captureSince=nil
+        self.captureSettledSeconds=0
+        self:resetDriftTrend()
+    end
+    if newSample or gap then self.guidanceAt=v.at end
+
     local headingAt=((((v.sources or {}).fields or {}).heading or {}).at) or v.at
-    if self.turnSampleAt and headingAt>self.turnSampleAt then
-        self.yawRate=math.abs((v.heading-self.turnHeading+180)%360-180)/(headingAt-self.turnSampleAt)
+    local newHeading=self.turnSampleAt==nil or headingAt>self.turnSampleAt
+    if newHeading then
+        local elapsed=self.turnSampleAt and headingAt-self.turnSampleAt
+        self.yawRate=elapsed and elapsed>0 and elapsed<=3 and
+            math.abs((v.heading-self.turnHeading+180)%360-180)/elapsed or nil
+        self.turnSampleAt=headingAt
+        self.turnHeading=v.heading
     end
-    if not self.turnSampleAt or headingAt>self.turnSampleAt then self.turnSampleAt,self.turnHeading=headingAt,v.heading end
-    local yawRate=self.yawRate or 0
-    if not self.arrivalAnchor and (self.turnAnchor or math.abs(headingError)>10 or
-        (self.state=="ACQ" and math.abs(headingError)>3)) then
-        if not self.turnAnchor then
-            self.turnAnchor=Anchor.new(self.config)
-            self.turnAnchor.velocityOnly=true
-            local ok,issue=self.turnAnchor:engage(io,now)
-            if not ok then self.turnAnchor=nil;return self:suspend(now,issue) end
-            self.turnSettledAt=nil;self.turnLooseAt=nil;self.acqSince=self.acqSince or now
-            io.thrust:resetSpeedLoop()
-        end
-        local horizontalSpeed=math.sqrt(v.linearVelocity.x^2+v.linearVelocity.z^2)
-        -- Leave acquisition when tightly settled for 3 s (about two vessel
-        -- samples), or when held close enough for 10 s. The tight limits
-        -- alone (3 deg, 0.1 b/s drift) could hold a 230-block hull in ACQ
-        -- indefinitely while heading control hunted or the hull drifted.
-        if math.abs(headingError)<=3 and yawRate<=.5 and horizontalSpeed<=.1 then
-            self.turnSettledAt=self.turnSettledAt or now
-        else self.turnSettledAt=nil end
-        if math.abs(headingError)<=6 and yawRate<=1 and horizontalSpeed<=.3 then
-            self.turnLooseAt=self.turnLooseAt or now
-        else self.turnLooseAt=nil end
-        self.acqDetail=string.format("ACQUIRING HEADING: %.1f DEG OFF, YAW %.2f DEG/S, DRIFT %.2f B/S",
-            headingError,yawRate,horizontalSpeed)
-        local settled=(self.turnSettledAt and now-self.turnSettledAt>=3) or
-            (self.turnLooseAt and now-self.turnLooseAt>=10)
-        if not settled then
-            self.state="ACQ";self.speedTarget=0;self.crossDemand=0;self.lastAt=nil
-            local turnControls=copy(controls)
-            turnControls.modes.heading="SEL";turnControls.targets.heading=self.headingTarget
-            turnControls.headingTargetUuid=self.uuid;turnControls.waitHeading=false;turnControls.yaw=0
-            turnControls.apAcquisition=true
-            local proxy,issue=self.turnAnchor:update(io,now,turnControls)
-            if not proxy then return self:suspend(now,issue) end
-            proxy.targets.speed=0;proxy.routeLateralAuthority=true
-            self.sideways=proxy.sideways
-            return proxy
-        end
-        self.turnAnchor=nil;self.turnSettledAt=nil;self.turnLooseAt=nil;self.acqSince=nil;self.acqDetail=nil
-        self.lastAt=v.at;self.speedTarget=0
-        io.thrust:resetSpeedLoop()
-    end
-    if self.arrivalAnchor or self.distance<=tuning.arrival_radius+math.max(0,closing)*2 or along<=0 then
+    local yawRate=self.yawRate
+
+    -- Arrival is a handover: the autopilot disengages and the digital anchor,
+    -- engaged at the destination, takes over braking and positioning.
+    if self.distance<=tuning.arrival_radius+math.max(0,closing)*2 or along<=0 then
         io.positionAnchor=io.positionAnchor or Anchor.new(self.config)
-        if not self.arrivalAnchor then
+        if not io.positionAnchor.active then
             local ok,issue=io.positionAnchor:engage(io,now,entry)
             if not ok then return self:suspend(now,issue) end
-            self.arrivalAnchor=true
-            log(self,"APPROACH COMPLETE; ANCHORING AT DESTINATION")
-        elseif not io.positionAnchor.active then self:cancel(io,controls,"ARRIVAL ANCHOR RELEASED");return controls end
-        self.state=io.positionAnchor.state=="ANCHORED" and "ARRIVED" or "DECEL"
-        if self.state=="ARRIVED" then
-            -- The position anchor now holds the ship on its own.
-            self.active=false;self.arrivalAnchor=nil;log(self,"ARRIVED: "..entry.name);return controls
         end
-    else
-        -- Keep the bow along the route. Correct cross-track displacement with
-        -- translation, damping measured sideways motion before crossing it.
-        self.headingTarget=bearing(tx,tz)
-        local desiredCrossSpeed=clamp(-self.crossTrack*tuning.cross_gain,-tuning.maximum_cross_speed,tuning.maximum_cross_speed)
-        local crossWanted=clamp(tuning.velocity_gain*(desiredCrossSpeed-self.crossSpeed),-1,1)
-        -- Plan braking to the destination, rather than to the handover
-        -- radius. Extra lead starts braking earlier without creating a
-        -- zero-speed target just outside anchor capture.
-        local approach=math.sqrt(.16*math.max(0,along-math.max(0,closing)*6))
-        local desired=math.min(self.cruiseSpeed,approach)
-        -- Vessel samples arrive every 1-2 s. A 0.5 s cap made the cruise ramp
-        -- and the lateral slew run 2-4x slower than their settings.
-        local stale=(self.config.network or {}).sensor_stale_seconds or 3
-        -- Cap at 3 s so a long telemetry gap (now tolerated up to the stale
-        -- limit) cannot step the speed ramp or lateral slew in one jump.
-        local dt=self.lastAt and clamp(v.at-self.lastAt,0,math.min(stale,3)) or 0
-        local previous=self.crossDemand or 0
-        self.crossDemand=clamp(crossWanted,previous-tuning.output_slew*dt,previous+tuning.output_slew*dt)
-        local forward=v.forwardDirection
-        local horizontal=math.sqrt(forward.x^2+forward.z^2)
-        -- Positive lateral demand accelerates toward geometric starboard.
-        -- Preserve negative feedback in world-route coordinates; yaw is separate.
-        self.sideways=self.crossDemand*(nx*(-forward.z)+nz*forward.x)/horizontal
-        self.speedTarget=math.min(desired,(self.speedTarget or 0)+tuning.speed_ramp*dt)
-        if approach<self.cruiseSpeed then self.state="DECEL"
-        elseif self.speedTarget<self.cruiseSpeed-.01 or v.forwardSpeed<self.cruiseSpeed-.1 then self.state="ACCEL"
-        else self.state="CRUISE" end
+        self.active=false;self.state="ARRIVED";self.reason=nil
+        self.primaryIdle=false
+        self.captureSettledSeconds=0
+        self:resetDriftTrend()
+        log(self,"ARRIVED: "..entry.name.."; ANCHOR ENGAGED AT DESTINATION")
+        self:handHeadingToPilot(io,controls)
+        return controls
     end
-    self.lastAt=v.at
-    local proxy={};for k,value in pairs(controls) do proxy[k]=value end
-    proxy.modes=copy(controls.modes);proxy.modes.throttle="SEL";proxy.modes.heading="SEL"
-    proxy.targets=copy(controls.targets);proxy.targets.speed=self.arrivalAnchor and 0 or self.speedTarget
-    proxy.targets.heading=self.headingTarget or v.heading
-    proxy.waitThrottle=false;proxy.waitHeading=false;proxy.speedTargetUuid=self.uuid;proxy.headingTargetUuid=self.uuid
-    proxy.request=0;proxy.yaw=0
-    proxy.sideways=self.arrivalAnchor and 0 or clamp(self.sideways or 0,-1,1)
-    proxy.routeLateralAuthority=true;proxy.routeSpeedAuthority=true
-    return proxy
+
+    if self.state~="ACQ" and math.abs(headingError)>10 then
+        self:resetGuidance("ACQ")
+        self.acqSince=now
+        io.thrust:resetSpeedLoop()
+        return self:guidanceControls(controls)
+    end
+    if self.state=="ACQ" then
+        self.primaryIdle=true
+        self.speedTarget=0;self.crossDemand=0;self.sideways=0
+        if newSample and newHeading then
+            if finite(yawRate) and math.abs(headingError)<=3 and yawRate<=.5 then
+                self.turnSettledAt=self.turnSettledAt or headingAt
+            else self.turnSettledAt=nil end
+            if finite(yawRate) and math.abs(headingError)<=6 and yawRate<=1 then
+                self.turnLooseAt=self.turnLooseAt or headingAt
+            else self.turnLooseAt=nil end
+            local settled=(self.turnSettledAt and headingAt-self.turnSettledAt>=3) or
+                (self.turnLooseAt and headingAt-self.turnLooseAt>=10)
+            if settled then
+                self.state="CAPTURE"
+                self.captureSince=nil
+                self.acqSince=nil;self.acqDetail=nil
+            end
+        end
+        if self.state=="ACQ" then
+            self.acqDetail=string.format("ACQUIRING HEADING: %.1f DEG OFF, YAW %s DEG/S",
+                headingError,finite(yawRate) and string.format("%.2f",yawRate) or "--")
+            return self:guidanceControls(controls)
+        end
+    end
+
+    self:updateRouteLateral(v,nx,nz,tuning,dt)
+    if self.state=="CAPTURE" then
+        self.primaryIdle=true
+        self.speedTarget=0
+        if newSample then
+            local settled=math.abs(self.crossTrack)<=tuning.capture_position_tolerance and
+                math.abs(self.crossSpeed)<=tuning.capture_speed_tolerance and
+                math.abs(headingError)<=6 and finite(yawRate) and yawRate<=1
+            if settled then
+                self.captureSince=self.captureSince or v.at
+                self.captureSettledSeconds=v.at-self.captureSince
+            else
+                self.captureSince=nil
+                self.captureSettledSeconds=0
+            end
+            if self.captureSettledSeconds>=tuning.capture_settle_seconds then
+                self.state="ACCEL"
+                self.lastAt=v.at
+                io.thrust:resetSpeedLoop()
+            end
+        end
+        -- The first positive ramp step follows the next distinct vessel sample.
+        return self:guidanceControls(controls)
+    end
+
+    local approach=math.sqrt(.16*math.max(0,along-math.max(0,closing)*6))
+    local desired=math.min(self.cruiseSpeed,approach)
+    local rampDt=newSample and self.lastAt and not gap and clamp(v.at-self.lastAt,0,3) or 0
+    self.speedTarget=math.min(desired,(self.speedTarget or 0)+tuning.speed_ramp*rampDt)
+    self.primaryIdle=self.primaryIdle==true and self.speedTarget==0
+    if approach<self.cruiseSpeed then self.state="DECEL"
+    elseif self.speedTarget<self.cruiseSpeed-.01 then self.state="ACCEL"
+    -- ACCEL is the initial run-up to cruise speed. Once CRUISE is reached it holds until DECEL;
+    -- the speed loop corrects later speed changes, and heading-bias learning (CRUISE only) continues.
+    elseif self.state=="CRUISE" then self.state="CRUISE"
+    elseif v.forwardSpeed<self.cruiseSpeed-.1 then self.state="ACCEL"
+    else self.state="CRUISE" end
+    self:updateHeadingBias(v,headingError,yawRate,tuning,dt,newSample)
+    self.headingTarget=(self.routeHeading+self.headingBias)%360
+    if newSample then self.lastAt=v.at end
+    return self:guidanceControls(controls)
 end
 function AP:checkpoint()
     -- Remote CMD has no persistent route checkpoint.
     if not self.active or self.remoteOwner then return nil end
     return {route=copy(self.route),cruiseSpeed=self.cruiseSpeed,uuid=self.uuid,start=copy(self.start),
-        arrivalAnchor=self.arrivalAnchor,headingTarget=self.headingTarget,remoteOwner=self.remoteOwner}
+        headingTarget=self.headingTarget,headingBias=self.headingBias,remoteOwner=self.remoteOwner}
 end
--- @ama-summary: Validate and restore the retained route into its recovery phase.
+-- Summary: Validate and restore the retained route into its recovery phase.
 function AP:restore(state)
     local entry=type(state)=="table" and type(state.route)=="table" and type(state.route.entries)=="table" and state.route.entries[1]
     if not Library.validEntry(entry) or state.route.index~=1 or entry.arrival~="anchor" or
@@ -316,12 +475,18 @@ function AP:restore(state)
         type(state.uuid)~="string" or state.uuid=="" or type(state.start)~="table" or
         not finite(state.start.x) or not finite(state.start.z) or math.abs(state.start.x)>30000000 or math.abs(state.start.z)>30000000 or
         #state.route.entries~=1 or (state.headingTarget~=nil and not finite(state.headingTarget)) then return false end
+    local tuning=NavigationSettings.values(self.config,"autopilot")
+    local bias=state.headingBias==nil and 0 or state.headingBias
+    if not finite(bias) or math.abs(bias)>tuning.drift_heading_limit then return false end
     self.route=copy(state.route);self.cruiseSpeed=state.cruiseSpeed;self.uuid=state.uuid;self.start=copy(state.start)
-    self.arrivalAnchor=state.arrivalAnchor==true;self.headingTarget=state.headingTarget
+    self.headingBias=bias
+    self.headingTarget=state.headingTarget
     self.remoteOwner=type(state.remoteOwner)=="string" and #state.remoteOwner<=80 and state.remoteOwner or nil
-    self.active=true;self.state="RECOVERING";self.speedTarget=0;self.crossDemand=0;self.lastAt=nil;return true
+    self.active=true
+    self:resetGuidance("RECOVERING")
+    return true
 end
--- @ama-summary: Build current route progress, destination and engagement availability.
+-- Summary: Build current route progress, destination and engagement availability.
 function AP:snapshot(io,controls,now)
     local ready,why=self:ready(io,controls,now)
     local reason=self.reason
@@ -346,10 +511,14 @@ function AP:snapshot(io,controls,now)
         end
     end
     local draft=copy(self.draft);draft.altitude=draft.altitude or controls.targets.altitude
+    draft.label=AP.label(draft)
     return {active=self.active,state=self.state,reason=reason,available=ready and not self.active,
         engageReason=why,destination=draft,route=copy(self.route),distance=self.distance,
-        cruiseSpeed=self.cruiseSpeed,requestedSpeed=self.arrivalAnchor and 0 or self.speedTarget,requestedHeading=self.headingTarget,
+        cruiseSpeed=self.cruiseSpeed,requestedSpeed=self.speedTarget,requestedHeading=self.headingTarget,
         crossTrack=self.crossTrack,crossSpeed=self.crossSpeed,sidewaysDemand=self.sideways,
+        routeHeading=self.routeHeading,headingBias=self.headingBias or 0,primaryIdle=self.primaryIdle==true,
+        captureSettledSeconds=self.captureSettledSeconds or 0,
+        captureSettleSeconds=NavigationSettings.values(self.config,"autopilot").capture_settle_seconds,
         library=self.library:snapshot(now)}
 end
 AP.bearing=bearing

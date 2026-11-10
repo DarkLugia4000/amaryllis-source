@@ -1,4 +1,5 @@
--- @ama-section: Fleet registry | Role assignment validation and stored computer IDs.
+local Mathx = require("avionics.mathx")
+-- Section: Fleet registry | Role assignment validation and stored computer IDs.
 -- Authoritative role registry for core 35. IDs are editable; logical roles and
 -- labels travel in the JSON file so runtime routing never depends on IDs.
 local Fleet = {}
@@ -19,7 +20,7 @@ local DEFAULTS = {
     ["thrust-lb"]={label="thrust-lb"},["thrust-rb"]={label="thrust-rb"},
     ["thrust-ls"]={label="thrust-ls"},["thrust-rs"]={label="thrust-rs"},
 }
-local QUADRANT_ROLE = {FL="chamber_fl", FR="chamber_fr", RL="chamber_bl", RR="chamber_br"}
+local QUADRANT_ROLE = {FL="chamber_fl", FR="chamber_fr", BL="chamber_bl", BR="chamber_br"}
 local CONTROLLER_ROLE = {
     ["thrust-lb"]="chamber_fl", ["thrust-rb"]="chamber_fr",
     ["thrust-ls"]="chamber_bl", ["thrust-rs"]="chamber_br",
@@ -33,9 +34,7 @@ local function clone(value)
     return out
 end
 
-local function finite(value)
-    return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
-end
+local finite = Mathx.finite
 
 local function validLabel(value)
     return type(value) == "string" and #value > 0 and #value <= 64 and value:match("^[%w_%.%-]+$") ~= nil
@@ -45,8 +44,8 @@ function Fleet.defaultComputers()
     return clone(DEFAULTS)
 end
 
--- @ama-section: Fleet registry | Role assignment validation and stored computer IDs.
--- @ama-summary: Validate role labels and unique numeric IDs in the fleet registry.
+-- Section: Fleet registry | Role assignment validation and stored computer IDs.
+-- Summary: Validate role labels and unique numeric IDs in the fleet registry.
 function Fleet.validateComputers(computers)
     if type(computers) ~= "table" then return false, "computers must be an object" end
     for role in pairs(computers) do
@@ -86,7 +85,7 @@ function Fleet.validateDocument(document)
     return Fleet.validateComputers(document.computers)
 end
 
--- @ama-summary: Load the fleet registry and resolve this core's identity.
+-- Summary: Load the fleet registry and resolve this core's identity.
 function Fleet.new(dependencies)
     dependencies = dependencies or {}
     local self = setmetatable({}, {__index=Fleet})
@@ -114,7 +113,7 @@ function Fleet.new(dependencies)
     return self
 end
 
--- @ama-summary: Reconcile the local core computer identity with the registry.
+-- Summary: Reconcile the local core computer identity with the registry.
 function Fleet:_ensureLocalCore()
     local current=self.computers.core
     if current and current.id~=nil then return true end
@@ -140,7 +139,7 @@ function Fleet:_ensureLocalCore()
     return true
 end
 
--- @ama-summary: Read and validate the selected registry document.
+-- Summary: Read and validate the selected registry document.
 function Fleet:_read(path)
     if not self.fs or type(self.fs.open) ~= "function" then return nil, "filesystem API unavailable" end
     local ok, handle, reason = pcall(self.fs.open, path, "r")
@@ -156,7 +155,7 @@ function Fleet:_read(path)
     return clone(document.computers)
 end
 
--- @ama-summary: Load the current registry or its supported fallback record.
+-- Summary: Load the current registry or its supported fallback record.
 function Fleet:_load()
     local computers, reason = self:_read(self.path)
     if computers then
@@ -191,7 +190,7 @@ function Fleet:_load()
     return false, self.error
 end
 
--- @ama-summary: Retain an unreadable registry record before writing its replacement.
+-- Summary: Retain an unreadable registry record before writing its replacement.
 function Fleet:_preserveCorrupt()
     if not self.fs or type(self.fs.move) ~= "function" then return false end
     local target = self.path .. ".corrupt"
@@ -225,23 +224,13 @@ function Fleet:roleForID(id)
     end
 end
 
-function Fleet:roleForQuadrant(quadrant)
-    return QUADRANT_ROLE[quadrant]
-end
-
-function Fleet:quadrantIDs()
-    local result = {}
-    for quadrant, role in pairs(QUADRANT_ROLE) do result[quadrant] = self:get(role) end
-    return result
-end
-
 function Fleet:roleIDs()
     local result = {}
     for semantic, role in pairs(CONTROLLER_ROLE) do result[semantic] = self:get(role) end
     return result
 end
 
--- @ama-summary: Validate and stage a role's replacement computer ID.
+-- Summary: Validate and stage a role's replacement computer ID.
 function Fleet:editID(role, id)
     if not DEFAULTS[role] then return false, "unknown fleet role" end
     if id ~= nil and (not finite(id) or id % 1 ~= 0 or id < 0 or id > 65535) then
@@ -263,7 +252,7 @@ function Fleet:editID(role, id)
     return true
 end
 
--- @ama-summary: Write the validated registry document through its persistent storage path.
+-- Summary: Write the validated registry document through its persistent storage path.
 function Fleet:_write(path, content)
     local ok, handle, reason = pcall(self.fs.open, path, "w")
     if not ok or not handle then return false, tostring(reason or handle or "could not write fleet registry") end
@@ -273,7 +262,7 @@ function Fleet:_write(path, content)
     return true
 end
 
--- @ama-summary: Persist the accepted role-to-computer registry.
+-- Summary: Persist the accepted role-to-computer registry.
 function Fleet:save()
     local document = self:snapshot()
     local valid, reason = Fleet.validateDocument(document)

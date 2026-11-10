@@ -1,8 +1,9 @@
--- @ama-section: Timing evidence | Input completion, service intervals and scheduler pulses.
+local Mathx = require("avionics.mathx")
+-- Section: Timing evidence | Input completion, service intervals and scheduler pulses.
 -- Bounded, read-only timing evidence. No filesystem, peripheral or output writes.
 local Timing={};Timing.__index=Timing
 local KEYS={"left_press","left_lift","right_press","right_lift","prop_forward","prop_reverse","ap_disconnect","altitude_up","altitude_down"}
-local function finite(v)return type(v)=="number" and v==v and math.abs(v)<math.huge end
+local finite = Mathx.finite
 local function clean(v,n)return type(v)=="string" and v:gsub("[%c]"," "):sub(1,n or 80) or nil end
 local function number(v)return finite(v) and v or nil end
 local function clone(row)local out={};for k,v in pairs(row)do if type(v)~="table" then out[k]=v end end;return out end
@@ -14,8 +15,8 @@ end
 function Timing:touch(row)
  self.nextUpdate=self.nextUpdate+1;row.updateID=self.nextUpdate
 end
--- @ama-section: Timing evidence | Input completion, service intervals and scheduler pulses.
--- @ama-summary: Create or return the timing record for a named cockpit path.
+-- Section: Timing evidence | Input completion, service intervals and scheduler pulses.
+-- Summary: Create or return the timing record for a named cockpit path.
 function Timing:row(input,boot,seq,source)
  if type(input)~="table" or not finite(input.at) then return nil end
  boot=clean(boot,128) or self.boot
@@ -72,7 +73,7 @@ end
 function Timing:rejectedInput(reason,at)
  self.rejected=(self.rejected or 0)+1;self.lastReject=clean(reason);self.lastRejectAt=number(at)
 end
--- @ama-summary: Record the start of a measured cockpit service interval.
+-- Summary: Record the start of a measured cockpit service interval.
 function Timing:beginWork(name,at)
  if type(name)~="string" or #name>40 then return end
  local job=self.jobs[name]
@@ -82,7 +83,7 @@ function Timing:beginWork(name,at)
  end
  job.startedAt=number(at)
 end
--- @ama-summary: Record completion timing and elapsed work for the active service interval.
+-- Summary: Record completion timing and elapsed work for the active service interval.
 function Timing:finishWork(name,started,finished)
  local job=self.jobs[name];if not job or not finite(started) or not finite(finished) then return end
  local elapsed=finished-started
@@ -94,7 +95,7 @@ function Timing:finishWork(name,started,finished)
   self.slow[(self.slowID-1)%16+1]={id=self.slowID,name=name,startedAt=started,finishedAt=finished,seconds=elapsed}
  end
 end
--- @ama-summary: Record event wake timing for the current cockpit service.
+-- Summary: Record event wake timing for the current cockpit service.
 function Timing:woke(expected,actual)
  if not finite(expected) or not finite(actual) then return end
  local lag=actual-expected
@@ -107,7 +108,7 @@ function Timing:woke(expected,actual)
   self.wakeSlow[(self.wakeID-1)%32+1]={id=self.wakeID,at=actual,expectedAt=expected,seconds=lag}
  end
 end
--- @ama-summary: Issue and measure the local timing pulse used to observe scheduler delay.
+-- Summary: Issue and measure the local timing pulse used to observe scheduler delay.
 function Timing:runPulse(api,active)
  while not active or active() do
   local expected=self.clock()+.5
@@ -123,7 +124,7 @@ function Timing:pulseWorker(api,active)
  -- A failed diagnostic must not make waitForAny cancel the live receiver.
  while not active or active() do api.pullEventRaw() end
 end
--- @ama-summary: Return the bounded timing counters and recorded path measurements.
+-- Summary: Return the bounded timing counters and recorded path measurements.
 function Timing:dump(after,limit)
  after=finite(after) and after>=0 and math.floor(after) or 0
  limit=finite(limit) and math.max(1,math.min(12,math.floor(limit))) or 12

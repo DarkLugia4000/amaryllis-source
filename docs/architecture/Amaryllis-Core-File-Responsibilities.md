@@ -33,8 +33,8 @@ The tables account for every file found in this core folder. Program description
 | [avionics/cockpit_timing.lua](../../source/core/avionics/cockpit_timing.lua) | Bounded timing records for cockpit sampling, transmission, receipt and consumption, plus worker delays. Used to locate input latency. |
 | [avionics/config.json](../../source/core/avionics/config.json) | Core configuration: controller gains, operating limits, input tuning, networking, commissioning and hardware discovery settings. |
 | [avionics/config.json.bak](../../source/core/avionics/config.json.bak) | Backup of avionics/config.json retained by configuration writes. |
-| [avionics/control_presets.lua](../../source/core/avionics/control_presets.lua) | Saves and restores the pilot's selected heading, speed, altitude and control modes after checking vessel identity and neutral inputs. |
-| [avionics/controls.lua](../../source/core/avionics/controls.lua) | Interprets cockpit inputs according to MANUAL, SEL and DIRECT modes; updates selections and handles neutral-input handover. |
+| [avionics/control_presets.lua](../../source/core/avionics/control_presets.lua) | Saves and restores the pilot's selected heading, speed, altitude and control modes after checking core and vessel identity; restored SEL selections hold propulsion until START SYSTEMS is READY. |
+| [avionics/controls.lua](../../source/core/avionics/controls.lua) | Interprets cockpit inputs according to MANUAL, SEL and DIRECT modes; updates selections; levers act at their position after a handover (short THRUST NOT NEUTRAL warning), and only anchor release waits for neutral levers. |
 | [avionics/debug_recorder.lua](../../source/core/avionics/debug_recorder.lua) | Operator-controlled debug recorder. Captures detailed flight, lift, propulsion and timing data and writes it to a separate removable data disk through its worker. |
 | [avionics/destinations.lua](../../source/core/avionics/destinations.lua) | Reads, validates and edits the named destination library on a removable disk. |
 | [avionics/diagnostics.lua](../../source/core/avionics/diagnostics.lua) | Read-only connection to the external diagnostic host. Exposes bounded inventory, approved sensor getters, cached runtime status and console logs. |
@@ -72,7 +72,6 @@ The tables account for every file found in this core folder. Program description
 
 | File | Responsibility |
 |---|---|
-| [avionics/data/attitude-axis.json](../../source/core/avionics/data/attitude-axis.json) | Saved bow/attitude-axis calibration used to interpret vessel orientation. |
 | [avionics/data/control-presets.json](../../source/core/avionics/data/control-presets.json) | Saved pilot selections and modes, bound to core and vessel identity. |
 | [avionics/data/control-presets.json.bak](../../source/core/avionics/data/control-presets.json.bak) | Backup of avionics/data/control-presets.json: Saved pilot selections and modes, bound to core and vessel identity. |
 | [avionics/data/hover-offset.json](../../source/core/avionics/data/hover-offset.json) | Learned hover correction by altitude band. |
@@ -150,57 +149,41 @@ The tables account for every file found in this core folder. Program description
 
 | File | Responsibility |
 |---|---|
-| [packages/thrust/lb/chamber_link.lua](../../source/core/packages/thrust/lb/chamber_link.lua) | Local transport module linking this thrust computer to its parent chamber and carrying its corner-altitude readings. |
-| [packages/thrust/lb/config.json](../../source/core/packages/thrust/lb/config.json) | This thrust computer's role, drive bindings, transmission/direction settings, limits and parent chamber. |
-| [packages/thrust/lb/hardware.lua](../../source/core/packages/thrust/lb/hardware.lua) | Peripheral discovery, validation, transmission/direction adapters and readbacks for this endpoint. |
-| [packages/thrust/lb/main.lua](../../source/core/packages/thrust/lb/main.lua) | Starts the child-side chamber link and thrust runtime. |
-| [packages/thrust/lb/manifest.json](../../source/core/packages/thrust/lb/manifest.json) | Package identity, version, role and installation destination-file list. |
-| [packages/thrust/lb/thrust.lua](../../source/core/packages/thrust/lb/thrust.lua) | Node-side propulsion command handling, command-lease checks, transmission ramping, direction interlocks, hardware writes and status publication. |
-| [packages/thrust/ls/chamber_link.lua](../../source/core/packages/thrust/ls/chamber_link.lua) | Local transport module linking this thrust computer to its parent chamber and carrying its corner-altitude readings. |
-| [packages/thrust/ls/config.json](../../source/core/packages/thrust/ls/config.json) | This thrust computer's role, drive bindings, transmission/direction settings, limits and parent chamber. |
-| [packages/thrust/ls/hardware.lua](../../source/core/packages/thrust/ls/hardware.lua) | Peripheral discovery, validation, transmission/direction adapters and readbacks for this endpoint. |
-| [packages/thrust/ls/main.lua](../../source/core/packages/thrust/ls/main.lua) | Starts the child-side chamber link and thrust runtime. |
-| [packages/thrust/ls/manifest.json](../../source/core/packages/thrust/ls/manifest.json) | Package identity, version, role and installation destination-file list. |
-| [packages/thrust/ls/thrust.lua](../../source/core/packages/thrust/ls/thrust.lua) | Node-side propulsion command handling, command-lease checks, transmission ramping, direction interlocks, hardware writes and status publication. |
-| [packages/thrust/rb/chamber_link.lua](../../source/core/packages/thrust/rb/chamber_link.lua) | Local transport module linking this thrust computer to its parent chamber and carrying its corner-altitude readings. |
-| [packages/thrust/rb/config.json](../../source/core/packages/thrust/rb/config.json) | This thrust computer's role, drive bindings, transmission/direction settings, limits and parent chamber. |
-| [packages/thrust/rb/hardware.lua](../../source/core/packages/thrust/rb/hardware.lua) | Peripheral discovery, validation, transmission/direction adapters and readbacks for this endpoint. |
-| [packages/thrust/rb/main.lua](../../source/core/packages/thrust/rb/main.lua) | Starts the child-side chamber link and thrust runtime. |
-| [packages/thrust/rb/manifest.json](../../source/core/packages/thrust/rb/manifest.json) | Package identity, version, role and installation destination-file list. |
-| [packages/thrust/rb/thrust.lua](../../source/core/packages/thrust/rb/thrust.lua) | Node-side propulsion command handling, command-lease checks, transmission ramping, direction interlocks, hardware writes and status publication. |
-| [packages/thrust/rs/chamber_link.lua](../../source/core/packages/thrust/rs/chamber_link.lua) | Local transport module linking this thrust computer to its parent chamber and carrying its corner-altitude readings. |
-| [packages/thrust/rs/config.json](../../source/core/packages/thrust/rs/config.json) | This thrust computer's role, drive bindings, transmission/direction settings, limits and parent chamber. |
-| [packages/thrust/rs/hardware.lua](../../source/core/packages/thrust/rs/hardware.lua) | Peripheral discovery, validation, transmission/direction adapters and readbacks for this endpoint. |
-| [packages/thrust/rs/main.lua](../../source/core/packages/thrust/rs/main.lua) | Starts the child-side chamber link and thrust runtime. |
-| [packages/thrust/rs/manifest.json](../../source/core/packages/thrust/rs/manifest.json) | Package identity, version, role and installation destination-file list. |
-| [packages/thrust/rs/thrust.lua](../../source/core/packages/thrust/rs/thrust.lua) | Node-side propulsion command handling, command-lease checks, transmission ramping, direction interlocks, hardware writes and status publication. |
+| [packages/thrust/xx/chamber_link.lua](../../source/core/packages/thrust/lb/chamber_link.lua) | Local transport module linking this thrust computer to its parent chamber and carrying its corner-altitude readings. |
+| [packages/thrust/xx/config.json](../../source/core/packages/thrust/lb/config.json) | This thrust computer's role, drive bindings, transmission/direction settings, limits and parent chamber. |
+| [packages/thrust/xx/hardware.lua](../../source/core/packages/thrust/lb/hardware.lua) | Peripheral discovery, validation, transmission/direction adapters and readbacks for this endpoint. |
+| [packages/thrust/xxmain.lua](../../source/core/packages/thrust/lb/main.lua) | Starts the child-side chamber link and thrust runtime. |
+| [packages/thrust/xx/manifest.json](../../source/core/packages/thrust/lb/manifest.json) | Package identity, version, role and installation destination-file list. |
+| [packages/thrust/xx/thrust.lua](../../source/core/packages/thrust/lb/thrust.lua) | Node-side propulsion command handling, command-lease checks, transmission ramping, direction interlocks, hardware writes and status publication. |
 
 ## Heading-display packages (9 files)
 
+<pos> = "left"/"main"/"right"
 | File | Responsibility |
 |---|---|
-| [packages/heading/left/config.json](../../source/core/packages/heading/left/config.json) | Selects this instrument's left/right/center display role, protocol, timeout, refresh rate and text scale. |
-| [packages/heading/left/main.lua](../../source/core/packages/heading/left/main.lua) | Receives validated core snapshots and renders this instrument display with stale-data, assembly and fault indications. |
-| [packages/heading/left/manifest.json](../../source/core/packages/heading/left/manifest.json) | Package identity, version, role and installation destination-file list. |
-| [packages/heading/main/config.json](../../source/core/packages/heading/main/config.json) | Selects this instrument's left/right/center display role, protocol, timeout, refresh rate and text scale. |
-| [packages/heading/main/main.lua](../../source/core/packages/heading/main/main.lua) | Receives validated core snapshots and renders this instrument display with stale-data, assembly and fault indications. |
-| [packages/heading/main/manifest.json](../../source/core/packages/heading/main/manifest.json) | Package identity, version, role and installation destination-file list. |
-| [packages/heading/right/config.json](../../source/core/packages/heading/right/config.json) | Selects this instrument's left/right/center display role, protocol, timeout, refresh rate and text scale. |
-| [packages/heading/right/main.lua](../../source/core/packages/heading/right/main.lua) | Receives validated core snapshots and renders this instrument display with stale-data, assembly and fault indications. |
-| [packages/heading/right/manifest.json](../../source/core/packages/heading/right/manifest.json) | Package identity, version, role and installation destination-file list. |
+| [packages/heading/<pos>/config.json](../../source/core/packages/heading/left/config.json) | Selects this instrument's left/right/center display role, protocol, timeout, refresh rate and text scale. |
+| [packages/heading/<pos>/main.lua](../../source/core/packages/heading/left/main.lua) | Receives validated core snapshots and renders this instrument display with stale-data, assembly and fault indications. |
+| [packages/heading/<pos>/manifest.json](../../source/core/packages/heading/left/manifest.json) | Package identity, version, role and installation destination-file list. |
+| [packages/heading/<pos>/config.json](../../source/core/packages/heading/main/config.json) | Selects this instrument's left/right/center display role, protocol, timeout, refresh rate and text scale. |
+| [packages/heading/<pos>/main.lua](../../source/core/packages/heading/main/main.lua) | Receives validated core snapshots and renders this instrument display with stale-data, assembly and fault indications. |
+| [packages/heading/<pos>/manifest.json](../../source/core/packages/heading/main/manifest.json) | Package identity, version, role and installation destination-file list. |
+| [packages/heading/<pos>/config.json](../../source/core/packages/heading/right/config.json) | Selects this instrument's left/right/center display role, protocol, timeout, refresh rate and text scale. |
+| [packages/heading/<pos>/main.lua](../../source/core/packages/heading/right/main.lua) | Receives validated core snapshots and renders this instrument display with stale-data, assembly and fault indications. |
+| [packages/heading/<pos>/manifest.json](../../source/core/packages/heading/right/manifest.json) | Package identity, version, role and installation destination-file list. |
 
 ## Primary-bearing packages (8 files)
 
+<pos> = "left"/"right"
 | File | Responsibility |
 |---|---|
-| [packages/primary/left/config.json](../../source/core/packages/primary/left/config.json) | Selects this side's primary-bearing telemetry role and sensor endpoint settings. |
-| [packages/primary/left/hardware.lua](../../source/core/packages/primary/left/hardware.lua) | Discovers and reads primary-bearing hardware. Its shared adapter also includes transmission helper functions; the primary endpoint is configured as a sensor. |
-| [packages/primary/left/main.lua](../../source/core/packages/primary/left/main.lua) | Primary-bearing telemetry endpoint. Validates identity/session and publishes bearing hardware/status readings. |
-| [packages/primary/left/manifest.json](../../source/core/packages/primary/left/manifest.json) | Package identity, version, role and installation destination-file list. |
-| [packages/primary/right/config.json](../../source/core/packages/primary/right/config.json) | Selects this side's primary-bearing telemetry role and sensor endpoint settings. |
-| [packages/primary/right/hardware.lua](../../source/core/packages/primary/right/hardware.lua) | Discovers and reads primary-bearing hardware. Its shared adapter also includes transmission helper functions; the primary endpoint is configured as a sensor. |
-| [packages/primary/right/main.lua](../../source/core/packages/primary/right/main.lua) | Primary-bearing telemetry endpoint. Validates identity/session and publishes bearing hardware/status readings. |
-| [packages/primary/right/manifest.json](../../source/core/packages/primary/right/manifest.json) | Package identity, version, role and installation destination-file list. |
+| [packages/primary/<pos>/config.json](../../source/core/packages/primary/left/config.json) | Selects this side's primary-bearing telemetry role and sensor endpoint settings. |
+| [packages/primary/<pos>/hardware.lua](../../source/core/packages/primary/left/hardware.lua) | Discovers and reads primary-bearing hardware. Its shared adapter also includes transmission helper functions; the primary endpoint is configured as a sensor. |
+| [packages/primary/<pos>/main.lua](../../source/core/packages/primary/left/main.lua) | Primary-bearing telemetry endpoint. Validates identity/session and publishes bearing hardware/status readings. |
+| [packages/primary/<pos>/manifest.json](../../source/core/packages/primary/left/manifest.json) | Package identity, version, role and installation destination-file list. |
+| [packages/primary/<pos>/config.json](../../source/core/packages/primary/right/config.json) | Selects this side's primary-bearing telemetry role and sensor endpoint settings. |
+| [packages/primary/<pos>/hardware.lua](../../source/core/packages/primary/right/hardware.lua) | Discovers and reads primary-bearing hardware. Its shared adapter also includes transmission helper functions; the primary endpoint is configured as a sensor. |
+| [packages/primary/<pos>/main.lua](../../source/core/packages/primary/right/main.lua) | Primary-bearing telemetry endpoint. Validates identity/session and publishes bearing hardware/status readings. |
+| [packages/primary/<pos>/manifest.json](../../source/core/packages/primary/right/manifest.json) | Package identity, version, role and installation destination-file list. |
 
 ## Bridge package (5 files)
 
@@ -211,3 +194,14 @@ The tables account for every file found in this core folder. Program description
 | [packages/navigation/manifest.json](../../source/core/packages/navigation/manifest.json) | Package identity, version, role and installation destination-file list. |
 | [packages/navigation/storage.lua](../../source/core/packages/navigation/storage.lua) | Loads/validates bridge configuration and persists local display settings. |
 | [packages/navigation/ui.lua](../../source/core/packages/navigation/ui.lua) | Renders FLIGHT, NAV, SHIP and SETTINGS pages and returns the actions associated with touched controls. |
+
+
+## Measurement and recovery flow
+
+State normally supplies vessel and cockpit frames. Core checks their accepted-frame age after a 15 s boot grace. Five seconds without a frame can start local sensor readers; core event lag above 2 s defers that takeover. Five seconds of continuously fresh restored frames permits handback. Repeated failures within 120 s double the handback interval, capped by the implemented flap limit. Worker guards bind local readers to their current failover context.
+
+Vessel composition first honours an explicit session sensor preference, then current Sable pressure, then an eligible held Sable value, then sensor pressure. The held value lasts at most 30 s within three altitude blocks and yields to a sensor reading within 30%. Snapshots and recordings expose selected, Sable and sensor pressure plus source names. Target-altitude queries have a separate cache and state-reader request path. See [pressure evidence](../diagnostics/PRESSURE-EVIDENCE.md).
+
+The physics monitor compares modeled support with 1 + vertical acceleration/gravity. A five-second mismatch beyond 0.35 can select an alternate source if it meets tolerance and halves the error; otherwise it publishes an inconsistency. The progress watchdog tracks error reduction for altitude, speed, heading and anchor. Altitude-stall feedback is consumed by the altitude control calculation; its other observations are diagnostics. Their source ownership and calibration assumptions belong to the tuning/model references.
+
+Persistent cruise learning uses validated JSON primary/backup replacement. Remote provisioning publishes permissions only after successful activation. See [maintenance delivery record](../development/MAINTENANCE-ROADMAP.md) for tested transaction boundaries and pending refactoring.

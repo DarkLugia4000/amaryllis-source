@@ -4,8 +4,8 @@ Progress.__index=Progress
 local titles={navigator="Bridge navigator",["heading-left"]="Left heading display",["heading-right"]="Right heading display",
     ["heading-main"]="Main heading display",chamber_fl="Front-left lift chamber",chamber_fr="Front-right lift chamber",
     chamber_bl="Rear-left lift chamber",chamber_br="Rear-right lift chamber",primary_l="Left primary controller",
-    primary_r="Right primary controller",["thrust-lb"]="Rear-left thrust",["thrust-rb"]="Rear-right thrust",
-    ["thrust-ls"]="Left-side thrust",["thrust-rs"]="Right-side thrust"}
+    primary_r="Right primary controller",["thrust-lb"]="Front-left thrust",["thrust-rb"]="Front-right thrust",
+    ["thrust-ls"]="Rear-left thrust",["thrust-rs"]="Rear-right thrust"}
 local labels={starting="Starting installer",waiting_for_modem="Opening wireless modem",
     no_modem="No wireless modem; retrying",waiting_for_client="Waiting for computers",
     offered="Waiting for computer to accept",transferring="Sending package files",

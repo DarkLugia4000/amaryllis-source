@@ -1,4 +1,4 @@
--- @ama-section: Navigator preferences | Validated display configuration and JSON persistence.
+-- Section: Navigator preferences | Validated display configuration and JSON persistence.
 -- JSON configuration and persistent settings for computer 17.
 -- Keep disk access here so control and display code never silently invents defaults.
 local Storage = {}
@@ -18,8 +18,8 @@ function Storage.finite(value)
     return finite(value)
 end
 
--- @ama-section: Navigator preferences | Validated display configuration and JSON persistence.
--- @ama-summary: Construct the supported initial local display settings.
+-- Section: Navigator preferences | Validated display configuration and JSON persistence.
+-- Summary: Construct the supported initial local display settings.
 function Storage.defaultSettings()
     return {
         schema_version = SETTINGS_SCHEMA,
@@ -29,7 +29,7 @@ function Storage.defaultSettings()
     }
 end
 
--- @ama-summary: Validate the stored display-settings schema and selected page.
+-- Summary: Validate the stored display-settings schema and selected page.
 function Storage.validateSettings(settings)
     if not object(settings) then return false, "settings must be a JSON object" end
     if settings.schema_version ~= SETTINGS_SCHEMA then return false, "unsupported settings schema_version" end
@@ -41,7 +41,7 @@ function Storage.validateSettings(settings)
     return true
 end
 
--- @ama-summary: Validate required configuration objects, frequency pairs and numeric bounds.
+-- Summary: Validate required configuration objects, frequency pairs and numeric bounds.
 function Storage.validateConfig(config)
     if not object(config) or config.schema_version ~= 1 or config.role ~= "navigator" or
         not finite(config.computer_id) or config.computer_id < 0 or config.computer_id ~= math.floor(config.computer_id) or
@@ -61,7 +61,7 @@ local function api(dependencies)
     return dependencies.fs or fs, dependencies.textutils or textutils
 end
 
--- @ama-summary: Read and decode a JSON document through the configured filesystem dependency.
+-- Summary: Read and decode a JSON document through the configured filesystem dependency.
 function Storage.readJson(path, dependencies)
     local fsApi, jsonApi = api(dependencies)
     if not fsApi or type(fsApi.open) ~= "function" or not jsonApi or type(jsonApi.unserializeJSON) ~= "function" then
@@ -88,7 +88,7 @@ function Storage.loadConfig(path, dependencies)
     return config
 end
 
--- @ama-summary: Read validated display settings or construct the supported initial settings.
+-- Summary: Read validated display settings or construct the supported initial settings.
 function Storage.loadSettings(path, dependencies)
     path = path or "avionics/data/settings.json"
     local fsApi = select(1, api(dependencies))
@@ -119,7 +119,7 @@ function Storage.loadSettings(path, dependencies)
     return Storage.defaultSettings(), tostring(primaryError) .. "; using safe defaults"
 end
 
--- @ama-summary: Serialize and replace a JSON document through its validated storage path.
+-- Summary: Serialize and replace a JSON document through its validated storage path.
 function Storage.writeJson(path, value, dependencies)
     local fsApi, jsonApi = api(dependencies)
     if not fsApi or type(fsApi.open) ~= "function" or type(fsApi.move) ~= "function" or
@@ -140,7 +140,7 @@ function Storage.writeJson(path, value, dependencies)
     -- A locked/denied backup is a persistence failure, not a reason to stop
     -- the bridge or control runtime. Cleanup must also never throw over the
     -- original write error. Keep the primary untouched if rotation fails.
-    -- @ama-summary: Remove the selected stored entry and update its containing collection.
+    -- Summary: Remove the selected stored entry and update its containing collection.
     local function remove(file)
         local okExists,exists=pcall(fsApi.exists,file)
         if not okExists then return false,tostring(exists) end
@@ -194,6 +194,7 @@ function Storage.writeJson(path, value, dependencies)
     return true
 end
 
+-- Summary: Validate display settings and save them through JSON replacement.
 function Storage.saveSettings(settings, path, dependencies)
     local ok, reason = Storage.validateSettings(settings)
     if not ok then return false, reason end

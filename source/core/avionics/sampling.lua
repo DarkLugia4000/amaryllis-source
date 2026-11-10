@@ -1,8 +1,8 @@
--- @ama-section: Sampling lifecycle | Attempt deadlines and observed completion progress.
+-- Section: Sampling lifecycle | Attempt deadlines and observed completion progress.
 -- Local sampling recovery. Cancels an expired attempt without refreshing its data.
 local Sampling={}
--- @ama-section: Sampling lifecycle | Attempt deadlines and observed completion progress.
--- @ama-summary: Supervise a sampling attempt with deadline, progress and cancellation tracking.
+-- Section: Sampling lifecycle | Attempt deadlines and observed completion progress.
+-- Summary: Supervise a sampling attempt with deadline, progress and cancellation tracking.
 function Sampling.run(name,operation,options)
     local api=options.os or os
     local workers=options.parallel or parallel

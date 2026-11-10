@@ -1,6 +1,7 @@
--- @ama-section: Remote provisioning | Docked installation, pairing and flight permission.
+-- Section: Remote provisioning | Docked installation, pairing and flight permission.
 -- User-triggered provisioning of a docked computer. Never installs on disk events.
 local Remote = {}
+local Storage = require("avionics.storage")
 local REGISTRY = "/avionics/data/remotes.json"
 local CLIENT = "/avionics/remote_client.lua"
 local OPS_CLIENT = "/avionics/remote_ap_client.lua"
@@ -21,13 +22,14 @@ local function json(path)
     local value=textutils.unserializeJSON(read(path));assert(type(value)=="table","Invalid JSON: "..path)
     return value
 end
+-- Summary: Write and close the selected file, then verify its stored bytes.
 local function write(path,data)
     fs.makeDir(fs.getDir(path));local h,issue=fs.open(path,"w");assert(h,issue or ("Cannot write "..path))
     local ok,why=pcall(h.write,data);local closed,err=pcall(h.close)
     assert(ok,why);assert(closed,err);assert(read(path)==data,"Write verification failed: "..path)
 end
--- @ama-section: Remote provisioning | Docked installation, pairing and flight permission.
--- @ama-summary: Write a JSON record through the temporary-file replacement path.
+-- Section: Remote provisioning | Docked installation, pairing and flight permission.
+-- Summary: Replace a verified file through a temporary sibling and retain its backup.
 local function atomic(path,data)
     local tmp=path..".remote-tmp";local bak=path..".remote-bak"
     assert(not fs.exists(tmp),"Unfinished write exists: "..tmp)
@@ -43,11 +45,11 @@ local function atomic(path,data)
     end
     assert(read(path)==data,"Committed file failed verification: "..path)
 end
--- @ama-summary: Load the current trusted fleet and remote-pairing registry.
+-- Summary: Load the current trusted fleet and remote-pairing registry.
 local function registry()
-    local value=json(REGISTRY)
+    local value,reason,status=Storage.readJson(REGISTRY)
     if not value then
-        assert(not fs.exists(REGISTRY..".remote-bak"),"Remote registry missing; restore its backup first")
+        assert(status=="missing",reason)
         return {schemaVersion=1,coreID=os.getComputerID(),remotes={}}
     end
     assert(value.schemaVersion==1 and value.coreID==os.getComputerID() and type(value.remotes)=="table",
@@ -62,13 +64,14 @@ local function registry()
     end
     return value
 end
-local function save(value) atomic(REGISTRY,textutils.serializeJSON(value)) end
+-- Summary: Atomically persist the paired-remote registry.
+local function save(value) assert(Storage.writeJson(REGISTRY,value)) end
 local function permissions(value)
     local result={}
     for pair,item in pairs(value.remotes) do result[pair]=item.flightAllowed==true end
     os.__amaryllisRemotePermissions=result
 end
--- @ama-summary: Persist the accepted flight permission for a paired remote.
+-- Summary: Persist the accepted flight permission for a paired remote.
 function Remote.setFlightAccess(pair,allowed)
     assert(not os.__amaryllisRemoteInstallLock,"Another remote operation is busy")
     local value=registry();assert(value.remotes[pair],"Unknown remote")
@@ -95,7 +98,7 @@ assert(type(active)=="table" and type(active.version)=="string" and active.versi
 shell.run("/remote/releases/"..active.version.."/main.lua")
 ]=]
 
--- @ama-summary: Inspect the docked computer and its compatible remote installation.
+-- Summary: Inspect the docked computer and its compatible remote installation.
 function Remote.inspect(name)
     assert(peripheral.hasType(name,"drive"),"Selected peripheral is not a disk drive")
     local drive=assert(peripheral.wrap(name),"Drive disconnected")
@@ -129,7 +132,7 @@ function Remote.drives()
     table.sort(names);return names
 end
 
--- @ama-summary: Provision the docked remote program and its pairing configuration.
+-- Summary: Provision the docked remote program and its pairing configuration.
 function Remote.install(review)
     assert(type(review)=="table","Installation review is required")
     assert(not os.__amaryllisRemoteInstallLock,"Another remote operation is busy; try again")
@@ -157,7 +160,8 @@ function Remote.install(review)
     local token=current.config and current.config.token or randomToken()
     local sentinel=fs.combine(current.mount,"remote/installing.json")
     local nonce=randomToken()
-    local originalRegistry=fs.exists(REGISTRY) and read(REGISTRY) or nil
+    local originalRegistry=registry()
+    local registrySaved=false
     local originals={}
     for _,path in ipairs({"/"..CONFIG,"/remote/active.json","/remote/start.lua","/startup.lua"}) do
         local target=fs.combine(current.mount,(path:gsub("^/","")))
@@ -194,7 +198,7 @@ function Remote.install(review)
         records.remotes[pairID]=records.remotes[pairID] or {token=token,createdAt=os.epoch("utc")}
         records.remotes[pairID].label=current.label
         records.remotes[pairID].build=BUILD
-        save(records);permissions(records);docked()
+        save(records);registrySaved=true;docked()
         put("/"..CONFIG,textutils.serializeJSON(config))
         put("/remote/start.lua",LAUNCHER)
         put("/remote/active.json",textutils.serializeJSON({schemaVersion=1,version=version}))
@@ -215,12 +219,12 @@ function Remote.install(review)
         end
         -- Failed installs must not replace or discard an existing pairing registry.
         pcall(function()
-            if originalRegistry then atomic(REGISTRY,originalRegistry)
-            elseif fs.exists(REGISTRY) then fs.delete(REGISTRY) end
+            if registrySaved then save(originalRegistry) end
         end)
     end
     os.__amaryllisRemoteInstallLock=nil
     assert(ok,result)
+    permissions(records)
     return result
 end
 
@@ -231,7 +235,7 @@ local function display(title,lines)
     for i,line in ipairs(lines) do if i+2<height then term.setCursorPos(1,i+2);term.write(clean(line):sub(1,width)) end end
     term.setCursorPos(1,height)
 end
--- @ama-summary: Run the remote provisioning and pairing-management interface.
+-- Summary: Run the remote provisioning and pairing-management interface.
 function Remote.run()
     while true do
         local names=Remote.drives();local lines={"Insert a pocket into a drive visible to core.","Inserting it never starts installation.",""}
@@ -264,7 +268,7 @@ function Remote.run()
     end
 end
 
--- @ama-summary: Run the docked remote administration menu.
+-- Summary: Run the docked remote administration menu.
 function Remote.opsMenu()
     local offset=0
     while true do
@@ -307,10 +311,10 @@ function Remote.opsMenu()
 end
 
 -- Request-driven radio service. Flight requests only enter core's supervisor queue.
--- @ama-summary: Request-driven radio service. Flight requests only enter core's supervisor queue.
+-- Summary: Request-driven radio service. Flight requests only enter core's supervisor queue.
 function Remote.serve(status,flightRequest)
     local records=registry();permissions(records)
-    -- @ama-summary: Find and open the network modems used by the current client.
+    -- Summary: Find and open the network modems used by the current client.
     local function modems()
         for _,name in ipairs(peripheral.getNames()) do
             if peripheral.hasType(name,"modem") then
@@ -346,7 +350,7 @@ function Remote.serve(status,flightRequest)
                     if allowed then reply.ok=true;reply.data={label=os.getComputerLabel(),build=BUILD} end
                 elseif p.boot~=boot then reply.error="Core restarted; reconnect"
                 elseif p.action=="status" and PAGES[p.page] then
-                    -- Remote cached reads v1: no read queue and no hardware probes.
+                    -- Cached remote reads: no read queue and no hardware probes.
                     local at=os.clock();local pages=last[p.pairID]or{};last[p.pairID]=pages
                     local prior=pages[p.page]
                     if prior and at>=prior.at and at-prior.at<.5 then
@@ -367,5 +371,4 @@ function Remote.serve(status,flightRequest)
 end
 
 Remote.protocol=PROTOCOL
-Remote.registryPath=REGISTRY
 return Remote

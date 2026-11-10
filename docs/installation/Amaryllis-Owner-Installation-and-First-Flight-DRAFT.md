@@ -113,10 +113,10 @@ Amaryllis has **16 computer roles**:
 | chamber-fr | Front-right lift chamber |
 | chamber-bl | Rear-left lift chamber |
 | chamber-br | Rear-right lift chamber |
-| thrust-lb | Rear-left thrust |
-| thrust-rb | Rear-right thrust |
-| thrust-ls | Left-side thrust |
-| thrust-rs | Right-side thrust |
+| thrust-lb | Front-left thrust |
+| thrust-rb | Front-right thrust |
+| thrust-ls | Rear-left thrust |
+| thrust-rs | Rear-right thrust |
 | primary-l | Left primary-propeller bearing sensor/interface |
 | primary-r | Right primary-propeller bearing sensor/interface |
 
@@ -128,9 +128,9 @@ Check that the diagram contains **16 distinct computer IDs**. Each computer must
 
 **Computer map:** [PUBLISHER: insert the annotated 16-role diagram and drive-attachment locations.]
 
-## 5. Turn a floppy into the installer disk
+## 5. Turn a floppy disk into the installer disk
 
-Use an empty writable floppy. For this preparation, connect just one disk drive to a fresh computer and insert the floppy.
+Use an empty writable floppy disk. For this preparation, connect just one disk drive to a fresh computer and insert the floppy.
 
 At the computer shell, enter:
 
@@ -155,7 +155,7 @@ CC's [disk-drive documentation](https://tweaked.cc/peripheral/drive.html) descri
 
 Continue once both results are present. If either is missing, check the drive connection and insert a writable data floppy, then repeat the commands.
 
-Save and close Minecraft. On your PC, open:
+Minecraft can stay open. On your PC, open:
 
 ```text
 <instance>/saves/<world>/computercraft/disk/<disk ID>/

@@ -1,19 +1,20 @@
--- @ama-section: Vessel observations | Timestamped Sable fields and calibrated peripheral fallback.
+local Mathx = require("avionics.mathx")
+-- Section: Vessel observations | Timestamped Sable fields and calibrated peripheral fallback.
 -- Retained vessel association v1
 -- Independent read-only fallback sensors and per-field vessel source selection.
 -- Source ages record successful getter completion times.
 local Sources={}
 local Storage=require("avionics.storage")
 local CALIBRATION_PATH="/avionics/data/sensor-fallback.json"
-local function finite(x) return type(x)=="number" and x==x and math.abs(x)<math.huge end
+local finite = Mathx.finite
 local function copy(v) if type(v)~="table" then return v end;local r={};for k,x in pairs(v) do r[k]=copy(x) end;return r end
 local function vec(v)
     if type(v)~="table" then return nil end
     local x,y,z=v.x or v[1],v.y or v[2],v.z or v[3]
     if finite(x) and finite(y) and finite(z) then return {x=x,y=y,z=z} end
 end
--- @ama-section: Vessel observations | Timestamped Sable fields and calibrated peripheral fallback.
--- @ama-summary: Validate and normalize an observed quaternion.
+-- Section: Vessel observations | Timestamped Sable fields and calibrated peripheral fallback.
+-- Summary: Validate and normalize an observed quaternion.
 local function quat(v)
     if type(v)~="table" then return nil end
     if type(v.v)=="table" and finite(v.a) then v={x=v.v.x or v.v[1],y=v.v.y or v.v[2],z=v.v.z or v.v[3],w=v.a} end
@@ -47,7 +48,7 @@ local function validCalibration(c,fingerprint)
         c.fingerprint==fingerprint and finite(c.heightOffset) and math.abs(c.heightOffset)<10000 and
         (c.headingOffset==nil or finite(c.headingOffset)) and quat(c.navToPose)~=nil and norm(c.bow)~=nil
 end
--- @ama-summary: Load the sensor-frame calibration that matches vessel identity and hardware bindings.
+-- Summary: Load the sensor-frame calibration that matches vessel identity and hardware bindings.
 function Sources.loadCalibration(io)
     if not io.fs and not io.sourceCalibrationStore then return end
     local store=io.sourceCalibrationStore or Storage
@@ -61,7 +62,7 @@ function Sources.loadCalibration(io)
         end
     end
 end
--- @ama-summary: Persist the current vessel sensor-frame calibration.
+-- Summary: Persist the current vessel sensor-frame calibration.
 function Sources.persistCalibration(io,now)
     if not io.fs and not io.sourceCalibrationStore then return end
     local c=io.fallbackCalibration
@@ -79,7 +80,7 @@ local function store(io,key,value,at,errorText)
     if value~=nil then previous={value=value,at=at} end
     previous.error=errorText;io.fallbackReadings[key]=previous
 end
--- @ama-summary: Build independent assembler identity, mass and centre-of-mass reader jobs.
+-- Summary: Build independent assembler identity, mass and centre-of-mass reader jobs.
 local function assemblerJobs(io,jobs,pending,fingerprint)
     local assemblers=io.assemblyTrack and io.assemblyTrack.assemblers
     if not assemblers and type(io.findAssemblers)=="function" then assemblers=io:findAssemblers() end
@@ -102,7 +103,7 @@ local function assemblerJobs(io,jobs,pending,fingerprint)
         end
     end
 end
--- @ama-summary: Read assembler identity, mass and centre of mass with independent result ages.
+-- Summary: Read assembler identity, mass and centre of mass with independent result ages.
 function Sources.sampleAssembler(io)
     local progress=io.sampling and io.sampling.assembler
     local pending={}
@@ -121,7 +122,7 @@ function Sources.reading(io,key,now,limit)
 end
 -- The wired reader reports the same raw source records as the local worker.
 -- Ingestion validates each shape and keeps the original measurement time.
--- @ama-summary: The wired reader reports the same raw source records as the local worker. Ingestion validates each shape and keeps the original measurement time.
+-- Summary: The wired reader reports the same raw source records as the local worker. Ingestion validates each shape and keeps the original measurement time.
 function Sources.acceptBackup(io,key,value,at,now)
     if not finite(at) or at>now+.25 or now-at>120 then return false end
     local checked
@@ -142,8 +143,11 @@ function Sources.acceptBackup(io,key,value,at,now)
     return true
 end
 
--- @ama-summary: Validate and timestamp a primary Sable observation.
-function Sources.acceptPrimary(io,key,value,at)
+-- Summary: Validate and timestamp a primary Sable observation.
+-- origin is "core" for core's own Sable reads and "reader" for readings relayed by the state reader.
+-- Sable velocity is kept per origin, and the shared velocity slot takes core's own reading while it
+-- is under 2 s old, so the two readers never alternate.
+function Sources.acceptPrimary(io,key,value,at,origin)
     local checked
     if key=="uuid" and validID(value) then checked=value
     elseif key=="mass" and finite(value) and value>0 then checked=value
@@ -153,15 +157,22 @@ function Sources.acceptPrimary(io,key,value,at)
     elseif key=="com" or key=="velocity" or key=="angular" then checked=vec(value) end
     if checked==nil then return end
     io.primaryReadings=io.primaryReadings or {}
+    if key=="velocity" and finite(at) then
+        origin=origin=="reader" and "reader" or "core"
+        io.sableVelocityBy=io.sableVelocityBy or {}
+        io.sableVelocityBy[origin]={value=checked,at=at}
+        local own=io.sableVelocityBy.core
+        if origin=="reader" and own and finite(own.at) and at-own.at<2 then return false end
+    end
     local previous=io.primaryReadings[key]
     if not finite(at) or (previous and finite(previous.at) and (at<previous.at or (key=="uuid" and at==previous.at and previous.value~=checked))) then return false end
     local old=io.primaryReadings.uuid
     if key=="uuid" and old and old.value~=checked then
-        io.primaryReadings={};io.fallbackCalibration=nil;io.primaryVessel=nil
+        io.primaryReadings={};io.fallbackCalibration=nil;io.primaryVessel=nil;io.sableVelocityBy=nil
     end
     io.primaryReadings[key]={value=checked,at=at}
 end
--- @ama-summary: Build a primary vessel-source view from timestamped readings and metadata.
+-- Summary: Build a primary vessel-source view from timestamped readings and metadata.
 local function primaryView(io)
     local p={};for k,v in pairs(io.primaryVessel or {}) do p[k]=v end
     p.sableReadAt=copy(p.sableReadAt or {})
@@ -180,15 +191,16 @@ local function primaryView(io)
         p.sableWorldCom={x=origin.x+offset.x,y=origin.y+offset.y,z=origin.z+offset.z}
     end
     local bow=(io.config.geometry or {}).bow_forward
-    local bowKey=bow and (bow.x..","..bow.y..","..bow.z)
-    if io.attitudeAxisLearned and io.attitudeAxisLearned.bowKey==bowKey then p.attitudeBow=io.attitudeAxisLearned.axis
+    -- geometry.sable_bow_axis sets the Sable pose-frame bow on core as well,
+    -- whatever axis the state reader reports.
+    local configured=vec((io.config.geometry or {}).sable_bow_axis)
+    if configured then p.attitudeBow={x=configured.x,y=0,z=configured.z};p.attitudeAxisSource="CONFIGURED"
     elseif not p.attitudeBow then p.attitudeBow=norm(bow) end
     return p
 end
 
--- @ama-summary: Read configured fallback sensor fields with independent completion tracking.
+-- Summary: Read configured fallback sensor fields with independent completion tracking.
 function Sources.sample(io,now)
-    if not io.attitudeAxisLoaded and type(io.loadAttitudeAxis)=="function" then io:loadAttitudeAxis() end
     local bindings=io.sensorBindings or io.config.hardware or {}
     local fingerprint=io.hardwareFingerprint
     if io.fallbackFingerprint~=fingerprint then
@@ -200,7 +212,7 @@ function Sources.sample(io,now)
     if progress then progress.pending={};progress.stage="INDEPENDENT FALLBACK READS" end
     local pending=progress and progress.pending or {}
     local jobs={}
-    -- @ama-summary: Collect the selected sensor getter result and its completion timestamp.
+    -- Summary: Collect the selected sensor getter result and its completion timestamp.
     local function read(key,name,method,validate)
         if type(name)~="string" then return end
         jobs[#jobs+1]=function()
@@ -268,7 +280,7 @@ end
 
 -- The old primary sampler consumes cached backup readings instead of issuing
 -- the same peripheral calls again. It remains the sole direct Sable reader.
--- @ama-summary: Convert existing vessel/sensor observations into independent source records.
+-- Summary: Convert existing vessel/sensor observations into independent source records.
 function Sources.legacyInputs(io,now)
     local limit=(io.config.network or {}).sensor_stale_seconds or 6
     local readings={}
@@ -281,7 +293,7 @@ function Sources.legacyInputs(io,now)
     return readings,body
 end
 
--- @ama-summary: Select fresh primary and calibrated fallback values for each vessel field.
+-- Summary: Select fresh primary and calibrated fallback values for each vessel field.
 function Sources.compose(io,now)
     local limit=(io.config.network or {}).sensor_stale_seconds or 6
     -- Sable readings routinely arrive 1-2.4 s old through the state reader
@@ -387,7 +399,9 @@ function Sources.compose(io,now)
     if not orientation and id and nav and c and c.navToPose then
         orientation=quat(mul(nav,c.navToPose));orientationAt=navAt;orientationSource="NAVIGATION TABLE"
     end
-    local bow=c and c.bow or vec(p.attitudeBow)
+    -- The configured Sable bow axis takes priority over the saved fallback calibration.
+    local lockedBow=vec((io.config.geometry or {}).sable_bow_axis)
+    local bow=lockedBow and {x=lockedBow.x,y=0,z=lockedBow.z} or (c and c.bow) or vec(p.attitudeBow)
     local geometry=io.config.geometry or {}
     if not bow and q and geometry.orientation_verified then bow=norm(geometry.bow_forward) end
     local forward=orientation and bow and norm(rotate(orientation,bow))
@@ -445,10 +459,13 @@ function Sources.compose(io,now)
     field("altitude",altitude,altitudeSource,altAt);v.altitudeSource=altitudeSource;v.altitudeUnit="world Y"
     local velocity,velocityAt=primary("velocity",vec(p.sableVelocity))
     local velocitySource="SABLE"
-    local body,counts,bodyAt={},{},nil
+    local body,counts,bodyAt,axisAt={},{},nil,{}
     for _,name in ipairs((io.sensorBindings or io.config.hardware or {}).velocity_sensors or {}) do
         local reading,at=backup("velocity:"..name)
-        if reading then body[reading.axis]=reading.speed;counts[reading.axis]=(counts[reading.axis] or 0)+1;bodyAt=bodyAt and math.min(bodyAt,at) or at end
+        if reading then
+            body[reading.axis]=reading.speed;counts[reading.axis]=(counts[reading.axis] or 0)+1
+            bodyAt=bodyAt and math.min(bodyAt,at) or at;axisAt[reading.axis]=at
+        end
     end
     for axis,count in pairs(counts) do if count~=1 then body[axis]=nil end end
     local bodyVector=vec(body)
@@ -462,8 +479,30 @@ function Sources.compose(io,now)
     field("verticalSpeed",vs,vsSource,vsAt)
     local horizontal=forward and math.sqrt(forward.x^2+forward.z^2)
     local speed=velocity and horizontal and horizontal>.1 and (velocity.x*forward.x+velocity.z*forward.z)/horizontal or nil
-    field("forwardSpeed",speed,velocitySource,speed and math.min(velocityAt,orientationAt or basisAt) or nil)
-    v.forwardSpeedSource=velocitySource;v.velocityForward=copy(geometry.velocity_forward);v.forwardSpeedAlongBow=velocity and forward and dot(velocity,forward) or nil
+    local speedAt=speed and math.min(velocityAt,orientationAt or basisAt) or nil
+    local speedSource=velocitySource
+    -- Forward speed is Sable's world velocity along the horizontal bow. The velocity sensor on the
+    -- bow axis (geometry.velocity_forward) is the fallback when no velocity vector is available.
+    local vf=vec(geometry.velocity_forward)
+    local bowAxis,bowSign
+    if vf then
+        for _,axis in ipairs({"x","y","z"}) do
+            if math.abs(vf[axis])>0.5 then bowAxis,bowSign=axis,vf[axis]>0 and 1 or -1 end
+        end
+    end
+    local sensorSpeed=bowAxis and counts[bowAxis]==1 and finite(body[bowAxis]) and body[bowAxis]*bowSign or nil
+    if not speed and id and sensorSpeed and geometry.velocity_frame_verified and geometry.velocity_unit=="blocks_per_second" then
+        speed,speedAt,speedSource=sensorSpeed,axisAt[bowAxis],"VELOCITY SENSOR"
+    end
+    field("forwardSpeed",speed,speedSource,speedAt)
+    -- Each reader's Sable velocity along the horizontal bow, and the bow sensor, for the debug recording.
+    local by={}
+    for origin,r in pairs(io.sableVelocityBy or {}) do
+        local w=vec(r.value)
+        if w and horizontal and horizontal>.1 then by[origin]=(w.x*forward.x+w.z*forward.z)/horizontal end
+    end
+    v.forwardSpeedSableCore,v.forwardSpeedSableReader,v.forwardSpeedSensor=by.core,by.reader,sensorSpeed
+    v.forwardSpeedSource=speedSource;v.velocityForward=copy(geometry.velocity_forward);v.forwardSpeedAlongBow=velocity and forward and dot(velocity,forward) or nil
     local angular,angularAt=primary("angular",vec(p.sableAngular))
     local angularSource="SABLE"
     if not angular and (orientation or basis) then
@@ -477,15 +516,11 @@ function Sources.compose(io,now)
     local pressure,pressureAt=backup("pressure")
     local environment=copy(p.environment or {})
     if not primaryID or not fresh(now,p.at,primaryLimit) then environment={} end
-    -- Two pressure sources: Sable's aero query at the CoM and the altitude
-    -- sensor. They agree low down, but near Y 306 the sensor read 0.001-0.018
-    -- while Sable read 0.20-0.23 (stepping with height; hover dynamics need
-    -- about 0.19), and the sensor reading overrode Sable whenever it was
-    -- fresh. The lift model multiplies by pressure, so measured support
-    -- swung between 0.02 and 1.2 and the gas targets oscillated instead of
-    -- descending. Keep one continuous value: prefer Sable; when it lapses,
-    -- hold its last value (30 s, within 3 blocks) unless the sensor agrees
-    -- with it to within 30%; the sensor alone is the last resort.
+    -- Prefer current Sable pressure at the vessel CoM. Hold it for up to
+    -- 30 seconds within three altitude blocks when the sensor differs by
+    -- more than 30%; otherwise use the available sensor reading. The physics
+    -- monitor can explicitly prefer the sensor for this session. Sampling
+    -- height differences matter in the upper pressure taper.
     local sablePressure=finite(environment.airPressure) and environment.airPressure>0 and environment.airPressure or nil
     environment.airPressureSensor=pressure;environment.airPressureSable=sablePressure
     local held=io.pressureHold
@@ -515,7 +550,8 @@ function Sources.compose(io,now)
     v.reason=not v.valid and ("NO VERIFIED VESSEL TELEMETRY") or nil
     if not v.valid then v.sources.mode="UNAVAILABLE" end
     if #selectedAt>0 then v.at=math.max(table.unpack(selectedAt)) end
-    v.sources.positionAvailable=position~=nil;v.sources.positionProjectedSeconds=projectedSeconds;v.sources.identitySource=primaryID and "SABLE" or (backupID and "PHYSICS ASSEMBLER" or "RETAINED ASSOCIATION")
+    v.sources.positionAvailable=position~=nil;v.sources.positionProjectedSeconds=projectedSeconds;v.sources.identitySource=primaryID and "SABLE"
+        or (backupID and "PHYSICS ASSEMBLER" or "RETAINED ASSOCIATION")
     v.sources.calibrated=c~=nil;v.sources.primaryAgeSeconds=primaryAge.pose and math.max(0,now-primaryAge.pose) or nil
     v.sources.calibrationPersistenceError=io.sourceCalibrationError
     local readErrors={}

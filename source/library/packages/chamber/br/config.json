@@ -80,7 +80,7 @@
     "trimCount": 1
   },
   "providers": [],
-  "quadrant": "RR",
+  "quadrant": "BR",
   "readbackStaleSeconds": 1.0,
   "relayChildRole": "thrust-rs",
   "role": "chamber_br",

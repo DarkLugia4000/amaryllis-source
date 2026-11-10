@@ -178,7 +178,7 @@ def assert_game_closed(path):
                                 capture_output=True, text=True, encoding="utf-8-sig", timeout=20, creationflags=subprocess.CREATE_NO_WINDOW)
         if result.returncode != 0:raise ValueError("Process command-line lookup unavailable")
         processes = json.loads(result.stdout.strip()) if result.stdout.strip() else []
-    except (OSError, subprocess.SubprocessError, ValueError) as error:
+    except (OSError, subprocess.SubprocessError, ValueError):
         # The fallback cannot distinguish Minecraft from other Java software.
         # It permits an edit only when no Java executable is running at all.
         need(not java_processes_fallback(), "Java/Minecraft is running and detailed process inspection is unavailable. Close Minecraft/server and other Java programs before applying.")

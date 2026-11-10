@@ -1,4 +1,4 @@
--- @ama-section: Core runtime | Role setup, prioritized supervision and independent workers.
+-- Section: Core runtime | Role setup, prioritized supervision and independent workers.
 -- Amaryllis core telemetry runtime; identity comes from /fleet.json.
 -- Owns sensors, cockpit reads, lift aggregation and explicitly engaged altitude
 -- authority. Retained running intent can resume after validation; coordinated
@@ -17,8 +17,8 @@ local function validComputerID(value)
     return type(value)=="number" and value==value and math.abs(value)<math.huge and
         value%1==0 and value>=0 and value<=65535
 end
--- @ama-section: Core runtime | Role setup, prioritized supervision and independent workers.
--- @ama-summary: Format a selected core diagnostic page from the cached snapshot.
+-- Section: Core runtime | Role setup, prioritized supervision and independent workers.
+-- Summary: Format a selected core diagnostic page from the cached snapshot.
 function Monitor.rows(page, snapshot, capture)
     snapshot = snapshot or {}
     local vessel, rows = snapshot.vessel or {}, {}
@@ -59,8 +59,8 @@ function Monitor.rows(page, snapshot, capture)
         if startup.curve then
             local demand=startup.demandProgress or {}
             row("Gas vs lift demand",startup.curve.." / FL "..shown((demand.FL or 0)*100,0).."% FR "..
-                shown((demand.FR or 0)*100,0).."% RL "..shown((demand.RL or 0)*100,0).."% RR "..
-                shown((demand.RR or 0)*100,0).."%")
+                shown((demand.FR or 0)*100,0).."% BL "..shown((demand.BL or 0)*100,0).."% BR "..
+                shown((demand.BR or 0)*100,0).."%")
         end
         if startup.warning then row("Systems warning",startup.warning) end
         row("Altitude target",shown((snapshot.targets or {}).altitude))
@@ -96,13 +96,13 @@ function Monitor.rows(page, snapshot, capture)
         local modes=snapshot.modes or {}
         row("Heading / throttle mode",clean(modes.heading).." / "..clean(modes.throttle))
         row("Yaw / propulsion request %",shown(cockpit.yawRequestPercent).." / "..shown(cockpit.propulsionRequestPercent))
-        row("Neutral required H/T/Y",tostring(cockpit.headingWaitingForNeutral).." / "..
-            tostring(cockpit.throttleWaitingForNeutral).." / "..tostring(cockpit.altitudeWaitingForNeutral))
+        row("Thrust not neutral / anchor neutral gate",tostring(cockpit.thrustNotNeutral).." / "..
+            tostring(cockpit.anchorNeutralRequired))
         row("Cockpit reason",cockpit.reason or "READY")
         row("Propulsion reason",cockpit.propulsionReason)
         for key, issue in pairs(inputs.errors or {}) do row(key, issue) end
     elseif page == "LIFT" then
-        for _, quadrant in ipairs({"FL","FR","RL","RR"}) do
+        for _, quadrant in ipairs({"FL","FR","BL","BR"}) do
             local node = (snapshot.nodes or {})[quadrant] or {}
             row(quadrant .. " #" .. clean(node.id), node.online and "ONLINE" or "OFFLINE")
             row("  Ready / armed", tostring(node.ready==true).." / "..tostring(node.armed==true))
@@ -171,7 +171,7 @@ function Monitor.fresh(runtime, now)
 end
 local REQUIRED_PEER_ROLES={"navigator","heading-left","heading-right","heading-main",
     "chamber_fl","chamber_fr","chamber_bl","chamber_br","primary_l","primary_r"}
--- @ama-summary: Determine whether required computer assignments need operator setup.
+-- Summary: Determine whether required computer assignments need operator setup.
 function Monitor.needsComputerSetup(runtime)
     if type(runtime)~="table" then return nil end
     if runtime.registryError then return true end
@@ -182,7 +182,7 @@ function Monitor.needsComputerSetup(runtime)
     end
     return false
 end
--- @ama-summary: Refresh the selected core diagnostic view and handle its local navigation.
+-- Summary: Refresh the selected core diagnostic view and handle its local navigation.
 function Monitor.run()
     -- Ownership prevents repeated manual launches from leaving duplicate viewers.
     local owner = {}; os.__amaryllisCoreMonitorOwner=owner
@@ -220,7 +220,7 @@ function Monitor.run()
     local pendingSetupCheck=initialSetup==nil
     local cachedRows,cachedWidth,cachedHeight=nil,nil,nil
     local hex="0123456789abcdef"
-    -- @ama-summary: Map a display colour value to its terminal blit digit.
+    -- Summary: Map a display colour value to its terminal blit digit.
     local function colorCode(color)
         if colors and type(colors.toBlit)=="function" then
             local ok,value=pcall(colors.toBlit,color)
@@ -233,7 +233,7 @@ function Monitor.run()
         return hex:sub(index+1,index+1)
     end
     if initialSetup then page=6 end
-    -- @ama-summary: Render the current view into its configured terminal or monitor.
+    -- Summary: Render the current view into its configured terminal or monitor.
     local function draw(force)
         local width,height = display.getSize()
         local runtime = os.__amaryllisRuntime
@@ -253,7 +253,7 @@ function Monitor.run()
             end
             frame[y]=row
         end
-        -- @ama-summary: Write bounded text cells with the selected foreground colour.
+        -- Summary: Write bounded text cells with the selected foreground colour.
         local function put(y,x,text,fg,bg)
             if y<1 or y>height or x>width then return end
             fg,bg=fg or colors.white,bg or colors.black
@@ -308,7 +308,7 @@ function Monitor.run()
         restoreColors(colors.white,colors.black)
         restoreCursor(oldX,oldY,false)
     end
-    -- @ama-summary: Refresh the computer-assignment setup view from the current registry.
+    -- Summary: Refresh the computer-assignment setup view from the current registry.
     local function updateSetup()
         local current=Monitor.needsComputerSetup(os.__amaryllisRuntime)
         if current==nil then return false end
@@ -324,12 +324,12 @@ function Monitor.run()
         end
         return false
     end
-    -- @ama-summary: Open the fleet-assignment editor using the current stored registry.
+    -- Summary: Open the fleet-assignment editor using the current stored registry.
     local function editRegistry()
         local runtime=os.__amaryllisRuntime
         local _,height=display.getSize()
         local promptRow=math.max(1,height-1)
-        -- @ama-summary: Read the displayed operator prompt and return the entered value.
+        -- Summary: Read the displayed operator prompt and return the entered value.
         local function prompt(message)
             display.setCursorPos(1,promptRow);display.clearLine();display.setTextColor(colors.yellow)
             display.write(message)
@@ -417,20 +417,22 @@ function Monitor.run()
 end
 -- Fake-hardware tests exercise the viewer without starting the flight runtime.
 if rawget(_G,"__AMARYLLIS_MONITOR_TEST") then return Monitor end
+package.path = "/?.lua;/?/init.lua;" .. (package.path or "")
+local RuntimeState = require("avionics.runtime_state")
 local arguments={...}
 if arguments[1]=="monitor" then Monitor.run(); return end
 if arguments[1]=="propulsion-worker" then
-    local context=os.__amaryllisPropulsionContext
+    local context=RuntimeState.get("__amaryllisPropulsionContext")
     if type(context)~="table" or context.owner~=arguments[2] then error("Propulsion worker has no current owner",0) end
     context.run();return
 end
 if arguments[1]=="debug-worker" then
-    local context=os.__amaryllisDebugContext
+    local context=RuntimeState.get("__amaryllisDebugContext")
     if type(context)~="table" or context.owner~=arguments[2] then error("Debug worker has no current owner",0) end
     context.run();return
 end
 if arguments[1]=="failover-sampler" then
-    local context=os.__amaryllisFailoverContext
+    local context=RuntimeState.get("__amaryllisFailoverContext")
     local name,owner=arguments[2],arguments[3]
     if type(context)~="table" or context.owner~=owner or type(context.jobs[name])~="function" then
         error("Failover reader has no current core owner",0)
@@ -438,14 +440,13 @@ if arguments[1]=="failover-sampler" then
     context.jobs[name]();return
 end
 if arguments[1]=="sampler" then
-    local context=os.__amaryllisSamplingContext
+    local context=RuntimeState.get("__amaryllisSamplingContext")
     local name,owner=arguments[2],arguments[3]
     if type(context)~="table" or context.owner~=owner or type(context.jobs[name])~="function" then
         error("Sampling worker has no current core owner",0)
     end
     context.jobs[name]();return
 end
-package.path = "/?.lua;/?/init.lua;" .. (package.path or "")
 local Storage = require("avionics.storage")
 local IO = require("avionics.io")
 local Flight = require("avionics.flight")
@@ -465,6 +466,7 @@ local flight = Flight.new(config)
 local remoteAP=require("avionics.remote_ap").new(io,flight)
 io.remoteAP=remoteAP
 os.__amaryllisRemoteAP={
+    -- Summary: Dispatch the paired remote packet to remote AP request handling.
     request=function(sender,pair,packet) return remoteAP:request(sender,pair,packet) end,
     status=function(pair) return remoteAP:status(pair) end,
     enable=function(value) return remoteAP:setEnabled(value) end}
@@ -487,7 +489,7 @@ local function refresh()
     local ok, issue = io:openModems()
     if not ok then print("Core network: " .. tostring(issue)) end
 end
--- @ama-summary: Validate an entered computer ID and save the selected role assignment.
+-- Summary: Validate an entered computer ID and save the selected role assignment.
 local function editComputerID(role,id)
     local ok,issue=fleet:editID(role,id)
     if not ok then io:logState("registry edit",issue);return false,issue end
@@ -496,7 +498,7 @@ local function editComputerID(role,id)
     io:logState("registry edit",nil)
     return true
 end
--- @ama-summary: Build core sensor and modem availability from the latest hardware inventory.
+-- Summary: Build core sensor and modem availability from the latest hardware inventory.
 local function coreHardwareHealth(snapshot)
     local available=false
     local faults,seen={},{}
@@ -530,7 +532,7 @@ if timingOK and type(Timing)=="table" and type(Timing.new)=="function" then
 end
 io.cockpitTrace=cockpitTiming
 os.__amaryllisCockpitTiming=cockpitTiming
--- @ama-summary: Publish the latest cached runtime snapshot and worker status.
+-- Summary: Publish the latest cached runtime snapshot and worker status.
 local function publishRuntime(snapshot,running)
     local computers=Fleet.clone(io.computers or {})
     local hardwareAvailable,faultSummary=coreHardwareHealth(snapshot)
@@ -565,7 +567,7 @@ local samplingContext
 -- Per-job activity guards. Failover readers (started when the state computer
 -- stops delivering) carry their own context so they can be stopped alone.
 local samplerGuards={}
--- @ama-summary: Run the named sensor sampling loop with completion and retry tracking.
+-- Summary: Run the named sensor sampling loop with completion and retry tracking.
 local function sampler(name,operation,timeout,interval,validate)
     Sampling.run(name,operation,{state=io.sampling[name],timeout=timeout,interval=interval,
         validate=validate,recover=function()
@@ -576,10 +578,10 @@ local function sampler(name,operation,timeout,interval,validate)
         isActive=function()
             local guard=samplerGuards[name]
             if guard then return guard() end
-            return not samplingContext or os.__amaryllisSamplingContext==samplingContext
+            return not samplingContext or RuntimeState.get("__amaryllisSamplingContext")==samplingContext
         end})
 end
--- @ama-summary: Perform the selected sensor read and publish its completed observation.
+-- Summary: Perform the selected sensor read and publish its completed observation.
 local function sample()
     -- Vessel reads have taken up to ~4 s under load; allow 10 s (inside the
     -- 12 s telemetry grace) before discarding an in-progress sample.
@@ -599,7 +601,7 @@ local function assemblerDataSample()
 end
 local function stateSample() return io.stateLink:run(io) end
 local lastCockpitInput,lastCockpitService
--- @ama-summary: Consume the newest cockpit sample and update flight/propulsion demand.
+-- Summary: Consume the newest cockpit sample and update flight/propulsion demand.
 local function serviceCockpit(now)
     if not flight.controls or flight.restart.saved then return end
     now=now or io:nowSeconds()
@@ -619,7 +621,7 @@ local function serviceCockpit(now)
     else io.cockpitPriorityError=tostring(issue):sub(1,160) end
 end
 io.onCockpitInput=serviceCockpit
--- @ama-summary: Read and publish the current cockpit input batch.
+-- Summary: Read and publish the current cockpit input batch.
 local function cockpitSample()
     sampler("cockpit",function()
         local now=io:nowSeconds()
@@ -631,7 +633,7 @@ local function cockpitSample()
         function(value) if value and value.valid==false then return value.reason or "COCKPIT SAMPLE INVALID" end end)
 end
 local lastPresetLog
--- @ama-summary: Initialize the role's runtime context and start its supervised workers.
+-- Summary: Initialize the role's runtime context and start its supervised workers.
 local function runtime()
     refresh()
     print("A.E.V. AMARYLLIS core active. "..(flight.restart.saved and
@@ -646,7 +648,7 @@ local function runtime()
     local inbox=RadioInbox.new(config.protocol,128,function(sender,message)
         return RadioInbox.corePriority(io,flight.systemsRun,sender,message)
     end)
-    -- @ama-summary: Receive network traffic and enqueue validated work for the runtime supervisor.
+    -- Summary: Receive network traffic and enqueue validated work for the runtime supervisor.
     local function receiver()
         while true do
             local _,from,payload,channel=os.pullEventRaw("rednet_message")
@@ -659,7 +661,7 @@ local function runtime()
             inbox:push(from,payload,channel,receivedAt,receivedEpoch)
         end
     end
-    -- @ama-summary: Dispatch a received packet to the matching protocol/session handler.
+    -- Summary: Dispatch a received packet to the matching protocol/session handler.
     local function handleMessage(sender,message,protocol,now,radioTiming)
             if radioTiming then radioTiming.handlerEpochMs=os.epoch("utc") end
             metrics:measure("receive",io.processMessage,io,sender, message, protocol, now,radioTiming)
@@ -674,7 +676,7 @@ local function runtime()
                     accepted=accepted,reason=reason}, config.protocol)
             end
     end
-    -- @ama-summary: Service prioritized requests and advance the current runtime operations.
+    -- Summary: Service prioritized requests and advance the current runtime operations.
     local function supervisor()
     local timer = os.startTimer(0.1)
     -- Event-queue lag probe: a queued event is stamped with the real clock
@@ -691,6 +693,13 @@ local function runtime()
             else io.eventLagMaxSeconds=math.max(io.eventLagMaxSeconds or 0,lag) end
         end
         if now>=nextProbe then nextProbe=now+1;os.queueEvent("amaryllis_lag_probe",os.epoch("utc")) end
+        if event=="amaryllis_core_action" and type(sender)=="table" and type(sender.type)=="string" then
+            -- Actions from core's own console (UTILITIES page); the result is
+            -- published for the console to show.
+            local ok,accepted,reason=pcall(flight.request,flight,io,sender,now)
+            os.__amaryllisCoreAction={type=sender.type,accepted=ok and accepted==true,
+                reason=ok and (reason or (accepted and "STARTED" or "REFUSED")) or tostring(accepted),at=now}
+        end
         if event == "terminate" then
             -- Closing a terminal view cannot stop the independent core runtime.
             -- A computer restart remains the explicit way to stop supervision.
@@ -796,9 +805,8 @@ local function runtime()
             snapshot.physicsCheck=physicsMonitor:snapshot(io)
             snapshot.debugMode=debugRecorder:snapshot()
             snapshot.controlPresets=controlPresets:snapshot()
-            -- A preset restore hold is not shown on displays (core log only).
-            -- Only an actionable case - a lever that must return to neutral
-            -- before the restore - is still displayed.
+            -- A preset restore hold is not shown on displays (core log only);
+            -- the cockpit line drops PRESETS reasons while a restore is pending.
             local presets=snapshot.controlPresets
             local presetReason=presets.reason
             if presetReason~=lastPresetLog then
@@ -809,13 +817,7 @@ local function runtime()
             end
             if (presets.pending or presets.awaitingSystems) and type(snapshot.cockpitControl)=="table" then
                 local cockpit=snapshot.cockpitControl
-                if type(presetReason)=="string" and presetReason:find("NOT NEUTRAL",1,true) then
-                    cockpit.reason=presetReason
-                else
-                    cockpit.headingWaitingForNeutral=false;cockpit.throttleWaitingForNeutral=false
-                    cockpit.altitudeWaitingForNeutral=false
-                    if cockpit.reason==nil or tostring(cockpit.reason):find("PRESETS",1,true) then cockpit.reason=nil end
-                end
+                if cockpit.reason==nil or tostring(cockpit.reason):find("PRESETS",1,true) then cockpit.reason=nil end
             end
             snapshot.performance=metrics:snapshot()
             snapshot.remoteAP=remoteAP:status()
@@ -832,7 +834,7 @@ local function runtime()
 end
 -- Assembly gate input: physics_assembler.isAssembled(), kept on its own
 -- schedule so a slow vessel sample cannot delay the gate.
--- @ama-summary: Refresh the current assembler observation in its independent sampling worker.
+-- Summary: Refresh the current assembler observation in its independent sampling worker.
 local function assemblySample()
     -- isAssembled() has taken up to ~2 s under server load; a 2 s timeout
     -- discarded those answers and let the gate go stale.
@@ -853,7 +855,7 @@ end
 -- sleep() waits only for its own timer event; if that event is ever dropped
 -- the caller never wakes. This wait also ends on any later event past the
 -- deadline, and radio traffic arrives several times a second.
--- @ama-summary: Yield until the requested repeat interval or an incoming runtime event.
+-- Summary: Yield until the requested repeat interval or an incoming runtime event.
 local function pause(seconds)
     local deadline=os.clock()+seconds
     local timer=os.startTimer(seconds)
@@ -862,13 +864,13 @@ local function pause(seconds)
         if event=="timer" and id==timer then break end
     end
 end
--- @ama-summary: Run the independent propulsion-control cadence and publish completion progress.
+-- Summary: Run the independent propulsion-control cadence and publish completion progress.
 local function propulsionWorker(context)
     local failures=0
     io.propulsionWorkerBeat=io:nowSeconds()
-    while os.__amaryllisPropulsionContext==context do
+    while RuntimeState.get("__amaryllisPropulsionContext")==context do
         local ok,issue=pcall(metrics.measure,metrics,"propulsion",PropulsionWorker.step,io,flight,io:nowSeconds(),io.propulsionHeartbeat)
-        if os.__amaryllisPropulsionContext~=context then break end
+        if RuntimeState.get("__amaryllisPropulsionContext")~=context then break end
         io.propulsionWorkerBeat=io:nowSeconds()
         if ok then
             if io.propulsionWorkerError then coreLog("Core propulsion worker recovered") end
@@ -887,7 +889,7 @@ end
 local function newPropulsionContext()
     local context={owner=io.session}
     context.run=function() propulsionWorker(context) end
-    os.__amaryllisPropulsionContext=context
+    RuntimeState.set("__amaryllisPropulsionContext", context)
     return context
 end
 local propulsionContext=newPropulsionContext()
@@ -895,10 +897,10 @@ local propulsionContext=newPropulsionContext()
 -- timer event is dropped, leaving a debug request stuck at CHECKING DISK.
 -- Use the tolerant pause, publish a heartbeat, and let the watchdog replace
 -- a stalled worker.
--- @ama-summary: Run paced removable-media debug writes from cached runtime data.
+-- Summary: Run paced removable-media debug writes from cached runtime data.
 local function debugWorker(context)
     io.debugWorkerBeat=io:nowSeconds()
-    while os.__amaryllisDebugContext==context do
+    while RuntimeState.get("__amaryllisDebugContext")==context do
         pcall(debugRecorder.step,debugRecorder,io)
         io.debugWorkerBeat=io:nowSeconds()
         pause(.5)
@@ -907,7 +909,7 @@ end
 local function newDebugContext()
     local context={owner=io.session}
     context.run=function() debugWorker(context) end
-    os.__amaryllisDebugContext=context
+    RuntimeState.set("__amaryllisDebugContext", context)
     return context
 end
 local debugContext=newDebugContext()
@@ -916,11 +918,11 @@ if shell and type(shell.openTab)=="function" and multishell then
     local names={"cockpit","vessel","assembly","fallback","assembler"}
     if io.stateLink then jobs={state=stateSample};names={"state"};io.sampling.state={} end
     samplingContext={owner=io.session,jobs=jobs}
-    os.__amaryllisSamplingContext=samplingContext
+    RuntimeState.set("__amaryllisSamplingContext", samplingContext)
     for _,name in ipairs(names) do
         local ok,tab=pcall(shell.openTab,"/avionics/main.lua","sampler",name,samplingContext.owner)
         if not ok or type(tab)~="number" then
-            os.__amaryllisSamplingContext=nil
+            RuntimeState.set("__amaryllisSamplingContext", nil)
             error("Could not start independent "..name.." reader: "..tostring(tab),0)
         end
         if multishell.setTitle then pcall(multishell.setTitle,tab,name.." reader") end
@@ -935,7 +937,7 @@ if shell and type(shell.openTab)=="function" and multishell then
         -- frames have flowed again for RECOVER_AFTER seconds the local
         -- readers are stopped and the state computer takes back over.
         local FAILOVER_AFTER,RECOVER_AFTER,BOOT_GRACE=5,5,15
-        -- @ama-summary: Refresh the local vessel observation in its sampling context.
+        -- Summary: Refresh the local vessel observation in its sampling context.
         local localJobs={vessel=function()
                 -- Bind the sensors and cockpit link locally before reading.
                 local ok,issue=pcall(io.scanHardware,io)
@@ -952,17 +954,17 @@ if shell and type(shell.openTab)=="function" and multishell then
         local generation=0
         local failover={active=false}
         io.stateFailover=failover
-        -- @ama-summary: Start core's local sensor workers for state-computer failover.
+        -- Summary: Start core's local sensor workers for state-computer failover.
         local function startLocal(now,age)
             generation=generation+1
             local context={owner=io.session..":failover:"..generation,jobs=localJobs}
-            os.__amaryllisFailoverContext=context
+            RuntimeState.set("__amaryllisFailoverContext", context)
             io.stateFailoverScan=true
             local started,failed=0,nil
             for _,name in ipairs(localNames) do
                 io.sampling[name]=type(io.sampling[name])=="table" and io.sampling[name] or {}
                 io.sampling[name].source="CORE (FAILOVER)"
-                samplerGuards[name]=function() return os.__amaryllisFailoverContext==context end
+                samplerGuards[name]=function() return RuntimeState.get("__amaryllisFailoverContext")==context end
                 local ok,tab=pcall(shell.openTab,"/avionics/main.lua","failover-sampler",name,context.owner)
                 if ok and type(tab)=="number" then
                     started=started+1
@@ -976,26 +978,25 @@ if shell and type(shell.openTab)=="function" and multishell then
             coreLog("State computer #"..tostring(io.stateLink.id).." silent for "..string.format("%.1f",age)..
                 " s; core started "..started.." local readers"..(failed and (" (failed: "..failed..")") or ""),"core.failover")
         end
-        -- @ama-summary: Retire the active local sensor workers when state service recovers.
+        -- Summary: Retire the active local sensor workers when state service recovers.
         local function stopLocal(now)
             -- Guards stay installed: they compare against the now-cleared
             -- context, so each failover reader exits after its current read.
-            os.__amaryllisFailoverContext=nil;io.stateFailoverScan=nil
+            RuntimeState.set("__amaryllisFailoverContext", nil);io.stateFailoverScan=nil
             coreLog("State computer #"..tostring(io.stateLink.id).." frames restored; local readers stopped after "..
                 string.format("%.0f",now-(failover.since or now)).." s","core.failover")
             failover.active=false;failover.since=nil;failover.recoveringSince=nil;failover.reason=nil
             failover.lastRecoveredAt=now
         end
-        -- @ama-summary: Evaluate state-frame freshness and coordinate local-reader takeover or handback.
+        -- Summary: Evaluate state-frame freshness and coordinate local-reader takeover or handback.
         io.stateFailoverCheck=function(now)
             local link=io.stateLink
             local last=link.lastFrameAt
             local age=type(last)=="number" and now-last or now-bootAt
             if not failover.active then
                 if now-bootAt>=BOOT_GRACE and age>=FAILOVER_AFTER then
-                    -- A backed-up core event queue also delays frames. Then the
-                    -- state computer is fine and extra local reads would only
-                    -- deepen the backlog, so wait for the core to catch up.
+                    -- Core event backlog can delay accepted state frames.
+                    -- Defer additional local reads until the backlog subsides.
                     local lag=io.eventLagSeconds
                     if type(lag)=="number" and lag>2 then
                         if not failover.deferLogged then
@@ -1012,7 +1013,7 @@ if shell and type(shell.openTab)=="function" and multishell then
             end
             -- An intermittent state computer must not flap the readers on and
             -- off: each failover that follows a recovery within 2 minutes
-            -- doubles the clean-frame time needed to hand back (up to 60 s).
+            -- doubles the clean-frame time needed to hand back (up to 80 s).
             local needed=RECOVER_AFTER*2^math.min(failover.flaps or 0,4)
             if age<1 then
                 failover.recoveringSince=failover.recoveringSince or now
@@ -1024,7 +1025,7 @@ if shell and type(shell.openTab)=="function" and multishell then
     -- blocked), replace it with a fresh tab. The old loop exits on its next
     -- resume because the current context no longer matches.
     local nextPropulsionRelaunch=0
-    -- @ama-summary: Monitor propulsion worker completion and schedule paced worker replacement.
+    -- Summary: Monitor propulsion worker completion and schedule paced worker replacement.
     io.propulsionWatchdog=function(now)
         local beat=io.propulsionWorkerBeat
         if not beat or now-beat<5 or now<nextPropulsionRelaunch then return end
@@ -1041,12 +1042,12 @@ if shell and type(shell.openTab)=="function" and multishell then
     io.propulsionWorkerBeat=io.propulsionWorkerBeat or io:nowSeconds()
     local propulsionOK,propulsionTab=pcall(shell.openTab,"/avionics/main.lua","propulsion-worker",io.session)
     if not propulsionOK or type(propulsionTab)~="number" then
-        os.__amaryllisPropulsionContext=nil
+        RuntimeState.set("__amaryllisPropulsionContext", nil)
         error("Could not start independent propulsion controller",0)
     end
     if multishell.setTitle then pcall(multishell.setTitle,propulsionTab,"propulsion runtime") end
     local nextDebugRelaunch=0
-    -- @ama-summary: Monitor debug worker completion and schedule paced worker replacement.
+    -- Summary: Monitor debug worker completion and schedule paced worker replacement.
     io.debugWatchdog=function(now)
         local beat=io.debugWorkerBeat
         if not beat or now-beat<5 or now<nextDebugRelaunch then return end

@@ -1,4 +1,4 @@
--- @ama-section: Prioritized inbox | Bounded packet coalescing and next-work selection.
+-- Section: Prioritized inbox | Bounded packet coalescing and next-work selection.
 -- Bounded core work queue. Protocol/identity validation still happens in IO.
 local Inbox={};Inbox.__index=Inbox
 local replaceable={lift_status=true,role_status=true,subsystem_status=true,thrust_status=true,primary_status=true}
@@ -7,8 +7,8 @@ local function integer(value,minimum,maximum)
 end
 -- Scheduling hints only. IO still validates identity, ordering, provider maps
 -- and readbacks before a report can acknowledge any command.
--- @ama-section: Prioritized inbox | Bounded packet coalescing and next-work selection.
--- @ama-summary: Scheduling hints only. IO still validates identity, ordering, provider maps and readbacks before a report can acknowledge any command.
+-- Section: Prioritized inbox | Bounded packet coalescing and next-work selection.
+-- Summary: Scheduling hints only. IO still validates identity, ordering, provider maps and readbacks before a report can acknowledge any command.
 function Inbox.corePriority(io,run,sender,message)
     if not io or io.identityReady~=true or not integer(sender,0,65535) or type(message)~="table" or message.v~=1 or
         message.session~=io.session then return 0 end
@@ -35,7 +35,7 @@ local function add(counts,key) counts[key]=(counts[key]+1)%2147483647 end
 local function key(sender,message)
     if replaceable[message.kind] then return tostring(sender)..":"..message.kind..":"..tostring(message.role or message.quadrant or "") end
 end
--- @ama-summary: Validate packet shape and enqueue or coalesce its bounded work item.
+-- Summary: Validate packet shape and enqueue or coalesce its bounded work item.
 function Inbox:push(sender,message,protocol,at,receiverEpochMs)
     if protocol~=self.protocol or type(message)~="table" or message.v~=1 or type(message.kind)~="string" then
         add(self.counts,"ignored");return false
@@ -87,7 +87,7 @@ function Inbox:push(sender,message,protocol,at,receiverEpochMs)
     add(self.counts,"accepted");self.counts.highWater=math.max(self.counts.highWater,#self.queue)
     return true
 end
--- @ama-summary: Select the next queued item using cockpit and ship-service priorities.
+-- Summary: Select the next queued item using cockpit and ship-service priorities.
 function Inbox:pop()
     local selected=1
     if self.priority then
@@ -98,7 +98,7 @@ function Inbox:pop()
     end
     return table.remove(self.queue,selected)
 end
--- @ama-summary: Report bounded inbox depth, drops and service counters.
+-- Summary: Report bounded inbox depth, drops and service counters.
 function Inbox:snapshot()
     local out={queued=#self.queue,limit=self.limit}
     out.navigatorQueued,out.liftAckQueued,out.routineQueued=0,0,0

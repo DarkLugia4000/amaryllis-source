@@ -1,4 +1,5 @@
--- @ama-section: Debug recording | Removable-media capture and paced buffered writes.
+local Mathx = require("avionics.mathx")
+-- Section: Debug recording | Removable-media capture and paced buffered writes.
 -- Optional removable-media diagnostics. Only the worker performs disk I/O.
 local Debug={};Debug.__index=Debug
 local BUILD="amaryllis-debug-disk-v145-lift-ack-priority"
@@ -21,13 +22,14 @@ local liftColumns={"core_clock_s","systems_active","systems_target_altitude","ve
  "roll_rate_blocks_s","pitch_rate_blocks_s","coarse_roll_correction","coarse_pitch_correction","coarse_roll_integral",
  "coarse_pitch_integral","trim_authority_limited","level_spread_blocks","lift_recovery_state","lift_recovery_attempts","dropped_events",
  "vessel_mass","air_pressure","gravity_y","telemetry_mode","altitude_sensor_source","heading_sensor_source",
- "velocity_sensor_source","attitude_sensor_source","mass_sensor_source","absolute_position_available","primary_pose_age_s","core_event_lag_s","core_event_lag_max_s","position_projected_s","air_pressure_source","air_pressure_sensor","air_pressure_sable",
+ "velocity_sensor_source","forward_speed_source","forward_speed_sable_core","forward_speed_sable_reader","forward_speed_sensor","attitude_sensor_source","mass_sensor_source","absolute_position_available","primary_pose_age_s","core_event_lag_s",
+     "core_event_lag_max_s","position_projected_s","air_pressure_source","air_pressure_sensor","air_pressure_sable",
  "estimated_vertical_drag","drag_support_compensation","applied_drag_support_compensation","hold_feedforward_limited",
  "support_correction_fraction","ceiling_slew_s","vertical_speed_feedforward",
  "motion_warning","motion_warning_tone","motion_warning_axis","motion_warning_event_seq","motion_warning_event",
  "motion_warning_event_detail","motion_warning_gate","motion_delta_speed","motion_acceleration","motion_heading_delta",
  "motion_yaw_rate","motion_angular_acceleration","motion_applied_power","motion_obstruction_seconds"}
-local quadrants={{"FL","fl"},{"FR","fr"},{"RL","bl"},{"RR","br"}}
+local quadrants={{"FL","fl"},{"FR","fr"},{"BL","bl"},{"BR","br"}}
 local chamberColumns={"lift","filled_volume","capacity","altitude","gas_output","bulk_gas_output","provider_ceiling_total",
  "core_target_total","command_target_total","applied_target_total","trim_correction","boiler_efficiency_min","lift_rate",
  "fill_fraction","status_age_s","status_seq","received_seq","applied_seq","pending_seq","pending_sent_core_s","pending_age_s",
@@ -37,11 +39,13 @@ local chamberColumns={"lift","filled_volume","capacity","altitude","gas_output",
  "core_first_ack_receiver_epoch_ms","core_first_ack_queue_wait_s","core_ack_reports_coalesced"}
 for _,key in ipairs(liftColumns) do columns[#columns+1]=key end
 for _,q in ipairs(quadrants) do for _,key in ipairs(chamberColumns) do columns[#columns+1]=q[2].."_"..key end end
+local autopilotColumns={"ap_route_heading","ap_heading_bias","ap_lateral_demand","ap_primary_idle","ap_capture_settled_s"}
+for _,key in ipairs(autopilotColumns) do columns[#columns+1]=key end
 local eventColumns={"epoch_ms","core_clock_s","event","quadrant","node_boot","command_seq","stage","status_seq",
  "received_seq","applied_seq","node_received_epoch_ms","node_applied_epoch_ms","status_sent_epoch_ms","send_succeeded",
  "core_receiver_epoch_ms","core_handler_epoch_ms","core_queue_wait_s","radio_priority",
  "core_first_ack_receiver_epoch_ms","core_first_ack_queue_wait_s","core_ack_reports_coalesced"}
-local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
+local finite = Mathx.finite
 local function cell(v)
  if v==nil then return "" end
  if type(v)=="number" then return finite(v) and string.format("%.15g",v) or "" end
@@ -55,8 +59,8 @@ function Debug.new(options)
   enabled=false,state="OFF",queue={},eventQueue={},dropped=0,droppedEvents=0,bytes=0,maxBytes=options.maxBytes or 8388608,
   reserveBytes=options.reserveBytes or 131072,maxQueue=options.maxQueue or 128},Debug)
 end
--- @ama-section: Debug recording | Removable-media capture and paced buffered writes.
--- @ama-summary: Stage an operator request to start or stop disk debug recording.
+-- Section: Debug recording | Removable-media capture and paced buffered writes.
+-- Summary: Stage an operator request to start or stop disk debug recording.
 function Debug:request(enabled)
  if type(enabled)~="boolean" then return false,"DEBUG MODE VALUE INVALID" end
  if enabled then
@@ -67,7 +71,7 @@ function Debug:request(enabled)
  self.enabled=false;self.wantStart=false;self.pending=true;self.wantStop=true;self.state="STOPPING"
  return true,"STOPPING DEBUG RECORDING"
 end
--- @ama-summary: Find removable media eligible for the current debug recording.
+-- Summary: Find removable media eligible for the current debug recording.
 function Debug:media()
  local found
  if not self.peripheral or not self.disk then error("DISK DRIVE API UNAVAILABLE",0) end
@@ -86,7 +90,7 @@ function Debug:media()
  if f.isReadOnly(found.path) then error("DEBUG DISK IS READ ONLY",0) end
  return found
 end
--- @ama-summary: Validate the recording disk and current writable output path.
+-- Summary: Validate the recording disk and current writable output path.
 function Debug:checkMedia()
  local current=self:media();local old=self.medium
  if not old or current.name~=old.name or current.path~=old.path or current.id~=old.id then
@@ -95,7 +99,7 @@ function Debug:checkMedia()
  local free=self.fs.getFreeSpace(current.path)
  if free~="unlimited" and (not finite(free) or free<self.reserveBytes+4096) then error("DEBUG DISK FULL",0) end
 end
--- @ama-summary: Append the prepared debug data and track the written byte count.
+-- Summary: Append the prepared debug data and track the written byte count.
 function Debug:write(path,mode,data)
  local free=self.fs.getFreeSpace(self.medium.path)
  if free~="unlimited" and (not finite(free) or free<#data+self.reserveBytes) then error("DEBUG DISK FULL",0) end
@@ -105,7 +109,7 @@ function Debug:write(path,mode,data)
  local closed,closeIssue=pcall(handle.close)
  if not ok or not closed then error(tostring(issue or closeIssue),0) end
 end
--- @ama-summary: Create a recording run and its disk output files.
+-- Summary: Create a recording run and its disk output files.
 function Debug:start(io)
  self.medium=self:media();self:checkMedia()
  local folder=self.fs.combine(self.medium.path,"amaryllis-logs")
@@ -146,7 +150,7 @@ function Debug:start(io)
  self.sequence=0;self.lastAt=nil;self.lastSpeed=nil;self.lastFaultKey=nil;self.faultChangedAt=nil
  self.enabled=true;self.pending=false;self.wantStart=false;self.wantStop=false;self.state="RECORDING";self.reason=nil
 end
--- @ama-summary: Append a bounded lift-command or readback event to the debug buffer.
+-- Summary: Append a bounded lift-command or readback event to the debug buffer.
 function Debug:liftEvent(event)
  if not self.enabled then return end
  if #self.eventQueue>=self.maxQueue then self.droppedEvents=self.droppedEvents+1;return end
@@ -164,7 +168,7 @@ local function targetTotal(map,providers,expected)
  for name in pairs(providers) do if not finite(map[name]) then return nil end;sum=sum+map[name];count=count+1 end
  return count==expected and sum or nil
 end
--- @ama-summary: Sum valid provider observations for a chamber measurement.
+-- Summary: Sum valid provider observations for a chamber measurement.
 local function providerTotal(providers,key,validity,bulkOnly,expected)
  if type(providers)~="table" or next(providers)==nil then return nil end
  local sum,count=0,0
@@ -176,7 +180,7 @@ local function providerTotal(providers,key,validity,bulkOnly,expected)
  end
  return count==expected and sum or nil
 end
--- @ama-summary: Convert the current cached runtime snapshot into buffered debug records.
+-- Summary: Convert the current cached runtime snapshot into buffered debug records.
 function Debug:capture(snapshot,io,now,flight)
  if not self.enabled then return end
  local v=io.vessel or {};local t=io.thrust or {};local ap=io.autopilot or {}
@@ -200,7 +204,7 @@ function Debug:capture(snapshot,io,now,flight)
  local function timing(name) return (performance[name] or {}).lastMs end
  self.sequence=self.sequence+1
  local row={self.clock(),self.sequence,dt,ap.state,ap.active,ap.distance,ap.crossTrack,ap.crossSpeed,
-  snapshot.targets and snapshot.targets.speed,ap.cruiseSpeed,ap.arrivalAnchor and 0 or ap.speedTarget,v.forwardSpeed,acceleration,
+  snapshot.targets and snapshot.targets.speed,ap.cruiseSpeed,ap.speedTarget,v.forwardSpeed,acceleration,
   snapshot.vessel and snapshot.vessel.sampleAgeSeconds,v.at,speed.error,loop.integral,speed.output,
   t.requested and t.requested["primary-left"],t.requested and t.requested["primary-right"],applied.left,applied.right,
   left.direction,right.direction,left.commandAcknowledged,right.commandAcknowledged,left.statusAgeSeconds,right.statusAgeSeconds,
@@ -235,6 +239,9 @@ function Debug:capture(snapshot,io,now,flight)
   altitude_sensor_source=(((v.sources or {}).fields or {}).altitude or {}).source,
   heading_sensor_source=(((v.sources or {}).fields or {}).heading or {}).source,
   velocity_sensor_source=(((v.sources or {}).fields or {}).linearVelocity or {}).source,
+  forward_speed_source=(((v.sources or {}).fields or {}).forwardSpeed or {}).source,
+  forward_speed_sable_core=v.forwardSpeedSableCore,forward_speed_sable_reader=v.forwardSpeedSableReader,
+  forward_speed_sensor=v.forwardSpeedSensor,
   attitude_sensor_source=(((v.sources or {}).fields or {}).pitch or {}).source,
   mass_sensor_source=(((v.sources or {}).fields or {}).mass or {}).source,
   absolute_position_available=(v.sources or {}).positionAvailable,primary_pose_age_s=(v.sources or {}).primaryAgeSeconds,
@@ -275,12 +282,16 @@ function Debug:capture(snapshot,io,now,flight)
    core_ack_epoch_ms=command.ackEpochMs,core_ack_core_s=command.ackAt}
   for _,key in ipairs(chamberColumns) do nextColumn=nextColumn+1;row[nextColumn]=data[key] end
  end
+ local apData={ap_route_heading=ap.routeHeading,ap_heading_bias=ap.headingBias,
+  ap_lateral_demand=ap.crossDemand,ap_primary_idle=ap.primaryIdle==true,
+  ap_capture_settled_s=ap.captureSettledSeconds}
+ for _,key in ipairs(autopilotColumns) do nextColumn=nextColumn+1;row[nextColumn]=apData[key] end
  local out={};for i=1,#columns do out[i]=cell(row[i]) end
  self.lastAt=now;self.lastSpeed=v.forwardSpeed
  if #self.queue>=self.maxQueue then self.dropped=self.dropped+1;return end
  self.queue[#self.queue+1]=table.concat(out,",").."\n"
 end
--- @ama-summary: Write buffered records and update saved/dropped counters.
+-- Summary: Write buffered records and update saved/dropped counters.
 function Debug:flush()
  if #self.queue==0 and #self.eventQueue==0 then return end
  self:checkMedia()
@@ -302,7 +313,7 @@ function Debug:flush()
   self.bytes=self.bytes+#eventData
  end
 end
--- @ama-summary: Advance queued recording requests and paced buffer writes.
+-- Summary: Advance queued recording requests and paced buffer writes.
 function Debug:step(io)
  local ok,issue=pcall(function()
   if self.wantStart then self:start(io) end

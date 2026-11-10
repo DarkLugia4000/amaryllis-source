@@ -1,19 +1,20 @@
--- @ama-section: State transport | Correlated wired frames, source ages and core configuration.
+local Mathx = require("avionics.mathx")
+-- Section: State transport | Correlated wired frames, source ages and core configuration.
 -- State assembly verification v1
 -- Read-only sensor transport. Dedicated wired channels; never actuator RPC.
 local Wire={CORE_CHANNEL=45130,STATE_CHANNEL=45131,PROTOCOL="amaryllis.state.v1"}
 local Sources=require("avionics.vessel_sources")
 local SIDES={"top","bottom","left","right","front","back"}
 local INPUTS={"left_press","left_lift","right_press","right_lift","prop_forward","prop_reverse","ap_disconnect","altitude_up","altitude_down"}
-local function finite(v) return type(v)=="number" and v==v and math.abs(v)<math.huge end
+local finite = Mathx.finite
 local function integer(v,a,b) return finite(v) and v%1==0 and v>=a and v<=b end
 local function token(v) return type(v)=="string" and #v>0 and #v<=128 and v:match("^[%w_.:%-]+$") end
 local function name(v) return type(v)=="string" and #v>0 and #v<=256 and not v:find("[%c]") end
 local function vector(v)
     if type(v)=="table" and finite(v.x) and finite(v.y) and finite(v.z) then return {x=v.x,y=v.y,z=v.z} end
 end
--- @ama-section: State transport | Correlated wired frames, source ages and core configuration.
--- @ama-summary: Copy bounded table values into independent operation or transport records.
+-- Section: State transport | Correlated wired frames, source ages and core configuration.
+-- Summary: Copy bounded table values into independent operation or transport records.
 local function copy(value,depth,budget)
     depth=depth or 0;budget=budget or {n=0}
     budget.n=budget.n+1
@@ -33,7 +34,7 @@ Wire.copy=copy
 local function ageOK(at,now) return finite(at) and at<=now+.25 and now-at<=120 end
 -- The pilot batch has a fixed shape. Copying it never traverses telemetry,
 -- diagnostic tables or disk-backed calibration records.
--- @ama-summary: Build a bounded cockpit input frame with observation timestamps.
+-- Summary: Build a bounded cockpit input frame with observation timestamps.
 function Wire.inputFrame(input)
     if type(input)~="table" or input.valid~=true or not finite(input.at) or type(input.raw)~="table" then return nil end
     local raw={}
@@ -50,7 +51,7 @@ function Wire.inputFrame(input)
     end
     return out
 end
--- @ama-summary: Validate and apply the newest cockpit observations to core input state.
+-- Summary: Validate and apply the newest cockpit observations to core input state.
 local function commitInput(io,input,now,trace)
     local sample=Wire.inputFrame(input)
     if not sample or not ageOK(sample.at,now) then return false end
@@ -68,7 +69,7 @@ local function commitInput(io,input,now,trace)
     end
     return true
 end
--- @ama-summary: Inspect attached modems and separate wired from wireless interfaces.
+-- Summary: Inspect attached modems and separate wired from wireless interfaces.
 function Wire.localModems(api)
     local inventory={peripherals={},modems={},wirelessModems={},monitors={},errors={}}
     local wired={}
@@ -91,7 +92,7 @@ function Wire.localModems(api)
     end
     return inventory,wired
 end
--- @ama-summary: Select the wired modem that exposes the configured peer computer.
+-- Summary: Select the wired modem that exposes the configured peer computer.
 function Wire.chooseWired(wired,peerID)
     if #wired==1 then return wired[1] end
     -- A separate sensor bus may occupy another modem. Identify the link by
@@ -121,7 +122,7 @@ function Wire.newCore(io,entry)
     return setmetatable({id=entry.id,label=entry.label,coreID=io.localID,session=io.session,
         seq=0,retired={},retiredOrder={},phase="WAITING FOR WIRED READER"},{__index=Wire})
 end
--- @ama-summary: Attach the state link to its configured wired peer.
+-- Summary: Attach the state link to its configured wired peer.
 function Wire:scanCore(io)
     local inventory,wired=Wire.localModems(io.peripheral)
     io.inventory=inventory
@@ -145,7 +146,7 @@ function Wire.frame(reader)
         fingerprint=reader.hardwareFingerprint,bindings=reader.sensorBindings,
         readers=reader.sampling,pressure=reader.pressureCache or {}})
 end
--- @ama-summary: Validate the state reader's bounded sensor-binding description.
+-- Summary: Validate the state reader's bounded sensor-binding description.
 local function validateBindings(bindings)
     if type(bindings)~="table" then return nil end
     local result={velocity_sensors={}}
@@ -157,7 +158,7 @@ local function validateBindings(bindings)
     for _,v in ipairs(bindings.velocity_sensors) do if not name(v) then return nil end;result.velocity_sensors[#result.velocity_sensors+1]=v end
     return result
 end
--- @ama-summary: Validate a state frame, preserve source ages and compose accepted vessel data.
+-- Summary: Validate a state frame, preserve source ages and compose accepted vessel data.
 function Wire:accept(io,side,channel,packet,now)
     local entry=io.computers and io.computers.state
     if entry and (entry.id~=self.id or entry.label~=self.label) then return false,"STATE ASSIGNMENT CHANGED; RESTART CORE" end
@@ -192,7 +193,7 @@ function Wire:accept(io,side,channel,packet,now)
         local r=primary[key]
         local previous=(io.primaryReadings or {})[key]
         if type(r)=="table" and ageOK(r.at,now) and (not previous or not finite(previous.at) or r.at>=previous.at) then
-            Sources.acceptPrimary(io,key,r.value,r.at)
+            Sources.acceptPrimary(io,key,r.value,r.at,"reader")
         end
     end
     local fallback=type(data.fallback)=="table" and data.fallback or {}
@@ -248,7 +249,7 @@ function Wire:accept(io,side,channel,packet,now)
     Sources.compose(io,now)
     return true
 end
--- @ama-summary: Validate and apply a cockpit frame from the assigned state reader.
+-- Summary: Validate and apply a cockpit frame from the assigned state reader.
 function Wire:acceptInput(io,side,channel,packet,now)
     local entry=io.computers and io.computers.state
     if not entry or entry.id~=self.id or entry.label~=self.label then return false,"COCKPIT STATE ASSIGNMENT INVALID" end
@@ -270,7 +271,7 @@ function Wire:acceptInput(io,side,channel,packet,now)
     self.acceptedInputFrames=(self.acceptedInputFrames or 0)+1
     return true
 end
--- @ama-summary: Report state-link freshness and reader availability from cached observations.
+-- Summary: Report state-link freshness and reader availability from cached observations.
 function Wire:probe(io,now)
     now=now or io:nowSeconds()
     local function age(at) return finite(at) and now-at or nil end
@@ -295,10 +296,10 @@ function Wire:probe(io,now)
         receivedFrames=self.receivedFrames or 0,acceptedFrames=self.acceptedFrames or 0,
         rejectedFrames=self.rejectedFrames or 0,lastReject=self.lastReject}
 end
--- @ama-summary: Build the configuration and chamber context supplied to the state reader.
+-- Summary: Build the configuration and chamber context supplied to the state reader.
 function Wire:context(io)
     local nodes={}
-    for _,q in ipairs({"FL","FR","RL","RR"}) do
+    for _,q in ipairs({"FL","FR","BL","BR"}) do
         local n=io.nodes[q] or {};nodes[q]={altitude=n.altitude,online=io:nodeFresh(q),lastSeen=n.lastSeen}
     end
     local cfg=copy(io.config)
@@ -308,10 +309,10 @@ function Wire:context(io)
     return {protocol=Wire.PROTOCOL,kind="state_context",sender=self.coreID,target=self.id,
         session=self.session,config=cfg,configTag=string.format("%04X%04X",b,a),nodes=copy(nodes),pressureY=io.statePressureRequest or io.stateTargetAltitude}
 end
--- @ama-summary: Receive state frames and periodically publish core sensor configuration.
+-- Summary: Receive state frames and periodically publish core sensor configuration.
 function Wire:run(io)
     local api=io.os or os
-    -- @ama-summary: Receive and validate cockpit frames on the wired state channel.
+    -- Summary: Receive and validate cockpit frames on the wired state channel.
     local function receiveInputs()
         while true do
             local event,side,channel,reply,packet=api.pullEventRaw()
@@ -325,7 +326,7 @@ function Wire:run(io)
             end
         end
     end
-    -- @ama-summary: Receive a packet matching the current protocol and peer context.
+    -- Summary: Receive a packet matching the current protocol and peer context.
     local function receive()
         while true do
             local event,side,channel,reply,packet=api.pullEventRaw()
@@ -337,7 +338,7 @@ function Wire:run(io)
             elseif event=="peripheral" or event=="peripheral_detach" then self.modem=nil end
         end
     end
-    -- @ama-summary: Send the current correlated packet to its configured peer.
+    -- Summary: Send the current correlated packet to its configured peer.
     local function send()
         local nextContext=0
         while true do

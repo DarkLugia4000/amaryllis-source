@@ -1,10 +1,10 @@
--- @ama-section: Package cache | Verified source-object lookup by fingerprint.
+-- Section: Package cache | Verified source-object lookup by fingerprint.
 -- Installer-local verified payloads. No fleet identity, receipts or flight state.
 local Cache={}
 Cache.__index=Cache
 local function finite(n) return type(n)=="number" and n==n and n~=math.huge and n~=-math.huge end
--- @ama-section: Package cache | Verified source-object lookup by fingerprint.
--- @ama-summary: Build a deterministic identity string from the configured source inventory.
+-- Section: Package cache | Verified source-object lookup by fingerprint.
+-- Summary: Build a deterministic identity string from the configured source inventory.
 local function fingerprint(fs,paths)
     if type(fs.attributes)~="function" then return nil end
     local parts={}
@@ -26,7 +26,7 @@ function Cache:drop(key)
     local e=self.entries[key]
     if e then self.bytes=self.bytes-e.bundle.totalBytes;self.count=self.count-1;self.entries[key]=nil end
 end
--- @ama-summary: Resolve a verified installer object by its content fingerprint.
+-- Summary: Resolve a verified installer object by its content fingerprint.
 function Cache:get(key,paths,loader,force)
     self.serial=self.serial+1
     local now=self.now()

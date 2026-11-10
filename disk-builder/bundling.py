@@ -40,7 +40,7 @@ def quote(data):
     return bytes(encoded)
 
 
-# Decode the supported legacy Lua string escapes to exact source bytes.
+# Decode the supported Lua string escapes to exact source bytes.
 def unquote(data):
     if data[:1] != b'"' or data[-1:] != b'"':
         raise ValueError("Invalid bundled source string")
@@ -219,18 +219,6 @@ end
     return text.replace(hook, addition + hook).encode()
 
 
-# Recover the original package server from its supported bundle overlay.
-def server_source(data):
-    text = data.decode()
-    start = text.find("-- Bundled package destinations v1\n")
-    if start < 0:
-        return data
-    end = text.find('M.PROTOCOL = "amaryllis.install.v1"', start)
-    if end < 0:
-        raise ValueError("Damaged bundled package server")
-    return (text[:start] + text[end:]).encode()
-
-
 def encoded(value):
     return (json.dumps(value, sort_keys=True, indent=2, ensure_ascii=True) + "\n").encode()
 
@@ -255,60 +243,6 @@ def package_recovery(index, role):
     return found[role], configs[role]
 
 
-def recover_library(catalog, folders, loader, read_role, legacy=None):
-    """Recover exact catalog objects without executing installed Lua.
-
-    read_role validates registration and receipt before returning a bundle.
-    Legacy metadata holds original JSON defaults/manifests by content hash.
-    """
-    import zlib
-    entries = {e["path"]: e for e in catalog["files"]}
-    result = {}
-
-    def add(path, data):
-        e = entries.get(path, {})
-        if (digest(data) != e.get("object") or len(data) != e.get("bytes") or
-                f"{zlib.adler32(data):08X}" != e.get("adler32")):
-            raise ValueError("Installed package does not match core's catalog: " + path)
-        result[path] = data
-
-    for role, folder in folders.items():
-        prefix = "/packages/" + folder + "/"
-        data = read_role(role, catalog["roles"][role], [entries[prefix + p] for p in ("main.lua", "config.json")] +
-                         [entries["/packages/common/console.lua"]])
-        add(prefix + "main.lua", data)
-        decoded = unpack(data, loader)
-        if decoded is None or decoded[0].get("role") != "auxiliary":
-            raise ValueError("Installed package is not a supported auxiliary bundle: " + role)
-        index, files = decoded
-        recovered = package_recovery(index, role)
-        if recovered is not None:
-            original, config = recovered
-            manifest = dict(original, files=PATHS[:], version=original.get("version", -1) + 1,
-                            sourceManifest=original)
-            add(prefix + "manifest.json", encoded(manifest))
-            add(prefix + "config.json", config)
-        else:
-            if callable(legacy):legacy = legacy()
-            for name in ("manifest.json", "config.json"):
-                path = prefix + name
-                raw = (legacy or {}).get(entries[path]["object"])
-                if raw is None:
-                    raise ValueError("Older bundle lacks original package defaults for " + role +
-                                     "; automatic media discovery or a matching library is needed")
-                add(path, base64.b64decode(raw, validate=True))
-        manifest = json.loads(result[prefix + "manifest.json"])
-        if ({k: manifest.get(k) for k in ("packageId", "version")} != catalog["roles"][role] or
-                manifest.get("role") != role or manifest.get("files") != PATHS or
-                set(files) != {p for p in manifest.get("sourceManifest", {}).get("files", []) if p.endswith(".lua")}):
-            raise ValueError("Recovered package identity or module inventory mismatch: " + role)
-    add("/packages/common/console.lua", alias("/avionics/main.lua", "/avionics/common/console.lua"))
-    if set(result) != set(entries):
-        raise ValueError("Core catalog has unsupported recovery destinations")
-    return result
-
-
-# Expand bundled role programs and reconstruct their editable package library.
 def library_source(mapping, folders, loader):
     result = dict(mapping)
     for role, folder in folders.items():

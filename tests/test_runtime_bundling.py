@@ -1,12 +1,10 @@
-"""Bundle loader, installed-file boundaries, source recovery and export tests.
+"""Bundle loader, installed-file boundaries, library expansion and export tests.
 
 All writes are isolated workspace fixtures. No game commands or live-save writes.
 """
-import hashlib
 import importlib.util
 import json
 from pathlib import Path
-import sys
 import tempfile
 import unittest
 import zlib
@@ -20,8 +18,7 @@ b = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(b)
 bundle = b.bundling
 LOADER = (HOME / "assets/runtime-loader.lua").read_bytes()
-from project import fixture
-SOURCE = fixture("legacy")
+SOURCE = ROOT
 
 
 def table(lua, value):
@@ -390,7 +387,7 @@ end''')
         self.assertIn("windows-update/Update Amaryllis.cmd", (self.export / "README.md").read_text())
 
     def test_library_expansion_preserves_modules_and_versions(self):
-        original = b.collect(SOURCE)
+        original = b.collect_project(SOURCE)
         expanded = bundle.library_source(self.objects("library"), b.FOLDERS, LOADER)
         for role, folder in b.FOLDERS.items():
             prefix = "/packages/" + folder + "/"
@@ -399,26 +396,6 @@ end''')
             for dest in original_manifest["files"]:
                 origin = {"/avionics/common/console.lua": "/packages/common/console.lua", "/avionics/diagnostics.lua": "/packages/common/diagnostics.lua"}.get(dest, prefix + dest.rsplit("/", 1)[-1])
                 self.assertEqual(expanded[origin], original["library"][origin], origin)
-
-    def test_installed_bundled_core_exports_again(self):
-        fixture = self.work / "rebuild-save/computercraft/computer/501"
-        fixture.mkdir(parents=True)
-        for path, data in self.objects("core").items():
-            dest = fixture / path.lstrip("/"); dest.parent.mkdir(parents=True, exist_ok=True); dest.write_bytes(data)
-        for e in self.manifest.get("calibration", {}).get("files", []):
-            dest = fixture / e["path"].lstrip("/"); dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes((self.export / "media/objects" / e["object"]).read_bytes())
-        roles = {r: {"id": i, "label": v["label"]} for i, (r, v) in enumerate(self.manifest["roles"].items(), 600)}
-        roles["core"]["id"] = 501
-        (fixture / "fleet.json").write_bytes(b.encode({"schemaVersion": 1, "computers": roles}))
-        config = json.loads((fixture / "avionics/config.json").read_bytes());config["computer_id"] = 501
-        (fixture / "avionics/config.json").write_bytes(b.encode(config))
-        second, report = b.build(fixture, self.work, library=self.export / "media")
-        second_manifest = json.loads((second / "media/release.json").read_bytes())
-        self.assertEqual(self.manifest["library"], second_manifest["library"])
-        self.assertEqual(self.manifest["core"], second_manifest["core"])
-        self.assertEqual(self.manifest["state"], second_manifest["state"])
-        self.assertEqual(report["packageVersions"], self.report["packageVersions"])
 
 
 if __name__ == "__main__":

@@ -1,10 +1,9 @@
--- @ama-section: Role console | Application supervision, registry health and local tools.
+-- Section: Role console | Application supervision, registry health and local tools.
 -- Shared Amaryllis shell, status/logs view, installer supervisor, and role health.
 local Console = {}
 
 local APP_PATH = "/avionics/main.lua"
 local DIAGNOSTICS_PATH = "/avionics/diagnostics.lua"
-local SETTINGS_PATH = "/avionics/data/settings.json"
 local PROTOCOL = "amaryllis.v1"
 local INSTALL_PROTOCOL = "amaryllis.install.v1"
 local safeTokenPattern = "^[%w_%.%-:]+$"
@@ -42,8 +41,8 @@ local function clockLabel(seconds)
         math.floor(seconds / 60) % 60, seconds % 60)
 end
 
--- @ama-section: Role console | Application supervision, registry health and local tools.
--- @ama-summary: Format the current clock value for status and log rows.
+-- Section: Role console | Application supervision, registry health and local tools.
+-- Summary: Format the current clock value for status and log rows.
 local function currentTimeLabel(at)
     if os and type(os.date) == "function" then
         local ok, label = pcall(os.date, "%H:%M:%S")
@@ -62,7 +61,7 @@ local function currentTimeLabel(at)
     return clockLabel(at)
 end
 
--- @ama-summary: Read and decode the selected JSON record.
+-- Summary: Read and decode the selected JSON record.
 local function readJson(path)
     if not fs or not textutils or type(textutils.unserializeJSON) ~= "function" then
         return nil, "filesystem or JSON support is unavailable"
@@ -77,7 +76,7 @@ local function readJson(path)
     return value
 end
 
--- @ama-summary: Validate and apply a registry announcement from the installed core.
+-- Summary: Validate and apply a registry announcement from the installed core.
 function Console.acceptRegistry(sender, message, protocol, role, localID, trustedCoreID)
     trustedCoreID = trustedCoreID or Console.trustedCoreID()
     if not isInteger(trustedCoreID) or sender ~= trustedCoreID or protocol ~= PROTOCOL or type(message) ~= "table"
@@ -88,7 +87,7 @@ function Console.acceptRegistry(sender, message, protocol, role, localID, truste
     local previous = os.__amaryllisFleetRegistry
     local retired = os.__amaryllisRetiredCoreSessions or {}
     if type(retired) ~= "table" or retired[message.session] then return false end
-    -- @ama-summary: Retire cached state associated with the previous core identity.
+    -- Summary: Retire cached state associated with the previous core identity.
     local function clearPreviousIdentity()
         if type(previous) ~= "table" or previous.coreID ~= trustedCoreID then return end
         if validToken(previous.session) and previous.session ~= message.session then
@@ -146,6 +145,8 @@ function Console.acceptRegistry(sender, message, protocol, role, localID, truste
         computers = computers, receivedAt = os.clock() }
     os.__amaryllisIdentity = { role = resolvedRole, computerID = localID, label = entry.label,
         coreID = trustedCoreID }
+    os.__amaryllisCoreLink = {coreID=trustedCoreID,session=message.session,
+        receivedAt=os.clock(),timeout=10,transport="wireless"}
     if type(previous) == "table" and (previous.session ~= message.session
         or type(previous.computers) ~= "table" or type(previous.computers[resolvedRole]) ~= "table"
         or previous.computers[resolvedRole].id ~= entry.id or previous.computers[resolvedRole].label ~= entry.label) then
@@ -154,7 +155,7 @@ function Console.acceptRegistry(sender, message, protocol, role, localID, truste
     return true
 end
 
--- @ama-summary: Resolve the installed trusted core computer ID.
+-- Summary: Resolve the installed trusted core computer ID.
 function Console.trustedCoreID()
     local localID = os and type(os.getComputerID) == "function" and os.getComputerID() or nil
     local fleetFile = readJson("/fleet.json")
@@ -177,7 +178,7 @@ function Console.trustedCoreID()
     return nil
 end
 
--- @ama-summary: Identify whether this console belongs to the registered core role.
+-- Summary: Identify whether this console belongs to the registered core role.
 function Console.isCore()
     local localID = os and type(os.getComputerID) == "function" and os.getComputerID() or nil
     local fleetFile = readJson("/fleet.json")
@@ -194,8 +195,24 @@ local function installedConfig()
     return config
 end
 
--- @ama-summary: Format the current role's highest-priority reported issue.
+-- Summary: Report core reachability from validated incoming traffic on this computer.
+function Console.connectionState(now, role)
+    if role=="core" or (role==nil and Console.isCore()) then return nil end
+    local link=os.__amaryllisCoreLink
+    local registry=os.__amaryllisFleetRegistry
+    local at=type(link)=="table" and link.receivedAt or
+        (type(registry)=="table" and registry.receivedAt)
+    local timeout=type(link)=="table" and link.timeout or 10
+    now=now or os.clock()
+    local reachable=type(at)=="number" and at==at and type(timeout)=="number" and
+        timeout>0 and now>=at and now-at<=timeout
+    return reachable and "CONNECTED" or "CORE UNREACHABLE"
+end
+os.__amaryllisCoreConnectionState=Console.connectionState
+
+-- Summary: Format the current role's highest-priority reported issue.
 local function faultSummary(runtime, capture)
+    if Console.connectionState()=="CORE UNREACHABLE" then return "CORE UNREACHABLE" end
     if type(runtime) == "table" then
         if type(runtime.faultSummary) == "string" and runtime.faultSummary ~= "" then
             return safeText(runtime.faultSummary, 160)
@@ -213,7 +230,7 @@ local function faultSummary(runtime, capture)
     return ""
 end
 
--- @ama-summary: Build the current program, hardware and issue status for this role.
+-- Summary: Build the current program, hardware and issue status for this role.
 function Console.roleStatus(install, capture, runtime, sequence)
     if type(install) ~= "table" or type(capture) ~= "table" then return nil end
     local localID = os.getComputerID()
@@ -237,10 +254,12 @@ function Console.roleStatus(install, capture, runtime, sequence)
         seq = sequence,
         running = running,
         hardwareAvailable = hardwareAvailable,
+        networkState = Console.connectionState(os.clock(),role),
         faultSummary = faultSummary(runtime, capture),
     }
 end
 
+-- Summary: Request fleet assignments from the selected core and boot session.
 local function requestRegistry(coreID, boot)
     if not rednet or type(rednet.send) ~= "function" then return false end
     return pcall(rednet.send, coreID, {
@@ -248,7 +267,7 @@ local function requestRegistry(coreID, boot)
     }, PROTOCOL)
 end
 
--- @ama-summary: Format the selected console page from cached runtime state.
+-- Summary: Format the selected console page from cached runtime state.
 function Console.rows(page, capture, runtime, installer, now)
     local rows = {}
     local function row(label, value) rows[#rows + 1] = label .. ": " .. safeText(value, 180) end
@@ -280,7 +299,7 @@ function Console.rows(page, capture, runtime, installer, now)
     return rows
 end
 
--- @ama-summary: Wrap bounded log records into the available terminal width.
+-- Summary: Wrap bounded log records into the available terminal width.
 local function wrapLogRows(rows, width)
     width = math.max(1, math.floor(tonumber(width) or 1))
     local wrapped = {}
@@ -297,7 +316,7 @@ local function wrapLogRows(rows, width)
     return wrapped
 end
 
--- @ama-summary: Refresh the role console using its cached runtime status.
+-- Summary: Refresh the role console using its cached runtime status.
 function Console.status(initialPage)
     if multishell and multishell.setTitle and multishell.getCurrent then
         pcall(multishell.setTitle, multishell.getCurrent(), "status/logs")
@@ -305,7 +324,7 @@ function Console.status(initialPage)
     local page, scroll = initialPage == "LOGS" and "LOGS" or "STATUS", 0
     local previousFrame, previousWidth, previousHeight
     local maxScroll = 0
-    -- @ama-summary: Render the current view into its configured terminal or monitor.
+    -- Summary: Render the current view into its configured terminal or monitor.
     local function draw(force)
         local width, height = term.getSize()
         width, height = math.max(1, tonumber(width) or 1), math.max(1, tonumber(height) or 1)
@@ -401,7 +420,7 @@ local function readInstallConfig()
     return readJson("/config.json")
 end
 
--- @ama-summary: Load a role program with the current CraftOS environment and arguments.
+-- Summary: Load a role program with the current CraftOS environment and arguments.
 local function loadProgram(path)
     local programEnv = _ENV
     if type(programEnv) ~= "table" and type(getfenv) == "function" then
@@ -414,7 +433,7 @@ local function loadProgram(path)
     return chunk
 end
 
--- @ama-summary: Start the installed package receiver or core package-service task.
+-- Summary: Start the installed package receiver or core package-service task.
 local function runInstaller()
     local path = Console.isCore() and "/installer/server.lua" or "/installer.lua"
     local chunk, issue = loadProgram(path)
@@ -432,7 +451,7 @@ local function runInstaller()
         reportError("Amaryllis bootstrap config is unavailable: " .. safeText(issue), "installer-config:" .. safeText(issue))
         return
     end
-    -- @ama-summary: Run a component with logged completion and paced restart.
+    -- Summary: Run a component with logged completion and paced restart.
     local function supervise()
         while true do
             local ok, result, detail = pcall(installer.run, config)
@@ -459,7 +478,7 @@ local function diagnosticsFileExists()
     return ok and exists == true
 end
 
--- @ama-summary: Start the installed diagnostic client with the current role identity.
+-- Summary: Start the installed diagnostic client with the current role identity.
 local function runDiagnostics()
     if not diagnosticsFileExists() then
         print("Amaryllis diagnostic client is not installed on this computer.")
@@ -478,7 +497,7 @@ local function runDiagnostics()
     return true, result
 end
 
--- @ama-summary: Append bounded terminal output to the role's console history.
+-- Summary: Append bounded terminal output to the role's console history.
 local function recordConsole(capture, message, key)
     if type(capture) ~= "table" then return false end
     if type(capture.console) ~= "table" then capture.console = {} end
@@ -501,7 +520,7 @@ local function recordConsole(capture, message, key)
     return true
 end
 
--- @ama-summary: Wrap terminal output methods to record the role's emitted text.
+-- Summary: Wrap terminal output methods to record the role's emitted text.
 local function captureOutput(capture)
     local originalPrint, originalPrintError = print, printError
     local previousLogger = os.__amaryllisLog
@@ -515,7 +534,7 @@ local function captureOutput(capture)
         if type(current) == "table" then return current end
         return capture
     end
-    -- @ama-summary: Append a bounded record to the current event collection.
+    -- Summary: Append a bounded record to the current event collection.
     local function record(...)
         local pieces = {}
         for index = 1, select("#", ...) do
@@ -524,7 +543,7 @@ local function captureOutput(capture)
         end
         recordConsole(activeCapture(), table.concat(pieces, " "))
     end
-    -- @ama-summary: Append a bounded component exception to console history.
+    -- Summary: Append a bounded component exception to console history.
     local function recordError(...)
         local pieces = {}
         for index = 1, select("#", ...) do
@@ -570,7 +589,7 @@ ensureDiagnosticsCapture = function()
     return capture
 end
 
--- @ama-summary: Publish a component error to the current console issue scope.
+-- Summary: Publish a component error to the current console issue scope.
 reportError = function(message, key)
     local logger = os and os.__amaryllisLog
     if type(logger) == "function" then
@@ -581,7 +600,7 @@ reportError = function(message, key)
     return false
 end
 
--- @ama-summary: Read cached installer progress and report its state transitions.
+-- Summary: Read cached installer progress and report its state transitions.
 observeInstallerStatus = function(capture)
     if type(capture) ~= "table" then return end
     local path = Console.isCore() and "/installer/install_status.json" or "/installer/status.json"
@@ -611,7 +630,7 @@ local function isNeutralRuntimeReason(reason)
         == "NEW CORE SESSION"
 end
 
--- @ama-summary: Collect active faults from the current runtime components.
+-- Summary: Collect active faults from the current runtime components.
 local function collectRuntimeFaults(runtime)
     local found = {}
     local function add(source, reason)
@@ -621,7 +640,7 @@ local function collectRuntimeFaults(runtime)
         local key = "runtime-fault:" .. source .. ":" .. reason
         found[key] = { source = source, reason = reason }
     end
-    -- @ama-summary: Append the supplied cached status fields to the current diagnostic view.
+    -- Summary: Append the supplied cached status fields to the current diagnostic view.
     local function addValues(source, values)
         if type(values) == "string" or type(values) == "number" then
             add(source, values)
@@ -633,7 +652,7 @@ local function collectRuntimeFaults(runtime)
             end
         end
     end
-    -- @ama-summary: Add a bounded status/log record to the current collection.
+    -- Summary: Add a bounded status/log record to the current collection.
     local function addRecord(source, record)
         if type(record) ~= "table" then return end
         local before = 0
@@ -676,8 +695,11 @@ local function collectRuntimeFaults(runtime)
     return found
 end
 
--- @ama-summary: Record changed runtime issues and clear recovered issue scopes.
+-- Summary: Record changed runtime issues and clear recovered issue scopes.
 local function observeRuntimeFaults(runtime, capture, logger)
+    -- Preserve component fault history while core communication is unavailable.
+    -- The connection transition is recorded once by the registry supervisor.
+    if Console.connectionState()=="CORE UNREACHABLE" then return end
     local current = collectRuntimeFaults(runtime)
     local previous = type(capture.runtimeFaults) == "table" and capture.runtimeFaults or {}
     local keys = {}
@@ -713,7 +735,62 @@ Console._test = {
     observeRuntimeFaults = observeRuntimeFaults,
 }
 
--- @ama-summary: Verify the committed installation receipt for this role and computer.
+-- Summary: Refresh the stored release version and checksum from the committed receipt after a live update replaced the program.
+local function refreshLiveUpdateStatus(install, status, localID)
+    if type(status) ~= "table" or status.hasInstalled ~= true or status.recoveryRequired == true
+        or status.state == "committing" or status.state == "recovery_required" then return status end
+    -- Identity fields must agree exactly; only the release fields may lag behind the receipt.
+    if status.installedRole ~= install.role or status.installedPackageId ~= install.packageId
+        or status.installedLabel ~= install.label or status.installedComputerID ~= localID
+        or status.installedCoreID ~= install.coreID or tostring(status.installedInstallID) ~= tostring(install.installID)
+        or status.installedClientSession ~= install.clientSession or status.installedServerSession ~= install.serverSession
+        or status.installedCoreSession ~= install.coreSession then return status end
+    if status.installedVersion == install.version and status.installedManifestChecksum == install.manifestChecksum then return status end
+    local refreshed = {}
+    for key, value in pairs(status) do refreshed[key] = value end
+    refreshed.installedVersion = install.version
+    refreshed.installedManifestChecksum = install.manifestChecksum
+    refreshed.version = install.version
+    local okEncode, text = pcall(textutils.serializeJSON, refreshed)
+    if not okEncode or type(text) ~= "string" then return status end
+    local okWrite = pcall(function()
+        local handle = assert(fs.open("/installer/status.json.tmp", "w"))
+        handle.write(text); handle.close()
+        if fs.exists("/installer/status.json") then fs.delete("/installer/status.json") end
+        fs.move("/installer/status.json.tmp", "/installer/status.json")
+    end)
+    if not okWrite then return status end
+    if type(os.__amaryllisLog) == "function" then
+        pcall(os.__amaryllisLog, "Installer status refreshed from receipt after a live update: version "
+            .. tostring(install.version) .. " checksum " .. tostring(install.manifestChecksum), "installer")
+    end
+    return refreshed
+end
+
+-- Summary: Reboot a peripheral computer that stays stuck on a receipt or status mismatch, at most twice per hour.
+local function rebootForStatusMismatch(reason)
+    if type(reason) ~= "string" or not (reason:find("not committed", 1, true) or reason:find("does not match", 1, true)) then return false end
+    local state = readJson("/installer/auto-reboot.json") or {}
+    local now = os.epoch and os.epoch("utc") or 0
+    local count = tonumber(state.count) or 0
+    if now - (tonumber(state.at) or 0) > 3600000 then count = 0 end
+    if count >= 2 then return false end
+    local okEncode, text = pcall(textutils.serializeJSON, { count = count + 1, at = now, reason = reason })
+    if not okEncode or type(text) ~= "string" then return false end
+    local okWrite = pcall(function()
+        local handle = assert(fs.open("/installer/auto-reboot.json", "w"))
+        handle.write(text); handle.close()
+    end)
+    if not okWrite then return false end
+    if type(os.__amaryllisLog) == "function" then
+        pcall(os.__amaryllisLog, "Automatic reboot " .. (count + 1) .. " of 2: " .. reason, "installer")
+    end
+    os.sleep(0.2)
+    os.reboot()
+    return true
+end
+
+-- Summary: Verify the committed installation receipt for this role and computer.
 local function receiptReady(config)
     if Console.isCore() then return fs.exists(APP_PATH), nil end
     local install = type(config) == "table" and config.install or nil
@@ -735,7 +812,7 @@ local function receiptReady(config)
     -- A committed local package can discover and sample its own peripherals
     -- before core is online. Live registry/session checks remain at the radio
     -- command and role-status boundaries, not at local program startup.
-    local status = readJson("/installer/status.json")
+    local status = refreshLiveUpdateStatus(install, readJson("/installer/status.json"), localID)
     if type(status) ~= "table" or status.hasInstalled ~= true or status.recoveryRequired == true
         or status.state == "committing" or status.state == "recovery_required"
         or status.installedRole ~= install.role
@@ -758,7 +835,7 @@ end
 
 Console._test.receiptReady = receiptReady
 
--- @ama-summary: Open the configured modems for role registry and status traffic.
+-- Summary: Open the configured modems for role registry and status traffic.
 local function openNetwork()
     if not peripheral or not rednet or type(peripheral.getNames) ~= "function" then return false end
     local ok, names = pcall(peripheral.getNames)
@@ -779,7 +856,7 @@ local function openNetwork()
 end
 Console._test.openNetwork=openNetwork
 
--- @ama-summary: Start the installed role program after identity and receipt verification.
+-- Summary: Start the installed role program after identity and receipt verification.
 local function roleRuntime()
     if multishell and multishell.setTitle and multishell.getCurrent then
         pcall(multishell.setTitle, multishell.getCurrent(), Console.isCore() and "core monitor" or "runtime")
@@ -794,7 +871,7 @@ local function roleRuntime()
     local coreID = Console.trustedCoreID()
     local sequence = 0
 
-    -- @ama-summary: Receive and publish the role's current fleet registry and health reports.
+    -- Summary: Receive and publish the role's current fleet registry and health reports.
     local function registryPump()
         openNetwork()
         local lastRequest = -math.huge
@@ -814,13 +891,17 @@ local function roleRuntime()
             end
         end
     end
-    -- @ama-summary: Wait for the configured installation and identity prerequisites.
+    -- Summary: Wait for the configured installation and identity prerequisites.
     local function waitReady()
+        local stuckSince
         while true do
             local config = readJson("/avionics/config.json")
             local ready, details = receiptReady(config)
             if ready then capture.waitReason=nil;return config end
             capture.waitReason = details
+            stuckSince = stuckSince or os.clock()
+            if Console.connectionState()=="CORE UNREACHABLE" then stuckSince=os.clock()
+            elseif os.clock() - stuckSince >= 20 then rebootForStatusMismatch(details); stuckSince = os.clock() end
             os.sleep(0.5)
         end
     end
@@ -857,7 +938,7 @@ local function roleRuntime()
         else
             local appRunning, reason = false, nil
             local installKey = currentReceiptKey(config)
-            -- @ama-summary: Run the role's supervised application task.
+            -- Summary: Run the role's supervised application task.
             local function appTask()
                 capture.running = true
                 appRunning = true
@@ -881,12 +962,19 @@ local function roleRuntime()
                 end
                 reason = "app stopped"
             end
-            -- @ama-summary: Publish cached role health and refresh its terminal status.
+            -- Summary: Publish cached role health and refresh its terminal status.
             local function statusTask()
                 local nextStatusAt = 0
+                local previousConnection
                 while true do
                     observeRuntimeFaults(os.__amaryllisRuntime, capture, logRuntime)
                     local now = os.clock()
+                    local connection=Console.connectionState(now,install and install.role)
+                    if type(os.__amaryllisRuntime)=="table" then os.__amaryllisRuntime.networkState=connection end
+                    if connection~=previousConnection then
+                        if connection then logRuntime(connection,"core-connection") end
+                        previousConnection=connection
+                    end
                     if appRunning and not Console.isCore() and now >= nextStatusAt then
                         sequence = sequence + 1
                         local status = Console.roleStatus(install, capture, os.__amaryllisRuntime, sequence)
@@ -896,7 +984,7 @@ local function roleRuntime()
                     os.sleep(0.5)
                 end
             end
-            -- @ama-summary: Handle the current role's program reload request.
+            -- Summary: Handle the current role's program reload request.
             local function reloadTask()
                 while true do
                     local event, first = os.pullEventRaw()
@@ -934,7 +1022,7 @@ local function openTab(arguments, title)
     return tab
 end
 
--- @ama-summary: Find an existing diagnostic task in the terminal host.
+-- Summary: Find an existing diagnostic task in the terminal host.
 local function diagnosticsTabExists()
     if type(multishell) ~= "table" or type(multishell.getCount) ~= "function"
         or type(multishell.getTitle) ~= "function" then return false end
@@ -947,7 +1035,7 @@ local function diagnosticsTabExists()
     return false
 end
 
--- @ama-summary: Start or focus the role's diagnostic task.
+-- Summary: Start or focus the role's diagnostic task.
 local function openDiagnosticsTab()
     if not diagnosticsFileExists() then return false end
     if type(os) == "table" and os.__amaryllisDiagnosticTabLaunched == true then return true end
@@ -964,7 +1052,7 @@ local function openDiagnosticsTab()
     return false
 end
 
--- @ama-summary: Build the available diagnostic pages for the current role.
+-- Summary: Build the available diagnostic pages for the current role.
 function Console.pages(role)
     if type(role)=="string" and role:match("^thrust%-") then return {"OVERVIEW","PROPULSION","HARDWARE","LOGS","INSTALLER","UTILITIES"} end
     if role=="core" then return {"OVERVIEW","FLEET","LIFT","PROPULSION","NAVIGATION","LOGS","INSTALLER","UTILITIES"} end
@@ -975,14 +1063,14 @@ function Console.pages(role)
     return {"OVERVIEW","LIFT","PROPULSION","HARDWARE","LOGS","INSTALLER","UTILITIES"}
 end
 
--- @ama-summary: Format the rows for a selected role diagnostic page.
+-- Summary: Format the rows for a selected role diagnostic page.
 function Console.pageRows(page,role,capture,runtime,installer,now)
     runtime=type(runtime)=="table" and runtime or {}
     local snapshot=type(runtime.snapshot)=="table" and runtime.snapshot or {}
     local components=type(runtime.components)=="table" and runtime.components or {}
     local rows={}
     local function row(label,value) rows[#rows+1]=label..": "..safeText(value==nil and "--" or value,180) end
-    -- @ama-summary: Format the selected computer's cached status and issue details.
+    -- Summary: Format the selected computer's cached status and issue details.
     local function details(value,prefix,depth)
         if type(value)~="table" then row(prefix,value);return end
         local statusFields={ready=true,armed=true,localReady=true,statusReady=true,commandReady=true,
@@ -1004,6 +1092,7 @@ function Console.pageRows(page,role,capture,runtime,installer,now)
     if page=="OVERVIEW" then
         row("Computer",os.getComputerID().." "..safeText(os.getComputerLabel()))
         row("Role",role);row("Program",capture and capture.running and "RUNNING" or "WAITING")
+        if role~="core" then row("Network",Console.connectionState(now,role)) end
         row("Hardware",runtime.hardwareAvailable and "AVAILABLE" or "UNAVAILABLE")
         if role=="core" then
             for _,name in ipairs({"vessel","fallback","assembler","cockpit","assembly"}) do
@@ -1060,7 +1149,7 @@ function Console.pageRows(page,role,capture,runtime,installer,now)
     return rows
 end
 
--- @ama-summary: Render fleet program, hardware and issue status from cached reports.
+-- Summary: Render fleet program, hardware and issue status from cached reports.
 function Console.dashboard()
     local config=installedConfig() or {}
     local role=Console.isCore() and "core" or (config.install or {}).role or config.role or "unassigned"
@@ -1070,7 +1159,7 @@ function Console.dashboard()
     local function choose(nextIndex)
         offsets[page]=scroll;index=(nextIndex-1)%#pages+1;page=pages[index];scroll=offsets[page] or 0;previous={}
     end
-    -- @ama-summary: Render the current view into its configured terminal or monitor.
+    -- Summary: Render the current view into its configured terminal or monitor.
     local function draw(preserveAnchor)
         local width,height=term.getSize();local now=os.clock()
         local capture=os.__amaryllisDiagnostics or {};local runtime=os.__amaryllisRuntime or {}
@@ -1107,7 +1196,7 @@ function Console.dashboard()
         previous=frame
     end
     local timer
-    -- @ama-summary: Run the selected local console utility.
+    -- Summary: Run the selected local console utility.
     local function utility(key)
         local mode=({s="shell",l="lua",d="diagnostics",f="fleet",h="hardware",r="remote-install",o="remote-ops"})[key]
         if not mode or ((mode=="fleet" or mode=="remote-install" or mode=="remote-ops") and role~="core") or (mode=="hardware" and not role:match("^chamber_")) then return end
@@ -1155,7 +1244,7 @@ end
 
 -- BEGIN POCKET ADMIN RECEIVER
 -- Embedded in the common console so package updates keep remote management available.
--- @ama-summary: BEGIN POCKET ADMIN RECEIVER Embedded in the common console so package updates keep remote management available.
+-- Summary: BEGIN POCKET ADMIN RECEIVER Embedded in the common console so package updates keep remote management available.
 function Console.remoteManager()
     local protocol = "amaryllis.admin.v1"
     local cfg = readJson("/amaryllis-admin.json")
@@ -1185,7 +1274,7 @@ function Console.remoteManager()
         for i=1,#s do a=(a+s:byte(i))%65521;b=(b+a)%65521 end
         return string.format("%08x",b*65536+a)
     end
-    -- @ama-summary: Validate whether the current identity has permission for the selected operation.
+    -- Summary: Validate whether the current identity has permission for the selected operation.
     local function allowed(path)
         if type(path)~="string" or #path>180 or path:find("..",1,true) or path:find("//",1,true)
             or path:find("[^%w_/%-.]") then return false end
@@ -1198,7 +1287,7 @@ function Console.remoteManager()
         if Console.isCore() and path:match("^/packages/[%w_/-]+%.json$") then return true end
         return false
     end
-    -- @ama-summary: Build the selected cached runtime status view.
+    -- Summary: Build the selected cached runtime status view.
     local function status()
         local installer=readJson(Console.isCore() and "/installer/install_status.json" or "/installer/status.json") or {}
         local runtime=os.__amaryllisRuntime or {}
@@ -1215,7 +1304,7 @@ function Console.remoteManager()
         end
         return {id=os.getComputerID(),label=os.getComputerLabel(),role=role,installer=installer,pages=pages}
     end
-    -- @ama-summary: List the permitted installed files for the current role.
+    -- Summary: List the permitted installed files for the current role.
     local function files()
         local result={}
         local function scan(path,depth)
@@ -1228,7 +1317,7 @@ function Console.remoteManager()
         if Console.isCore() then scan("/packages",0) end
         table.sort(result);return result
     end
-    -- @ama-summary: Validate the selected operation and dispatch its registered handler.
+    -- Summary: Validate the selected operation and dispatch its registered handler.
     local function execute(p)
         if p.action=="status" then return status() end
         if p.action=="files" then return files() end
@@ -1292,7 +1381,7 @@ end
 
 -- END POCKET ADMIN RECEIVER
 
--- @ama-summary: END POCKET ADMIN RECEIVER
+-- Summary: END POCKET ADMIN RECEIVER
 function Console.remoteService()
     if not Console.isCore() then error("Remote provisioning service is core-only",0) end
     require("avionics.remote_install").serve(function(page)
@@ -1309,12 +1398,12 @@ function Console.remoteService()
     end)
 end
 
--- @ama-summary: Display a bounded text collection with page navigation.
+-- Summary: Display a bounded text collection with page navigation.
 function Console.runPaged(runtimeTask,installerTask,consoleTask)
     local parent=term.current();local width,height=parent.getSize()
     os.__amaryllisPagedConsole=true
     local tasks={}
-    -- @ama-summary: Append one bounded entry to the current view or record collection.
+    -- Summary: Append one bounded entry to the current view or record collection.
     local function add(name,fn,visible)
         local screen=window.create(parent,1,1,width,height,visible)
         tasks[#tasks+1]={name=name,screen=screen,visible=visible,thread=coroutine.create(function()
@@ -1355,7 +1444,7 @@ function Console.runPaged(runtimeTask,installerTask,consoleTask)
     end
 end
 
--- @ama-summary: Start the role console, registry service and supervised application tasks.
+-- Summary: Start the role console, registry service and supervised application tasks.
 function Console.start(arguments)
     arguments = arguments or {}
     ensureDiagnosticsCapture()
@@ -1421,6 +1510,7 @@ function Console.start(arguments)
         os.__amaryllisPagedConsole=true
         local launched=os.__amaryllisCoreWorkerTabs or {}
         os.__amaryllisCoreWorkerTabs=launched
+        -- Summary: Reuse a live service tab or start and register its replacement.
         local function startWorker(mode,title)
             local previous=launched[mode]
             if previous and multishell.getTitle and multishell.getTitle(previous) then return true end

@@ -1,4 +1,5 @@
--- @ama-section: Motion advisories | Measured impact and sustained-obstruction evidence.
+local Mathx = require("avionics.mathx")
+-- Section: Motion advisories | Measured impact and sustained-obstruction evidence.
 -- Advisory motion monitoring. Cached measurements/readbacks only: no actuator,
 -- peripheral, filesystem, route, mode, or flight-authority writes.
 local M={};M.__index=M
@@ -12,7 +13,7 @@ local RULES={
     stationary_speed={.15,.01,1},stationary_acceleration={.05,.001,1},
     stationary_yaw_rate={.1,.01,2},stationary_yaw_acceleration={.1,.01,5},
 }
-local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
+local finite = Mathx.finite
 local function sign(n) return n>0 and 1 or (n<0 and -1 or 0) end
 local function vector(v) return type(v)=="table" and finite(v.x) and finite(v.y) and finite(v.z) end
 local function norm(v) return math.sqrt(v.x*v.x+v.y*v.y+v.z*v.z) end
@@ -24,8 +25,8 @@ local function stamp(v,key)
     end
     return v.at,"LEGACY",true
 end
--- @ama-section: Motion advisories | Measured impact and sustained-obstruction evidence.
--- @ama-summary: Validate motion-advisory settings and initialize measurement history.
+-- Section: Motion advisories | Measured impact and sustained-obstruction evidence.
+-- Summary: Validate motion-advisory settings and initialize measurement history.
 function M.new(options)
     options=options or {};local config=options.config or {}
     local self=setmetatable({config={},valid=true,tracks={},events=0,logger=options.logger},M)
@@ -40,15 +41,18 @@ function M.new(options)
     return self
 end
 function M:settings() local r=copy(self.config);r.enabled=self.enabled;r.valid=self.valid;return r end
--- @ama-summary: Record a changed motion advisory with its measured axis and event time.
+-- Summary: Record a changed motion advisory with its measured axis and event time.
 function M:emit(kind,axis,now,detail)
     self.events=self.events+1
     self.lastEvent={seq=self.events,kind=kind,axis=axis,at=now,detail=detail}
+    -- The autopilot reads the latest impact by its sequence number (AP emergency stop).
+    if kind=="POSSIBLE IMPACT" then self.impact.seq=self.events;self.lastImpactEvent=self.lastEvent end
     local logger=self.logger or (os and os.__amaryllisLog)
     if type(logger)=="function" then
         pcall(logger,"Motion warning "..kind.." ["..axis.."] "..detail,"core.motion-warning")
     end
 end
+-- Summary: Clear obstruction tracking and establish the current measurement gate.
 function M:reset(gate)
     if self.obstruction then self:emit("CLEARED",self.obstruction.axis,self.now,"CHECK RESET: "..gate) end
     self.obstruction=nil;self.tracks={};self.previousVelocity=nil;self.previousHeading=nil
@@ -65,7 +69,7 @@ local function applied(role,drive)
     local value=role.applied and role.applied[drive]
     if rb and rb.valid==true and finite(value) then return value end
 end
--- @ama-summary: Resolve verified applied primary-propeller power for the requested direction.
+-- Summary: Resolve verified applied primary-propeller power for the requested direction.
 function M:primaryPower(thrust,direction,cap)
     local power=1
     for _,side in ipairs({"left","right"}) do
@@ -77,7 +81,7 @@ function M:primaryPower(thrust,direction,cap)
     end
     return power
 end
--- @ama-summary: Resolve verified applied lateral-propeller power for the requested maneuver.
+-- Summary: Resolve verified applied lateral-propeller power for the requested maneuver.
 function M:lateralPower(thrust,cap)
     local count,power=0,0
     for _,q in ipairs({"lb","rb","ls","rs"}) do
@@ -96,7 +100,7 @@ function M:lateralPower(thrust,cap)
     end
     if count>=2 then return power end
 end
--- @ama-summary: Track sustained applied demand with insufficient measured motion on one axis.
+-- Summary: Track sustained applied demand with insufficient measured motion on one axis.
 function M:observe(axis,direction,power,quiet,at,now)
     local track=self.tracks[axis]
     if not direction or direction==0 or not power or not quiet then self.tracks[axis]=nil;return end
@@ -108,7 +112,7 @@ function M:observe(axis,direction,power,quiet,at,now)
         return {axis=axis,since=now-track.elapsed,elapsed=track.elapsed,power=power}
     end
 end
--- @ama-summary: Evaluate fresh motion measurements and update impact/obstruction advisories.
+-- Summary: Evaluate fresh motion measurements and update impact/obstruction advisories.
 function M:update(snapshot,io,now)
     if not finite(now) then return self:snapshot() end
     self.now=now
@@ -230,7 +234,7 @@ function M:update(snapshot,io,now)
     self.obstruction=candidate
     return self:snapshot()
 end
--- @ama-summary: Return the current bounded operation state and available status details.
+-- Summary: Return the current bounded operation state and available status details.
 function M:snapshot()
     local now=self.now or 0;local impact=self.impact and now<self.impact.untilAt and self.impact or nil
     local obstruction=self.obstruction

@@ -1,19 +1,21 @@
--- @ama-section: Sideways guidance | Selected displacement, braking and pilot handover.
+local Mathx = require("avionics.mathx")
+-- Section: Sideways guidance | Selected displacement, braking and pilot handover.
 -- Lateral input and guidance only. Actuator authority remains in Thrust.
 local Lateral={};Lateral.__index=Lateral
-local function finite(x) return type(x)=="number" and x==x and math.abs(x)<math.huge end
-local function clamp(x,a,b) return math.max(a,math.min(b,x)) end
+local finite = Mathx.finite
+local clamp = Mathx.clamp
 local function delta(a,b) return (a-b+180)%360-180 end
 function Lateral.new(config)
- return setmetatable({config=config,mode="MANUAL",state="MANUAL",waitNeutral=true,offset=0,output=0},Lateral)
+ return setmetatable({config=config,mode="MANUAL",state="MANUAL",waitNeutral=false,offset=0,output=0},Lateral)
 end
+-- Summary: Clear lateral demand and guidance history; strafe input acts from the next sample.
 function Lateral:cancel()
- self.mode="MANUAL";self.state="MANUAL";self.offset=0;self.origin=nil;self.pending=false
- self.braking=false;self.output=0;self.integral=0;self.manual=0;self.hold=nil;self.waitNeutral=true
- self.settledAt=nil;self.lastAt=nil;self.turnQuietUntil=nil;self.completedHeading=nil
+ self.mode="MANUAL";self.state="MANUAL";self.offset=0;self.track=nil;self.pending=false
+ self.braking=false;self.output=0;self.integral=0;self.manual=0;self.hold=nil;self.waitNeutral=false
+ self.settledAt=nil;self.lastAt=nil;self.turnQuietUntil=nil
 end
--- @ama-section: Sideways guidance | Selected displacement, braking and pilot handover.
--- @ama-summary: Validate the vessel observations used for sideways position guidance.
+-- Section: Sideways guidance | Selected displacement, braking and pilot handover.
+-- Summary: Validate the vessel observations used for sideways position guidance.
 function Lateral:telemetry(io,now)
  local v=io.vessel or {};local p=v.position;local vel=v.linearVelocity
  if v.valid~=true or v.geometryVerified~=true or v.velocityFrameVerified~=true or
@@ -24,7 +26,7 @@ function Lateral:telemetry(io,now)
  end
  return v
 end
--- @ama-summary: Capture the lateral origin for selected sideways travel.
+-- Summary: Start selected sideways travel at zero offset from the current position.
 function Lateral:select(mode,io,controls,now)
  if mode~="MANUAL" and mode~="SEL" then return false,"INVALID LATERAL MODE" end
  if io.autopilot and io.autopilot.active or io.positionAnchor and io.positionAnchor.active then
@@ -32,17 +34,16 @@ function Lateral:select(mode,io,controls,now)
  end
  if mode=="MANUAL" then self:cancel();return true end
  local v,reason=self:telemetry(io,now);if not v then return false,reason end
- self:cancel();self.mode="SEL";self.state="IDLE";self.origin={x=v.position.x,z=v.position.z};self.uuid=v.uuid
- self.completedHeading=(controls.modes.heading=="SEL" and controls.targets.heading or v.heading)
+ self:cancel();self.mode="SEL";self.state="IDLE";self.track={x=v.position.x,z=v.position.z,travelled=0};self.uuid=v.uuid
  return true
 end
--- @ama-summary: Interpret lateral pilot input into bounded displacement and braking intent.
+-- Summary: Interpret lateral pilot input into bounded displacement and braking intent.
 function Lateral:input(raw,at,dt,blocked)
  if blocked then self:cancel();return end
  local left,right=raw.left_lift>0,raw.right_lift>0
  if not left and not right then self.waitNeutral=false end
  if self.mode=="SEL" and left and right and not self.waitNeutral then
-  self.mode="MANUAL";self.offset=0;self.origin=nil;self.pending=false;self.braking=true
+  self.mode="MANUAL";self.offset=0;self.track=nil;self.pending=false;self.braking=true
   self.state="BRAKING";self.output=0;self.integral=0;self.manual=0;self.waitNeutral=true;self.hold=nil;self.settledAt=nil
   return
  end
@@ -64,7 +65,7 @@ function Lateral:input(raw,at,dt,blocked)
  end
  if change~=0 then self.offset=clamp(self.offset+change,-100,100);self.pending=true;self.settledAt=nil end
 end
--- @ama-summary: Compute sideways demand and braking from the current offset and velocity.
+-- Summary: Compute sideways demand and braking from the current offset and velocity.
 function Lateral:evaluate(io,now,controls,yaw)
  if controls.lateralStopLock or controls.available~=true or io.autopilot and io.autopilot.active or io.positionAnchor and io.positionAnchor.active then
   self:cancel();return 0
@@ -79,26 +80,45 @@ function Lateral:evaluate(io,now,controls,yaw)
  if not finite(heading) then self:cancel();return 0 end
  local angle=math.rad(heading);local nx,nz=math.cos(angle),math.sin(angle)
  local speed=v.linearVelocity.x*nx+v.linearVelocity.z*nz
- local error=0
- if self.origin then error=self.offset-((v.position.x-self.origin.x)*nx+(v.position.z-self.origin.z)*nz) end
- self.remaining=error;self.speed=speed;self.referenceHeading=heading
- if self.mode=="SEL" and self.completedHeading and math.abs(delta(heading,self.completedHeading))>.1 then self.pending=true end
  local dt=self.lastAt and v.at-self.lastAt or 0
  local rate=self.lastHeading and dt>0 and math.abs(delta(v.heading,self.lastHeading))/dt or 0
  if dt>0 or not self.lastAt then self.lastAt=v.at;self.lastHeading=v.heading end
  dt=clamp(dt,0,.5)
+ -- Heading-hold torque can persist at a settled heading. Pause translation
+ -- for pilot turn input, measured rotation or a heading still being acquired.
+ local turning=self.mode=="SEL" and (math.abs(controls.yaw or 0)>.02 or rate>.5 or math.abs(delta(heading,v.heading))>3)
+ -- Sideways travel is summed one sample at a time along the current reference
+ -- axis, so forward flight adds nothing and the offset stays relative to her
+ -- present track after a heading change. Movement during a turn is skipped.
+ local track=self.track
+ if track then
+  if not turning then
+   track.travelled=track.travelled+(v.position.x-track.x)*nx+(v.position.z-track.z)*nz
+  end
+  track.x,track.z=v.position.x,v.position.z
+ end
+ local error=track and self.offset-track.travelled or 0
+ self.remaining=error;self.speed=speed;self.referenceHeading=heading
  if self.mode=="SEL" then
-  local turning=math.abs(yaw or 0)>.02 or math.abs(controls.yaw or 0)>.02 or rate>.5 or math.abs(delta(heading,v.heading))>3
   if turning then self.turnQuietUntil=now+1 end
   if self.turnQuietUntil and now<self.turnQuietUntil then
    self.output=0;self.integral=0;self.settledAt=nil;self.state="TURNING";return 0
   end
-  if not self.pending then self.output=0;self.integral=0;self.state="IDLE";return 0 end
+  if not self.pending then
+   -- Idle keeps no target: a new press measures from her position at that moment.
+   self.offset=0;self.remaining=0;if track then track.travelled=0 end
+   self.output=0;self.integral=0;self.state="IDLE";return 0
+  end
  end
  local settled=math.abs(speed)<=.05 and (self.braking or math.abs(error)<=.2)
  if settled then self.settledAt=self.settledAt or now else self.settledAt=nil end
  if self.settledAt and now-self.settledAt>=1 then
-  self.output=0;self.integral=0;self.pending=false;self.completedHeading=heading
+  self.output=0;self.integral=0;self.pending=false
+  -- A finished strafe keeps nothing: the next press starts a new offset from where she is now.
+  if not self.braking then
+   self.offset=0;self.remaining=0
+   if track then self.track={x=v.position.x,z=v.position.z,travelled=0} end
+  end
   if self.braking then self.braking=false;self.waitNeutral=true;self.state="MANUAL"
   else self.state="IDLE" end
   return 0
@@ -112,6 +132,14 @@ function Lateral:evaluate(io,now,controls,yaw)
  if not self.braking and not settled then integral=clamp(integral+.08*velocityError*dt,-.15,.15) end
  self.integral=integral
  local wanted=clamp(.4*velocityError+integral,-1,1)
+ -- Active braking is thrust against the current motion. Drag stops the vessel quickly
+ -- below the configured speed, so that thrust is withheld and the drives stay idle.
+ -- A selected approach that has passed its target by more than the settle tolerance
+ -- still returns, because that thrust corrects position and does not brake.
+ local brakeMinimum=(self.config.cockpit or {}).lateral_brake_minimum_speed
+ if not finite(brakeMinimum) then brakeMinimum=2 end
+ local passedTarget=not self.braking and error*speed<0 and math.abs(error)>.2
+ if wanted*speed<0 and math.abs(speed)<brakeMinimum and not passedTarget then wanted=0 end
  self.output=clamp(wanted,(self.output or 0)-.5*dt,(self.output or 0)+.5*dt)
  self.state=self.braking and "BRAKING" or (speed*(desired-speed)<0 and "BRAKING" or "MOVING")
  -- Guidance normal follows current/selected heading; actuators follow the bow.

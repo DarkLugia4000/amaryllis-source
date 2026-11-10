@@ -200,5 +200,73 @@
   },
   "schemaVersion": 1,
   "scope": "Portable software and explicitly shipped hover/level defaults; synthetic fleet IDs are generated for tests.",
+  "sharedModules": {
+    "packages/common/chamber-hardware.lua": [
+      "packages/chamber/fl/hardware.lua",
+      "packages/chamber/fr/hardware.lua",
+      "packages/chamber/bl/hardware.lua",
+      "packages/chamber/br/hardware.lua"
+    ],
+    "packages/common/chamber-lift.lua": [
+      "packages/chamber/fl/lift.lua",
+      "packages/chamber/fr/lift.lua",
+      "packages/chamber/bl/lift.lua",
+      "packages/chamber/br/lift.lua"
+    ],
+    "packages/common/chamber-main.lua": [
+      "packages/chamber/fl/main.lua",
+      "packages/chamber/fr/main.lua",
+      "packages/chamber/bl/main.lua",
+      "packages/chamber/br/main.lua"
+    ],
+    "packages/common/chamber-relay.lua": [
+      "packages/chamber/fl/relay.lua",
+      "packages/chamber/fr/relay.lua",
+      "packages/chamber/bl/relay.lua",
+      "packages/chamber/br/relay.lua"
+    ],
+    "packages/common/chamber-thrust.lua": [
+      "packages/chamber/fl/thrust.lua",
+      "packages/chamber/fr/thrust.lua",
+      "packages/chamber/bl/thrust.lua",
+      "packages/chamber/br/thrust.lua"
+    ],
+    "packages/common/chamber_link.lua": [
+      "packages/common/chamber_link.lua",
+      "packages/chamber/fl/chamber_link.lua",
+      "packages/chamber/fr/chamber_link.lua",
+      "packages/chamber/bl/chamber_link.lua",
+      "packages/chamber/br/chamber_link.lua",
+      "packages/thrust/lb/chamber_link.lua",
+      "packages/thrust/rb/chamber_link.lua",
+      "packages/thrust/ls/chamber_link.lua",
+      "packages/thrust/rs/chamber_link.lua"
+    ],
+    "packages/common/heading-main.lua": [
+      "packages/heading/left/main.lua",
+      "packages/heading/main/main.lua",
+      "packages/heading/right/main.lua"
+    ],
+    "packages/common/primary-hardware.lua": [
+      "packages/primary/left/hardware.lua",
+      "packages/primary/right/hardware.lua"
+    ],
+    "packages/common/primary-main.lua": [
+      "packages/primary/left/main.lua",
+      "packages/primary/right/main.lua"
+    ],
+    "packages/common/thrust-controller.lua": [
+      "packages/thrust/lb/thrust.lua",
+      "packages/thrust/rb/thrust.lua",
+      "packages/thrust/ls/thrust.lua",
+      "packages/thrust/rs/thrust.lua"
+    ],
+    "packages/common/thrust-hardware.lua": [
+      "packages/thrust/lb/hardware.lua",
+      "packages/thrust/rb/hardware.lua",
+      "packages/thrust/ls/hardware.lua",
+      "packages/thrust/rs/hardware.lua"
+    ]
+  },
   "softwareVersion": "2.8.0"
 }

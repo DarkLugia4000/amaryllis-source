@@ -1,4 +1,4 @@
--- @ama-section: Feedback primitive | Elapsed-time PID with bounded integration.
+-- Section: Feedback primitive | Elapsed-time PID with bounded integration.
 -- Full PID with derivative on measurement, elapsed seconds and conditional
 -- integration. Derivative on measurement avoids a kick when R/F changes TGT.
 -- Output and integral are bounded; a saturated output cannot accumulate error
@@ -7,11 +7,12 @@ local PID = {}
 function PID.new(gains)
     return setmetatable({g=gains,i=0,d=0}, {__index=PID})
 end
+-- Summary: Clear integral and derivative state and seed the previous measurement.
 function PID:reset(measurement)
     self.i,self.d,self.previous=0,0,measurement
 end
--- @ama-section: Feedback primitive | Elapsed-time PID with bounded integration.
--- @ama-summary: Advance the PID terms using elapsed time, measured derivative and bounded integration.
+-- Section: Feedback primitive | Elapsed-time PID with bounded integration.
+-- Summary: Advance the PID terms using elapsed time, measured derivative and bounded integration.
 function PID:step(target, measurement, dt, minimum, maximum)
     assert(dt > 0 and dt <= 3, "PID sample interval must be in (0,3] seconds")
     local g, error = self.g, target-measurement

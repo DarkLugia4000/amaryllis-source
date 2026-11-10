@@ -9,9 +9,9 @@ local NAMES={core="core",navigator="bridge",["heading-left"]="hdg-l",["heading-r
 local ROLES={core="FLIGHT CONTROL",navigator="BRIDGE NAVIGATOR",state="VESSEL / COCKPIT TELEMETRY",
     ["heading-left"]="LEFT HEADING DISPLAY",["heading-right"]="RIGHT HEADING DISPLAY",["heading-main"]="MAIN HEADING DISPLAY",
     chamber_fl="FL COMBINED CHAMBER",chamber_fr="FR COMBINED CHAMBER",chamber_bl="BL COMBINED CHAMBER",chamber_br="BR COMBINED CHAMBER",
-    primary_l="LEFT PRIMARY TELEMETRY",primary_r="RIGHT PRIMARY TELEMETRY",["thrust-lb"]="REAR-LEFT THRUST",
-    ["thrust-rb"]="REAR-RIGHT THRUST",["thrust-ls"]="LEFT-SIDE THRUST",["thrust-rs"]="RIGHT-SIDE THRUST"}
-local QUADRANTS={chamber_fl="FL",chamber_fr="FR",chamber_bl="RL",chamber_br="RR"}
+    primary_l="LEFT PRIMARY TELEMETRY",primary_r="RIGHT PRIMARY TELEMETRY",["thrust-lb"]="FRONT-LEFT THRUST",
+    ["thrust-rb"]="FRONT-RIGHT THRUST",["thrust-ls"]="REAR-LEFT THRUST",["thrust-rs"]="REAR-RIGHT THRUST"}
+local QUADRANTS={chamber_fl="FL",chamber_fr="FR",chamber_bl="BL",chamber_br="BR"}
 local function finite(n)return type(n)=="number" and n==n and math.abs(n)<math.huge end
 local function clean(v)return tostring(v==nil and "--" or v):gsub("[%c]"," ")end
 local function useful(v)return type(v)=="string" and v~="" and v~="NONE" and v~="none" and v~="--" end
@@ -166,10 +166,10 @@ function Panel.new(console,dependencies)
     return setmetatable({console=console,deps=dependencies or {},page="home",offsets={},anchors={},anchorOffsets={},listPage=1,links={},selected="core",previous={}}, {__index=Panel})
 end
 function Panel:choose(page)
-    self.page=page;self.previous={}
+    self.page=page;self.previous={};self.gasMixConfirm=nil
 end
 function Panel:back()
-    local parent={status="home",computers="home",installation="home",logs="home",tools="home",services="tools",
+    local parent={status="home",computers="home",installation="home",logs="home",tools="home",services="tools",gasMix="tools",
         computer="computers",errors="computer",details="computer",related="computer",installDetails="installation",
         overview="status",lift="status",propulsion="status",navigation="status",fleet="status"}
     self:choose(parent[self.page]or "home")
@@ -199,7 +199,7 @@ function Panel:frame(context,width,height)
         return frame
     end
     local titles={home="HOME",status="STATUS",computers="COMPUTERS",computer="COMPUTER",errors="COMPUTER ERRORS",details="COMPUTER DETAILS",
-        related="RELATED CORE LOGS",installation="INSTALLATION",installDetails="INSTALLATION DETAILS",logs="LOGS",tools="TOOLS",services="BACKGROUND SERVICES",
+        related="RELATED CORE LOGS",installation="INSTALLATION",installDetails="INSTALLATION DETAILS",logs="LOGS",tools="TOOLS",services="BACKGROUND SERVICES",gasMix="FIX GAS MIX LAG",
         overview="OVERVIEW",lift="FLIGHT / LIFT",propulsion="PROPULSION",navigation="NAVIGATION",fleet="FLEET DIAGNOSTICS"}
     if self.page=="home" then put(2,3,"HOME")else button(2,3,8,1,"< Back","back");put(12,3,titles[self.page]or self.page:upper())end
     local computers=Panel.computers(context);local selected,firstIssue,online,issueCount=nil,nil,0,0
@@ -287,10 +287,33 @@ function Panel:frame(context,width,height)
     elseif self.page=="tools" then
         put(2,4,"F2: recovery shell")
         local list={{"Shell","shell"},{"Lua","lua"},{"Diagnostic client","diagnostics"},{"Full core view / edit IDs","fleet"},
-            {"Install / pair remote","remote-install"},{"Remote flight access","remote-ops"},{"Background services","services"}}
-        for i,item in ipairs(list)do
-            local y=3+i*2;if y<=height-2 then button(2,y,width-3,1,item[1].." >",item[2]=="services"and"services"or"tool:"..item[2])end
+            {"Install / pair remote","remote-install"},{"Remote flight access","remote-ops"},{"Fix gas mix lag","gasMix"},
+            {"Background services","services"}}
+        -- Buttons sit on every second row; the list scrolls (arrows, page keys, mouse wheel)
+        -- when they do not all fit, with the visible range shown bottom right.
+        local fit=math.max(1,math.floor((height-2-5)/2)+1);local max=math.max(0,#list-fit)
+        local offset=math.max(0,math.min(max,self.offsets.tools or 0));self.offsets.tools=offset
+        for i=offset+1,math.min(#list,offset+fit)do
+            local item=list[i];local page=item[2]=="services"or item[2]=="gasMix"
+            button(2,5+(i-offset-1)*2,width-3,1,item[1].." >",page and item[2]or"tool:"..item[2])
         end
+        if max>0 then put(width-13,height-1,string.format("%d-%d / %d",offset+1,math.min(#list,offset+fit),#list))end
+        self.maxScroll,self.scrollKey=max,"tools"
+    elseif self.page=="gasMix" then
+        -- Fix gas mix lag: core restarts each chamber's trim probe link (maintenance_probe_cycle).
+        local y=5
+        for _,text in ipairs({"Mixing Hot Air and Steam in balloons can at times create inexplicable lag spikes. If you're experiencing these, this should fix most of it.",
+            "","Turns each chamber's probe link off and on again. Altitude control must be disengaged."})do
+            for _,part in ipairs(text==""and{""}or wrap(text,width-4))do if y<=height-6 then put(2,y,part)end;y=y+1 end
+        end
+        local last=os.__amaryllisCoreAction
+        if type(last)~="table"or last.type~="maintenance_probe_cycle"then last=nil end
+        local engaged=(snap.altitudeControl or {}).enabled==true
+        pair(height-4,"Status",last and not last.accepted and last.reason or(snap.maintenance or {}).status or
+            (engaged and"DISENGAGE ALTITUDE CONTROL FIRST")or"READY")
+        if self.gasMixConfirm then
+            button(2,height-2,half,1,"Confirm","gasmix:confirm");button(right,height-2,half,1,"Cancel","gasmix:cancel")
+        else button(2,height-2,width-3,1,"Fix gas mix lag","gasmix:ask")end
     else
         local rows={}
         if self.page=="errors" then rows=selected.errors;if #rows==0 then rows={"No current errors reported."}end
@@ -329,6 +352,12 @@ function Panel:action(action)
     elseif action=="issue"and self.firstIssue then self.selected=self.firstIssue.role;self:choose("computer")
     elseif action:sub(1,9)=="computer:"then self.selected=action:sub(10);self:choose("computer")
     elseif action:sub(1,5)=="tool:"then if self.deps.tool then self.deps.tool(action:sub(6))end;self.previous={}
+    elseif action=="gasmix:ask"then self.gasMixConfirm=true;self.previous={}
+    elseif action=="gasmix:cancel"then self.gasMixConfirm=nil;self.previous={}
+    elseif action=="gasmix:confirm"then
+        -- Core's runtime runs the request and publishes the result in os.__amaryllisCoreAction.
+        self.gasMixConfirm=nil;self.previous={}
+        os.queueEvent("amaryllis_core_action",{type="maintenance_probe_cycle",scope="ALL"})
     else self:choose(action)end
 end
 function Panel:input(event,a,b,c)

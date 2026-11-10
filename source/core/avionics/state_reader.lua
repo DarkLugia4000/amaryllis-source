@@ -1,4 +1,4 @@
--- @ama-section: State service | Independent sensor workers and wired telemetry publication.
+-- Section: State service | Independent sensor workers and wired telemetry publication.
 -- ama-state samples independent sensor fields and publishes timestamped frames to core.
 local args={...}
 if args[1]=="worker" then
@@ -18,6 +18,7 @@ assert(os.getComputerLabel()==cfg.label,"STATE LABEL DOES NOT MATCH INSTALL")
 local owner=tostring(os.epoch("utc")).."-"..math.random(1,2147483647)
 local boot=tostring(cfg.computerID).."-"..owner
 local reader,session,configTag,side,modem,pressureY
+local lastCoreAt
 local retired,retiredOrder={},{}
 local frameSeq=0
 local inputSeq=0
@@ -37,8 +38,8 @@ os.__amaryllisCockpitTiming=cockpitTiming
 local GETTERS={getLinkSignal=true,getHeight=true,getVerticalSpeed=true,getAirPressure=true,getOrientation=true,
     getHeading=true,getGravity=true,getAngularRates=true,getAxis=true,getVelocity=true,getSubLevelId=true,
     getMass=true,getCenterOfMass=true,isAssembled=true,isWireless=true}
--- @ama-section: State service | Independent sensor workers and wired telemetry publication.
--- @ama-summary: Expose the configured sensor getter methods to the state reader.
+-- Section: State service | Independent sensor workers and wired telemetry publication.
+-- Summary: Expose the configured sensor getter methods to the state reader.
 local function readOnlyPeripheral(api)
     local out={getNames=api.getNames,getType=api.getType,getMethods=api.getMethods,hasType=api.hasType}
     out.wrap=function(name)
@@ -55,7 +56,7 @@ local function pause(seconds)
     while os.__amaryllisStateWorkers==workers and os.clock()<deadline do os.pullEventRaw() end
     pcall(os.cancelTimer,timer)
 end
--- @ama-summary: Construct state's independent sensor caches and sampling contexts.
+-- Summary: Construct state's independent sensor caches and sampling contexts.
 local function newReader(config)
     local r=setmetatable({config=config,os=os,peripheral=readOnlyPeripheral(peripheral),sublevel=sublevel,aero=aero,
         fs=fs,json=textutils,vectorApi=vector,parallel=parallel,now=now,nodes={},
@@ -70,7 +71,7 @@ end
 local INPUT_LABELS={left_press="Left pedal press",left_lift="Left pedal pull",
     right_press="Right pedal press",right_lift="Right pedal pull",prop_forward="Forward throttle",
     prop_reverse="Reverse throttle",ap_disconnect="AP disconnect",altitude_up="Altitude up",altitude_down="Altitude down"}
--- @ama-summary: Format raw and accepted cockpit readings with input ages and configured frequencies.
+-- Summary: Format raw and accepted cockpit readings with input ages and configured frequencies.
 local function cockpitLines(r,at,width,height,selected)
     local function clean(value) return tostring(value or "--"):gsub("[%c]"," ") end
     local function age(stamp)
@@ -89,6 +90,7 @@ local function cockpitLines(r,at,width,height,selected)
         "Read age "..age(latest.at).." | Duration "..
             (type(latest.sampleDurationSeconds)=="number" and string.format("%.2fs",latest.sampleDurationSeconds) or "--"),
         string.format(" %-22s %4s %4s","INPUT","READ","USED")}
+    if not lastCoreAt or os.clock()<lastCoreAt or os.clock()-lastCoreAt>10 then rows[2]="CORE UNREACHABLE" end
     local visible=math.max(1,math.min(#order,height-10))
     local first=math.max(1,math.min(selected-visible+1,#order-visible+1))
     for i=first,first+visible-1 do
@@ -108,7 +110,7 @@ local function cockpitLines(r,at,width,height,selected)
     for i,line in ipairs(rows) do rows[i]=clean(line):sub(1,width) end
     return rows
 end
--- @ama-summary: Refresh state's cockpit diagnostic terminal and handle input selection.
+-- Summary: Refresh state's cockpit diagnostic terminal and handle input selection.
 local function cockpitPanel()
     local selected,nextDraw,timer=1,0,nil
     while os.__amaryllisStateWorkers==workers do
@@ -137,7 +139,7 @@ local function cockpitPanel()
     end
     if timer then pcall(os.cancelTimer,timer) end
 end
--- @ama-summary: Attach state's wired modem to the configured core peer.
+-- Summary: Attach state's wired modem to the configured core peer.
 local function findLink()
     local _,wired=Wire.localModems(peripheral)
     side,modem=nil,nil
@@ -148,7 +150,7 @@ local function findLink()
         if not ok then modem=nil end
     end
 end
--- @ama-summary: Build or validate the runtime configuration context used by the current component.
+-- Summary: Build or validate the runtime configuration context used by the current component.
 local function context(packet)
     if type(packet)~="table" or packet.protocol~=Wire.PROTOCOL or packet.kind~="state_context" or
         packet.sender~=cfg.coreID or packet.target~=cfg.computerID or type(packet.session)~="string" or
@@ -169,14 +171,22 @@ local function context(packet)
     local copied,nodes=pcall(Wire.copy,packet.nodes)
     if copied and type(nodes)=="table" then reader.nodes=nodes end
     if type(packet.pressureY)=="number" and packet.pressureY==packet.pressureY and math.abs(packet.pressureY)<20000000 then pressureY=packet.pressureY end
+    lastCoreAt=os.clock()
+    os.__amaryllisCoreLink={coreID=cfg.coreID,session=session,receivedAt=lastCoreAt,timeout=10,transport="wired"}
     return true
 end
--- @ama-summary: Publish timestamped state frames and accept current core configuration.
+-- Summary: Publish timestamped state frames and accept current core configuration.
 local function network()
     local nextFrame,nextFind=0,0
     findLink()
     while os.__amaryllisStateWorkers==workers do
         local at=now()
+        local reachable=lastCoreAt~=nil and os.clock()>=lastCoreAt and os.clock()-lastCoreAt<=10
+        local networkState=reachable and "CONNECTED" or "CORE UNREACHABLE"
+        local current=os.__amaryllisRuntime or {}
+        current.networkState=networkState
+        current.faultSummary=not reachable and "CORE UNREACHABLE" or frameError
+        os.__amaryllisRuntime=current
         if not modem and at>=nextFind then nextFind=at+2;findLink() end
         if at>=nextFrame then
             nextFrame=at+.2
@@ -200,6 +210,7 @@ local function network()
                     if not ok then modem=nil end
                 end
                 os.__amaryllisRuntime={running=true,publishedAt=os.clock(),sampling=reader.sampling,
+                    networkState=networkState,faultSummary=not reachable and "CORE UNREACHABLE" or nil,
                     snapshot={role="state",coreID=cfg.coreID,frameSeq=frameSeq,frameSentAt=sentAt,linked=modem~=nil and session~=nil,
                         readers=reader.sampling,vessel=reader.vessel,inputs=reader.inputs,assembly=reader.assemblyTrack}}
             end
@@ -211,7 +222,7 @@ local function network()
         elseif event=="peripheral" or event=="peripheral_detach" then modem=nil;scanRequested=true end
     end
 end
--- @ama-summary: Run a named sensor sampling operation with its deadline and repeat interval.
+-- Summary: Run a named sensor sampling operation with its deadline and repeat interval.
 local function job(name,operation,timeout,interval)
     return function()
         while os.__amaryllisStateWorkers==workers do
@@ -229,7 +240,7 @@ local function job(name,operation,timeout,interval)
         end
     end
 end
--- @ama-summary: Read and publish a complete cockpit input sample.
+-- Summary: Read and publish a complete cockpit input sample.
 local function sampleCockpit(r)
     local readStarted=now()
     local sample=r:readInputs(readStarted)

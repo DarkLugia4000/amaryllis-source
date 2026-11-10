@@ -1,4 +1,4 @@
--- @ama-section: Diagnostic entry | Launch the configured read-only connection probe.
+-- Section: Diagnostic entry | Launch the configured read-only connection probe.
 -- One-shot read-only recovery probe. Does not restart or control flight tasks.
 local r=os.__amaryllisRuntime or {}
 local s=r.snapshot or {}

@@ -1,0 +1,66 @@
+# Builds the Amaryllis installer media from this repository's source on every
+# push to main and publishes it on the `release` branch, where the Pastebin
+# loader finds it:
+#   https://raw.githubusercontent.com/<owner>/<repo>/<release commit>/media/
+# Package objects are named by their SHA-256 and are kept across releases, so
+# a core installed from an earlier release can still serve its packages.
+name: Release media
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-media
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build installer media
+        run: python project.py build --output "$RUNNER_TEMP/build"
+
+      - name: Fill in the loader's repository
+        run: |
+          media="$(ls -d "$RUNNER_TEMP"/build/Amaryllis-*/media | head -n 1)"
+          test -f "$media/release.json"
+          sed -i "s|__REPOSITORY__|${GITHUB_REPOSITORY}|" "$media/loader.lua"
+          echo "MEDIA=$media" >> "$GITHUB_ENV"
+          echo "RELEASE_ID=$(python -c "import json,sys;print(json.load(open(sys.argv[1]))['releaseId'])" "$media/release.json")" >> "$GITHUB_ENV"
+
+      - name: Publish to the release branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin release >/dev/null; then
+            git worktree add "$RUNNER_TEMP/release" origin/release
+            git -C "$RUNNER_TEMP/release" checkout -B release
+          else
+            git worktree add --detach "$RUNNER_TEMP/release"
+            git -C "$RUNNER_TEMP/release" checkout --orphan release
+            git -C "$RUNNER_TEMP/release" rm -rf --quiet .
+          fi
+          mkdir -p "$RUNNER_TEMP/release/media/objects"
+          # Objects accumulate; every other media file is replaced.
+          cp "$MEDIA"/objects/* "$RUNNER_TEMP/release/media/objects/"
+          find "$MEDIA" -maxdepth 1 -type f -exec cp {} "$RUNNER_TEMP/release/media/" \;
+          cd "$RUNNER_TEMP/release"
+          git add media
+          if git diff --cached --quiet; then echo "No media changes"; exit 0; fi
+          git commit -m "Release ${RELEASE_ID} from ${GITHUB_SHA::12}"
+          git push origin release

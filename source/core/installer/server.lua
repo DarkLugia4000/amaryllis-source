@@ -1,4 +1,4 @@
--- @ama-section: Package service | Trusted removable-media offers and acknowledged transfer.
+-- Section: Package service | Trusted removable-media offers and acknowledged transfer.
 -- Removable package media v1
 local M = {}
 
@@ -17,29 +17,35 @@ local ROLE_FILES = {
     navigator = {
         root = "/packages/navigation", packageId = "amaryllis.navigator",
         paths = { "/avionics/main.lua", "/avionics/config.json", "/avionics/storage.lua", "/avionics/ui.lua", "/avionics/common/console.lua", "/avionics/diagnostics.lua" },
-        sources = { ["/avionics/main.lua"] = "main.lua", ["/avionics/config.json"] = "config.json", ["/avionics/storage.lua"] = "storage.lua", ["/avionics/ui.lua"] = "ui.lua", ["/avionics/common/console.lua"] = "/packages/common/console.lua", ["/avionics/diagnostics.lua"] = "/packages/common/diagnostics.lua" },
+        sources = { ["/avionics/main.lua"] = "main.lua", ["/avionics/config.json"] = "config.json", ["/avionics/storage.lua"] = "storage.lua",
+            ["/avionics/ui.lua"] = "ui.lua", ["/avionics/common/console.lua"] = "/packages/common/console.lua", ["/avionics/diagnostics.lua"] = "/packages/common/diagnostics.lua" },
     },
     ["heading-main"] = {
         root = "/packages/heading/main", packageId = "amaryllis.heading.main",
         paths = { "/avionics/main.lua", "/avionics/config.json", "/avionics/common/console.lua", "/avionics/diagnostics.lua" },
-        sources = { ["/avionics/main.lua"] = "main.lua", ["/avionics/config.json"] = "config.json", ["/avionics/common/console.lua"] = "/packages/common/console.lua", ["/avionics/diagnostics.lua"] = "/packages/common/diagnostics.lua" },
+        sources = { ["/avionics/main.lua"] = "main.lua", ["/avionics/config.json"] = "config.json",
+            ["/avionics/common/console.lua"] = "/packages/common/console.lua", ["/avionics/diagnostics.lua"] = "/packages/common/diagnostics.lua" },
     },
     ["heading-left"] = {
         root = "/packages/heading/left", packageId = "amaryllis.heading.left",
         paths = { "/avionics/main.lua", "/avionics/config.json", "/avionics/common/console.lua", "/avionics/diagnostics.lua" },
-        sources = { ["/avionics/main.lua"] = "main.lua", ["/avionics/config.json"] = "config.json", ["/avionics/common/console.lua"] = "/packages/common/console.lua", ["/avionics/diagnostics.lua"] = "/packages/common/diagnostics.lua" },
+        sources = { ["/avionics/main.lua"] = "main.lua", ["/avionics/config.json"] = "config.json",
+            ["/avionics/common/console.lua"] = "/packages/common/console.lua", ["/avionics/diagnostics.lua"] = "/packages/common/diagnostics.lua" },
     },
     ["heading-right"] = {
         root = "/packages/heading/right", packageId = "amaryllis.heading.right",
         paths = { "/avionics/main.lua", "/avionics/config.json", "/avionics/common/console.lua", "/avionics/diagnostics.lua" },
-        sources = { ["/avionics/main.lua"] = "main.lua", ["/avionics/config.json"] = "config.json", ["/avionics/common/console.lua"] = "/packages/common/console.lua", ["/avionics/diagnostics.lua"] = "/packages/common/diagnostics.lua" },
+        sources = { ["/avionics/main.lua"] = "main.lua", ["/avionics/config.json"] = "config.json",
+            ["/avionics/common/console.lua"] = "/packages/common/console.lua", ["/avionics/diagnostics.lua"] = "/packages/common/diagnostics.lua" },
     },
 }
 for _, quadrant in ipairs({ "fl", "fr", "bl", "br" }) do
     ROLE_FILES["chamber_" .. quadrant] = {
         root = "/packages/chamber/" .. quadrant, packageId = "amaryllis.chamber." .. quadrant,
         paths = { "/avionics/main.lua", "/avionics/config.json", "/avionics/hardware.lua", "/avionics/lift.lua", "/avionics/thrust.lua", "/avionics/common/console.lua", "/avionics/diagnostics.lua" },
-        sources = { ["/avionics/main.lua"] = "main.lua", ["/avionics/config.json"] = "config.json", ["/avionics/hardware.lua"] = "hardware.lua", ["/avionics/lift.lua"] = "lift.lua", ["/avionics/thrust.lua"] = "thrust.lua", ["/avionics/common/console.lua"] = "/packages/common/console.lua", ["/avionics/diagnostics.lua"] = "/packages/common/diagnostics.lua" },
+        sources = { ["/avionics/main.lua"] = "main.lua", ["/avionics/config.json"] = "config.json", ["/avionics/hardware.lua"] = "hardware.lua",
+            ["/avionics/lift.lua"] = "lift.lua", ["/avionics/thrust.lua"] = "thrust.lua",
+            ["/avionics/common/console.lua"] = "/packages/common/console.lua", ["/avionics/diagnostics.lua"] = "/packages/common/diagnostics.lua" },
     }
 end
 for _, suffix in ipairs({"lb","rb","ls","rs"}) do
@@ -62,7 +68,8 @@ for _, side in ipairs({ "l", "r" }) do
     ROLE_FILES["primary_" .. side] = {
         root = "/packages/primary/" .. (side == "l" and "left" or "right"), packageId = "amaryllis.primary." .. side,
         paths = { "/avionics/main.lua", "/avionics/config.json", "/avionics/hardware.lua", "/avionics/common/console.lua", "/avionics/diagnostics.lua" },
-        sources = { ["/avionics/main.lua"] = "main.lua", ["/avionics/config.json"] = "config.json", ["/avionics/hardware.lua"] = "hardware.lua", ["/avionics/common/console.lua"] = "/packages/common/console.lua", ["/avionics/diagnostics.lua"] = "/packages/common/diagnostics.lua" },
+        sources = { ["/avionics/main.lua"] = "main.lua", ["/avionics/config.json"] = "config.json", ["/avionics/hardware.lua"] = "hardware.lua",
+            ["/avionics/common/console.lua"] = "/packages/common/console.lua", ["/avionics/diagnostics.lua"] = "/packages/common/diagnostics.lua" },
     }
 end
 
@@ -77,8 +84,8 @@ local function isInteger(value)
         and value == math.floor(value)
 end
 
--- @ama-section: Package service | Trusted removable-media offers and acknowledged transfer.
--- @ama-summary: Compute the Adler-32 checksum of the supplied byte string.
+-- Section: Package service | Trusted removable-media offers and acknowledged transfer.
+-- Summary: Compute the Adler-32 checksum of the supplied byte string.
 function M.adler32(data, checkpoint)
     if type(data) ~= "string" then return nil, "data must be a string" end
     local a, b = 1, 0
@@ -93,7 +100,7 @@ function M.adler32(data, checkpoint)
     return string.format("%04X%04X", b, a)
 end
 
--- @ama-summary: Calculate the ordered transfer-manifest checksum.
+-- Summary: Calculate the ordered transfer-manifest checksum.
 function M.manifestChecksum(entries)
     if type(entries) ~= "table" then return nil, "manifest must be a table" end
     local parts = {}
@@ -109,7 +116,7 @@ function M.manifestChecksum(entries)
     return M.adler32(table.concat(parts))
 end
 
--- @ama-summary: Build the bounded destination, size, checksum and chunk manifest.
+-- Summary: Build the bounded destination, size, checksum and chunk manifest.
 function M.buildManifest(files, chunkBytes, checkpoint)
     if type(files) ~= "table" or not isInteger(chunkBytes) or chunkBytes < 1 then
         return nil, nil, "invalid files or chunk size"
@@ -139,7 +146,7 @@ local function validLabel(value)
         and string.match(value, "^[%w%._%-]+$") ~= nil
 end
 
--- @ama-summary: Validate the role's required configuration fields and operating bounds.
+-- Summary: Validate the role's required configuration fields and operating bounds.
 function M.validateConfig(config)
     if type(config) ~= "table" then return nil, "config is not an object" end
     if config.version ~= 2 then return nil, "unsupported installer config version" end
@@ -161,7 +168,7 @@ function M.validateConfig(config)
         or config.heartbeat_timeout_seconds > 60 then return nil, "invalid heartbeat_timeout_seconds" end
     return config
 end
--- @ama-summary: Validate the installer's role-to-computer registry.
+-- Summary: Validate the installer's role-to-computer registry.
 function M.validateFleet(registry, localComputerID)
     if type(registry) ~= "table" or registry.schemaVersion ~= 1 or type(registry.computers) ~= "table" then
         return nil, "fleet registry schema or computers object is invalid"
@@ -195,7 +202,7 @@ function M.validateFleet(registry, localComputerID)
     end
     return normalized
 end
--- @ama-summary: Resolve and validate the current installation's trusted core identity.
+-- Summary: Resolve and validate the current installation's trusted core identity.
 function M.resolveIdentity(registry, targetRole, localComputerID)
     local valid, err = M.validateFleet(registry, localComputerID)
     if not valid then return nil, err end
@@ -207,7 +214,7 @@ function M.resolveIdentity(registry, targetRole, localComputerID)
     return { serverID = core.id, targetID = target.id, serverLabel = core.label,
         targetLabel = target.label, role = targetRole, target = target, core = core }
 end
--- @ama-summary: Compare a transfer packet with the current client/server request tokens.
+-- Summary: Compare a transfer packet with the current client/server request tokens.
 function M.matchesCorrelation(message, kind, context, extra)
     if type(message) ~= "table" or message.v ~= 1 or message.kind ~= kind then return false end
     if message.requestID ~= context.requestID or message.serverSession ~= context.serverSession
@@ -224,7 +231,7 @@ local function shortText(value, maximum)
     return string.sub(tostring(value or ""), 1, maximum)
 end
 
--- @ama-summary: Return the current epoch timestamp used for request expiry.
+-- Summary: Return the current epoch timestamp used for request expiry.
 local function currentEpoch(deps)
     if type(deps.os.epoch) == "function" then
         local ok, value = pcall(deps.os.epoch, "utc")
@@ -237,7 +244,7 @@ local function currentEpoch(deps)
     return 0
 end
 
--- @ama-summary: Create the install server's bounded transfer-session token.
+-- Summary: Create the install server's bounded transfer-session token.
 local function makeServerSession(deps, serverID)
     local seed = currentEpoch(deps)
     local random = 0
@@ -248,7 +255,7 @@ local function makeServerSession(deps, serverID)
     return tostring(serverID) .. "-" .. tostring(seed) .. "-" .. tostring(random)
 end
 
--- @ama-summary: Render the cached transfer progress for the current installer operation.
+-- Summary: Render the cached transfer progress for the current installer operation.
 local function displayProgress(deps,status,fleet)
     if not deps.progress then return end
     local ok=pcall(function()
@@ -259,7 +266,7 @@ local function displayProgress(deps,status,fleet)
     if not ok then deps.progress=nil end -- A display failure cannot stop installation.
 end
 
--- @ama-summary: Persist the installer's bounded per-role progress record.
+-- Summary: Persist the installer's bounded per-role progress record.
 local function saveStatus(deps, status)
     displayProgress(deps,status)
     local ok, serialized = pcall(deps.textutils.serializeJSON, status)
@@ -271,6 +278,7 @@ local function saveStatus(deps, status)
     return wrote
 end
 
+-- Summary: Persist the installation phase, optional message and current timestamp.
 local function setState(deps, status, state, message)
     status.state = state
     if message ~= nil then status.lastError = shortText(message, 160) end
@@ -278,7 +286,7 @@ local function setState(deps, status, state, message)
     saveStatus(deps, status)
 end
 
--- @ama-summary: Load and validate the role's configuration file.
+-- Summary: Load and validate the role's configuration file.
 local function readConfig(deps)
     local ok, handle = pcall(deps.fs.open, CONFIG_PATH, "r")
     if not ok or not handle then return nil, "cannot open installer config" end
@@ -294,7 +302,7 @@ local function readConfig(deps)
     return valid
 end
 
--- @ama-summary: Load the installer's current role assignments and core identity.
+-- Summary: Load the installer's current role assignments and core identity.
 local function readFleetRegistry(deps, computerID, injectedRegistry)
     local registry = injectedRegistry
     if registry == nil then
@@ -312,7 +320,7 @@ local function readFleetRegistry(deps, computerID, injectedRegistry)
     return M.validateFleet(registry, computerID)
 end
 
--- @ama-summary: Open the configured network channels on discovered modems.
+-- Summary: Open the configured network channels on discovered modems.
 local function openModems(deps)
     local ok, names = pcall(deps.peripheral.getNames)
     if not ok or type(names) ~= "table" then return 0 end
@@ -332,7 +340,7 @@ local function openModems(deps)
     return count
 end
 
--- @ama-summary: Check the installer's explicit pause marker.
+-- Summary: Check the installer's explicit pause marker.
 local function pauseRequested(deps)
     if type(deps.fs.exists)~="function" then return false end
     local ok,value=pcall(deps.fs.exists,PAUSE_PATH)
@@ -348,7 +356,7 @@ local function pauseRequested(deps)
     return not ok or value==true
 end
 
--- @ama-summary: Resolve the verified media source paths for a role package.
+-- Summary: Resolve the verified media source paths for a role package.
 local function sourcePaths(role)
     local definition=ROLE_FILES[role]
     local paths={definition.root.."/manifest.json"}
@@ -359,11 +367,11 @@ local function sourcePaths(role)
     return paths
 end
 
--- @ama-summary: Read and verify the requested role package from matching installer media.
+-- Summary: Read and verify the requested role package from matching installer media.
 local function loadBundle(deps, config, role, checkpoint)
     local definition = ROLE_FILES[role]
     if not definition then return nil, "no package is defined for role " .. tostring(role) end
-    -- @ama-summary: Read and decode the selected JSON record.
+    -- Summary: Read and decode the selected JSON record.
     local function readJSON(path, maximum)
         local ok, handle = pcall(deps.fs.open, path, "r")
         if not ok or not handle then return nil, "cannot open " .. path end
@@ -416,7 +424,7 @@ local function receivePacket(deps, config, timeoutSeconds)
     return sender, message
 end
 
--- @ama-summary: Resolve the active core session used for transfer authorization.
+-- Summary: Resolve the active core session used for transfer authorization.
 local function currentCoreSession(deps, injected, localComputerID)
     if injected and type(injected.coreSession) == "string" then return injected.coreSession end
     local registry = deps.os.__amaryllisFleetRegistry
@@ -431,7 +439,7 @@ local function sameIdentity(fleet, role, targetID, targetLabel)
     return type(entry) == "table" and entry.id == targetID and entry.label == targetLabel
 end
 
--- @ama-summary: Check that the current installed identity still matches the transfer snapshot.
+-- Summary: Check that the current installed identity still matches the transfer snapshot.
 local function snapshotMatches(deps, fleet, localComputerID)
     local snapshot = deps.os.__amaryllisFleetRegistry
     if type(snapshot) ~= "table" or snapshot.coreID ~= localComputerID or type(snapshot.computers) ~= "table"
@@ -444,7 +452,7 @@ local function snapshotMatches(deps, fleet, localComputerID)
     return true
 end
 
--- @ama-summary: Validate the role/core authority associated with the active operation.
+-- Summary: Validate the role/core authority associated with the active operation.
 local function activeAuthority(deps, injectedRegistry)
     local idOK, localComputerID = pcall(deps.os.getComputerID)
     if not idOK or not isInteger(localComputerID) or localComputerID < 0 then
@@ -465,21 +473,7 @@ local function findRole(fleet, sender)
     end
 end
 
--- @ama-summary: Revalidate the current identity/session and transfer authorization.
-local function checkAuthority(deps, config, injectedRegistry)
-    local fleet, coreSession, err = activeAuthority(deps, injectedRegistry)
-    if not fleet then return false, err end
-    if coreSession ~= config.core_session or not sameIdentity(fleet, config.target_role, config.target_id, config.target_label) then
-        return false, "fleet role assignment changed during package transfer"
-    end
-    local identity = M.resolveIdentity(fleet, config.target_role, config.server_id)
-    if not identity or identity.targetID ~= config.target_id or identity.targetLabel ~= config.target_label then
-        return false, "fleet role assignment changed during package transfer"
-    end
-    return true
-end
-
--- @ama-summary: Receive a protocol packet matching the active transfer correlation.
+-- Summary: Receive a protocol packet matching the active transfer correlation.
 local function receiveMatching(deps, config, predicate)
     local deadline = deps.os.clock() + config.timeout_seconds
     local ignored = 0
@@ -498,7 +492,7 @@ local function receiveMatching(deps, config, predicate)
     return nil
 end
 
--- @ama-summary: Wait for the expected transfer response within its request deadline.
+-- Summary: Wait for the expected transfer response within its request deadline.
 local function waitFor(deps, config, outbound, expectedKind, context, extra, status)
     for attempt = 1, config.max_retries do
         if config.authorityCheck then
@@ -525,7 +519,7 @@ local function entryComplete(message, context, entry, index)
     })
 end
 
--- @ama-summary: Wait for the receiver's verified file-completion acknowledgement.
+-- Summary: Wait for the receiver's verified file-completion acknowledgement.
 local function waitForFileComplete(deps, config, resendPacket, context, entry, index, status)
     for attempt = 1, config.max_retries do
         if config.authorityCheck then
@@ -560,7 +554,7 @@ local function validHello(sender, message, identity)
         and message.clientSession:match("^[%w_%.%-:]+$") ~= nil
 end
 
--- @ama-summary: Build the role package offer with file bounds and transfer correlation.
+-- Summary: Build the role package offer with file bounds and transfer correlation.
 local function buildOffer(config, bundle, serverSession, clientSession, requestID)
     local offer = {
         v = 1, kind = "offer", requestID = requestID, serverSession = serverSession,
@@ -575,7 +569,7 @@ local function buildOffer(config, bundle, serverSession, clientSession, requestI
     return offer
 end
 
--- @ama-summary: Send and acknowledge the verified package files through the install transaction.
+-- Summary: Send and acknowledge the verified package files through the install transaction.
 local function transact(deps, config, bundle, serverSession, clientSession, requestID, status)
     local context = { requestID = requestID, serverSession = serverSession, clientSession = clientSession, coreSession = config.core_session }
     status.requestID, status.clientSession = requestID, clientSession
@@ -664,7 +658,7 @@ local function transact(deps, config, bundle, serverSession, clientSession, requ
         role = config.target_role, targetID = config.target_id, targetLabel = config.target_label }
 end
 
--- @ama-summary: Build role configuration with the assigned core/computer identity.
+-- Summary: Build role configuration with the assigned core/computer identity.
 local function makeTargetConfig(config, identity, coreSession)
     local result = {}
     for key, value in pairs(config) do result[key] = value end
@@ -674,7 +668,7 @@ local function makeTargetConfig(config, identity, coreSession)
     return result
 end
 
--- @ama-summary: Compare the installed package receipt with the expected package identity.
+-- Summary: Compare the installed package receipt with the expected package identity.
 local function packageIsCurrent(message, bundle, config, status)
     return message.force ~= true and message.installedPackageId == bundle.packageId
         and message.installedVersion == bundle.version
@@ -684,7 +678,7 @@ local function packageIsCurrent(message, bundle, config, status)
         and message.installedRole == config.target_role
 end
 
--- @ama-summary: Notify the receiver that its verified package is current.
+-- Summary: Notify the receiver that its verified package is current.
 local function sendCurrent(deps, config, bundle, clientSession, serverSession)
     return sendPacket(deps, config, {
         v = 1, kind = "current", clientSession = clientSession,
@@ -708,7 +702,7 @@ local function removeCacheKey(order, cacheKey)
     end
 end
 
--- @ama-summary: Run the core package service against current fleet authority and removable media.
+-- Summary: Run the core package service against current fleet authority and removable media.
 function M.run(injected)
     injected = injected or {}
     local deps = {
@@ -726,7 +720,7 @@ function M.run(injected)
     end
     local media
     if not injected.fs then
-        media=assert(loadfile("/installer/media.lua",nil,_ENV))().new(deps.fs,peripheral,disk,textutils,sleep)
+        media=assert(loadfile("/installer/media.lua",nil,_ENV))().new(deps.fs,peripheral,disk,textutils,sleep,http)
         deps.fs=media.fs
     end
     local bundleCache=injected.bundleCache
@@ -789,7 +783,8 @@ function M.run(injected)
                         setState(deps, status, "fleet_registry_error", authorityError)
                         if type(message.clientSession) == "string" then
                             local rejectConfig = { protocol = config.protocol, target_id = sender }
-                            sendPacket(deps, rejectConfig, { v = 1, kind = "reject", clientSession = shortText(message.clientSession, 128), serverSession = serverSession, reason = shortText(authorityError, 120) })
+                            sendPacket(deps, rejectConfig, { v = 1, kind = "reject", clientSession = shortText(message.clientSession, 128),
+                                serverSession = serverSession, reason = shortText(authorityError, 120) })
                         end
                     else
                         displayProgress(deps,status,fleet)
@@ -801,7 +796,7 @@ function M.run(injected)
                         else
                             local targetConfig = makeTargetConfig(config, identity, coreSession)
                             local mediaGeneration=media and media.generation
-                            -- @ama-summary: Recheck the active session and assigned role before the next transfer step.
+                            -- Summary: Recheck the active session and assigned role before the next transfer step.
                             targetConfig.authorityCheck = function()
                                 if media and not media:valid(mediaGeneration) then return false,"installer disk removed or changed; transfer retired" end
                                 if pauseRequested(deps) then return false,"installer paused; transfer retired" end
@@ -812,7 +807,7 @@ function M.run(injected)
                                 end
                                 return true
                             end
-                            -- @ama-summary: Capture the resumable operation state for an intentional systems restart.
+                            -- Summary: Capture the resumable operation state for an intentional systems restart.
                             local function checkpoint()
                                 if deps.timingProbe then deps.timingProbe.workAt=currentEpoch(deps) end
                                 if media and not media:valid(mediaGeneration) then return false,"installer disk removed or changed; package verification retired" end

@@ -1,17 +1,18 @@
--- @ama-section: Input response | Selected-target rates and held-input acceleration.
+local Mathx = require("avionics.mathx")
+-- Section: Input response | Selected-target rates and held-input acceleration.
 -- Selected-target input response only; no actuator limits or PID gains.
 local T={fields={}}
-local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
+local finite = Mathx.finite
 local function field(group,key,label,minimum,maximum,step)
     T.fields[#T.fields+1]={group=group,key=key,label=label,min=minimum,max=maximum,step=step}
 end
-field("INPUT HEADING","heading_selection_rate","Heading start deg/s",.1,900,1)
-field("INPUT HEADING","heading_selection_acceleration","Heading hold accel deg/s^2",0,360,1)
-field("INPUT HEADING","heading_selection_max_rate","Heading max deg/s",.1,900,5)
-field("INPUT SPEED","speed_selection_acceleration","Speed hold accel (b/s)/s^2",0,10,.1)
-field("INPUT SPEED","speed_selection_max_rate","Speed max (b/s)/s",.01,10,.1)
--- @ama-section: Input response | Selected-target rates and held-input acceleration.
--- @ama-summary: Validate and populate selected-target input response settings.
+field("SEL HEADING","heading_selection_rate","Heading start deg/s",.1,900,1)
+field("SEL HEADING","heading_selection_acceleration","Heading hold accel deg/s^2",0,360,1)
+field("SEL HEADING","heading_selection_max_rate","Heading max deg/s",.1,900,5)
+field("SEL THROTTLE","speed_selection_acceleration","Speed hold accel (b/s)/s^2",0,10,.1)
+field("SEL THROTTLE","speed_selection_max_rate","Speed max (b/s)/s",.01,10,.1)
+-- Section: Input response | Selected-target rates and held-input acceleration.
+-- Summary: Validate and populate selected-target input response settings.
 function T.ensure(c)
     if type(c)~="table" then return false,"cockpit input settings are missing" end
     local legacyRate=finite(c.coarse_heading_degrees) and finite(c.heading_repeat_seconds) and

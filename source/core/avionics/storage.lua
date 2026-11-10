@@ -1,17 +1,16 @@
--- @ama-section: Persistent configuration | JSON validation, settings edits and file replacement.
+local Mathx = require("avionics.mathx")
+local Registry = require("avionics.config_registry")
+-- Section: Persistent configuration | JSON validation, settings edits and file replacement.
 -- Navigator information frequency revision v1
--- JSON configuration and persistent settings for core 35.
+-- JSON configuration and persistent settings for core.
 -- Keep disk access here so control and display code never silently invents defaults.
 local Storage = {}
 local NavigationSettings=require("avionics.navigation_settings")
 local InputTuning=require("avionics.input_tuning")
 
-local SETTINGS_SCHEMA = 1
 local MAX_JSON_BYTES = 262144
 
-local function finite(value)
-    return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
-end
+local finite = Mathx.finite
 
 local function object(value)
     return type(value) == "table"
@@ -29,26 +28,7 @@ function Storage.finite(value)
     return finite(value)
 end
 
--- @ama-section: Persistent configuration | JSON validation, settings edits and file replacement.
--- @ama-summary: Construct the supported initial local display settings.
-function Storage.defaultSettings()
-    return {
-        schema_version = SETTINGS_SCHEMA,
-        display_page = "FLIGHT",
-        -- Stored selected targets are intentionally absent. A restart never
-        -- restores active control authority or starts an actuator.
-    }
-end
-
-function Storage.validateSettings(settings)
-    if not object(settings) then return false, "settings must be a JSON object" end
-    if settings.schema_version ~= SETTINGS_SCHEMA then return false, "unsupported settings schema_version" end
-    local pages = { FLIGHT = true, NAV = true, SHIP = true, SETTINGS = true }
-    if not pages[settings.display_page] then return false, "display_page must be FLIGHT, NAV, SHIP, or SETTINGS" end
-    return true
-end
-
--- @ama-summary: Validate required configuration objects, frequency pairs and numeric bounds.
+-- Section: Persistent configuration | JSON validation, settings edits and file replacement.
 function Storage.validateConfig(config)
     if not object(config) then return false, "configuration must be a JSON object" end
     local navOk,navReason=NavigationSettings.ensure(config)
@@ -138,6 +118,14 @@ function Storage.validateConfig(config)
             return false, "geometry.bow_forward must be a normalized, horizontal, measured local direction"
         end
     end
+    if geometry.sable_bow_axis~=nil then
+        -- A locked bow axis in the Sable pose frame: one of +X, -X, +Z or -Z.
+        local axis=geometry.sable_bow_axis
+        if not object(axis) or axis.y~=0 or not ((math.abs(axis.x or 2)==1 and axis.z==0) or
+            (axis.x==0 and math.abs(axis.z or 2)==1)) then
+            return false,"geometry.sable_bow_axis must be +X, -X, +Z or -Z in the Sable pose frame"
+        end
+    end
     if geometry.velocity_forward~=nil then
         local axis=geometry.velocity_forward
         if not object(axis) or not finite(axis.x) or not finite(axis.y) or not finite(axis.z) then
@@ -194,7 +182,8 @@ function Storage.validateConfig(config)
             end
         end
         for key,bounds in pairs({lateral_strength_percent={5,100},lateral_offset_step_blocks={.1,10},
-            lateral_hold_delay_seconds={.1,3},lateral_adjustment_blocks_per_second={.1,10}}) do
+            lateral_hold_delay_seconds={.1,3},lateral_adjustment_blocks_per_second={.1,10},
+            lateral_brake_minimum_speed={0,10}}) do
             if cockpit[key]~=nil and (not finite(cockpit[key]) or cockpit[key]<bounds[1] or cockpit[key]>bounds[2]) then
                 return false,"cockpit."..key.." is outside its documented bounds"
             end
@@ -283,6 +272,10 @@ function Storage.validateConfig(config)
         if thrust.speed_output_slew_per_second~=nil and (not finite(thrust.speed_output_slew_per_second) or
             thrust.speed_output_slew_per_second<0.01 or thrust.speed_output_slew_per_second>1) then
             return false,"thrust.speed_output_slew_per_second must be in [0.01,1]"
+        end
+        if thrust.speed_overspeed_release_per_second~=nil and (not finite(thrust.speed_overspeed_release_per_second) or
+            thrust.speed_overspeed_release_per_second<0.01 or thrust.speed_overspeed_release_per_second>1) then
+            return false,"thrust.speed_overspeed_release_per_second must be in [0.01,1]"
         end
         if thrust.speed_pid~=nil then
             local gains=thrust.speed_pid
@@ -375,8 +368,8 @@ function Storage.validateConfig(config)
         if not object(control) or type(control.enabled)~="boolean" or type(control.tuning_confirmed)~="boolean" then
             return false,"altitude_control requires explicit enabled and tuning_confirmed booleans"
         end
-        local limits={minimum_world_y={-2048,2048},maximum_world_y={-2048,2048},
-            target_rate_blocks_per_second={0.01,10},max_vertical_speed={0.01,5},
+        local limits={minimum_world_y={-2048,2048},altitude_ceiling={-2048,2048},
+            max_vertical_speed={0.01,5},
             max_feed_fraction={0.001,0.25},hover_capture_seconds={1,60},hover_max_vertical_speed={0.01,0.5},
             trim_deadband_blocks={0,10},trim_ceiling_per_block={0,50},max_trim_ceiling_change={0,100},
             trim_slew_ceiling_per_second={0.01,10},lift_balance_tolerance_fraction={0.01,0.25}}
@@ -385,9 +378,9 @@ function Storage.validateConfig(config)
                 return false,"altitude_control."..name.." is outside its documented bounds"
             end
         end
-        -- These fields were added for the faster BUILDING_LIFT phase. Older
+        -- These fields were added for the faster MAIN_LIFT phase. Older
         -- schema-1 configurations inherit the former max-vertical-speed
-        -- target and its former max+1 hard guard without changing HOLDING.
+        -- target and its former max+1 hard guard; the READY hold keeps its own limits.
         local startupTarget=control.startup_max_vertical_speed
         if startupTarget==nil then startupTarget=control.max_vertical_speed end
         local startupLimit=control.startup_vertical_speed_limit
@@ -403,7 +396,8 @@ function Storage.validateConfig(config)
         end
         local startupShaping={startup_acceleration_seconds={5,600},startup_braking_lookahead_seconds={5,120},
             ceiling_soft_start_rate={0.0005,0.05},ceiling_rise_rate={0.005,0.1},ceiling_fast_rate={0.02,0.25},
-            climb_trim_boost={1,20},level_damping_gain={0,10},level_lead_seconds={0,60}}
+            climb_trim_boost={1,20},level_damping_gain={0,10},level_lead_seconds={0,60},
+            level_boost_start_blocks={0.05,10},level_boost_max={1,20}}
         for name,bounds in pairs(startupShaping) do
             local value=control[name]
             if value~=nil and (not finite(value) or value<bounds[1] or value>bounds[2]) then
@@ -424,7 +418,7 @@ function Storage.validateConfig(config)
              control.manual_fore_aft_trim_blocks< -2 or control.manual_fore_aft_trim_blocks>2) then
             return false,"altitude_control.manual_fore_aft_trim_blocks must be between -2 and 2 blocks"
         end
-        if control.minimum_world_y>=control.maximum_world_y then return false,"altitude world Y bounds are reversed" end
+        if control.altitude_ceiling<=control.minimum_world_y then return false,"altitude_control.altitude_ceiling must be above minimum_world_y" end
         -- Optional for older installations; Flight supplies conservative
         -- defaults, which the existing settings writer persists as JSON.
         if control.trim_pid~=nil then
@@ -452,26 +446,98 @@ local function api(dependencies)
     return dependencies.fs or fs, dependencies.textutils or textutils
 end
 
--- @ama-summary: Read and decode a JSON document through the configured filesystem dependency.
-function Storage.readJson(path, dependencies)
+-- Summary: Read and decode a JSON document through the configured filesystem dependency.
+local function readDocument(path, dependencies)
     local fsApi, jsonApi = api(dependencies)
     if not fsApi or type(fsApi.open) ~= "function" or not jsonApi or type(jsonApi.unserializeJSON) ~= "function" then
-        return nil, "ComputerCraft filesystem or JSON support is unavailable"
+        return nil, "ComputerCraft filesystem or JSON support is unavailable", "unavailable"
     end
     local okOpen, handle = pcall(fsApi.open, path, "r")
-    if not okOpen or not handle then return nil, "could not open " .. path .. ": " .. tostring(handle) end
+    if not okOpen or not handle then return nil, "could not open " .. path .. ": " .. tostring(handle), "open" end
     local okRead, text = pcall(handle.readAll)
     pcall(handle.close)
-    if not okRead or type(text) ~= "string" then return nil, "could not read " .. path .. ": " .. tostring(text) end
-    if #text > MAX_JSON_BYTES then return nil, path .. " exceeds the JSON size limit" end
+    if not okRead or type(text) ~= "string" then return nil, "could not read " .. path .. ": " .. tostring(text), "read" end
+    if #text > MAX_JSON_BYTES then return nil, path .. " exceeds the JSON size limit", "size" end
     local okDecode, value = pcall(jsonApi.unserializeJSON, text)
     if not okDecode or type(value) ~= "table" then
-        return nil, "invalid JSON in " .. path .. ": " .. tostring(value)
+        return nil, "invalid JSON in " .. path .. ": " .. tostring(value), "decode"
     end
     return value
 end
 
--- @ama-summary: Read the configuration document and validate its schema and fields.
+-- Section: Core state | Section routing and legacy migration.
+local LEGACY_STATE_PATH = "/avionics/data/persistent-state.json"
+local PILOT_STATE_PATH = "/avionics/data/pilot-presets.json"
+local VESSEL_STATE_PATH = "/avionics/data/vessel-state.json"
+
+local function sectionPath(key)
+    return key == "controlPresets" and PILOT_STATE_PATH or VESSEL_STATE_PATH
+end
+local STATE_SECTIONS = {
+    ["/avionics/data/control-presets.json"] = "controlPresets",
+    ["/avionics/data/navigation.json"] = "navigation",
+    ["/avionics/data/hover-offset.json"] = "hoverOffset",
+    ["/avionics/data/level-bias.json"] = "levelBias",
+    ["/avionics/data/sensor-fallback.json"] = "sensorFallback",
+    ["/avionics/data/speed-feedforward-v2.json"] = "speedFeedforward",
+    ["/avionics/data/systems-intent.json"] = "systemsIntent",
+    ["/avionics/data/remotes.json"] = "remotes",
+}
+
+local function validState(value)
+    return value.schemaVersion == 1 and object(value.sections) and object(value.previous)
+end
+
+-- Summary: Resolve the current state document or recover its verified backup.
+local function readState(statePath, dependencies)
+    local fsApi = select(1, api(dependencies))
+    if not fsApi or type(fsApi.exists) ~= "function" then return nil, "unavailable" end
+    local exists = fsApi.exists(statePath) or fsApi.exists(statePath .. ".bak")
+    if not exists then return nil, "missing" end
+    for _, path in ipairs({statePath, statePath .. ".bak"}) do
+        local value = readDocument(path, dependencies)
+        if value and validState(value) then
+            if path ~= statePath and statePath ~= PILOT_STATE_PATH then
+                -- Recover saved data while requiring fresh activation and remote flight grants.
+                value.sections.systemsIntent = {schemaVersion = 1, active = false}
+                value.previous.systemsIntent = nil
+                local pairing = value.sections.remotes
+                if object(pairing) and object(pairing.remotes) then
+                    for _, remote in pairs(pairing.remotes) do
+                        if object(remote) then remote.flightAllowed = false end
+                    end
+                end
+                value.previous.remotes = nil
+            end
+            return value
+        end
+    end
+    return nil, "invalid"
+end
+
+-- Summary: Read a JSON document or a named section of the current core state.
+function Storage.readJson(path, dependencies)
+    local base = path:gsub("%.bak$", "")
+    local key = STATE_SECTIONS[base]
+    if not key then return readDocument(path, dependencies) end
+    local state, status = readState(sectionPath(key), dependencies)
+    if status == "missing" then state, status = readState(LEGACY_STATE_PATH, dependencies) end
+    if state then
+        local records = base == path and state.sections or state.previous
+        if object(records[key]) then return records[key] end
+        if records[key] ~= nil then return nil, "invalid core state section", "invalid" end
+        return nil, "core state section is missing", "missing"
+    end
+    if status ~= "missing" then return nil, "core state is " .. status, status end
+    local fsApi = select(1, api(dependencies))
+    if base == path and key == "remotes" and not fsApi.exists(path) and fsApi.exists(path .. ".remote-bak") then
+        return nil, "Remote registry missing; restore its backup first", "invalid"
+    end
+    if not fsApi.exists(path) then return nil, "legacy record is missing", "missing" end
+    return readDocument(path, dependencies)
+end
+
+-- Summary: Read the configuration document and validate its schema and fields.
 function Storage.loadConfig(path, dependencies)
     local config, reason = Storage.readJson(path or "avionics/config.json", dependencies)
     if not config then return nil, reason end
@@ -495,7 +561,8 @@ function Storage.loadConfig(path, dependencies)
         end
         if control.launch_settle_seconds==nil then control.launch_settle_seconds=10 end
         local shapingDefaults={startup_acceleration_seconds=60,startup_braking_lookahead_seconds=30,
-            ceiling_soft_start_rate=0.002,ceiling_rise_rate=0.02,ceiling_fast_rate=0.08,climb_trim_boost=1,level_damping_gain=1,level_lead_seconds=0}
+            ceiling_soft_start_rate=0.002,ceiling_rise_rate=0.02,ceiling_fast_rate=0.08,climb_trim_boost=1,level_damping_gain=1,level_lead_seconds=0,
+            level_boost_start_blocks=0.5,level_boost_max=10}
         for name,value in pairs(shapingDefaults) do
             if control[name]==nil then control[name]=value end
         end
@@ -503,44 +570,33 @@ function Storage.loadConfig(path, dependencies)
     return config
 end
 
--- @ama-summary: Read validated display settings or construct the supported initial settings.
-function Storage.loadSettings(path, dependencies)
-    path = path or "avionics/data/settings.json"
-    local fsApi = select(1, api(dependencies))
-    if not fsApi or type(fsApi.exists) ~= "function" then
-        return nil, "ComputerCraft filesystem is unavailable"
-    end
-
-    local primary, primaryError
-    if fsApi.exists(path) then primary, primaryError = Storage.readJson(path, dependencies) end
+function Storage.readValidatedJson(path, validate, dependencies)
+    local primary, primaryReason = Storage.readJson(path, dependencies)
     if primary then
-        local ok, invalid = Storage.validateSettings(primary)
+        local ok, reason = validate(primary)
         if ok then return primary end
-        primaryError = "invalid settings: " .. tostring(invalid)
-    elseif not primaryError then
-        primaryError = "settings file is missing"
+        primaryReason = reason or "primary JSON validation failed"
     end
-
-    local backupPath = path .. ".bak"
-    if fsApi.exists(backupPath) then
-        local backup, backupError = Storage.readJson(backupPath, dependencies)
-        if backup then
-            local ok, invalid = Storage.validateSettings(backup)
-            if ok then return backup, "recovered settings from backup after primary failure: " .. tostring(primaryError) end
-            backupError = "backup settings are invalid: " .. tostring(invalid)
-        end
-        return Storage.defaultSettings(), tostring(primaryError) .. "; " .. tostring(backupError) .. "; using safe defaults"
+    local backup, backupReason = Storage.readJson(path .. ".bak", dependencies)
+    if backup then
+        local ok, reason = validate(backup)
+        if ok then return backup, "recovered backup: " .. tostring(primaryReason) end
+        backupReason = reason or "backup JSON validation failed"
     end
-    return Storage.defaultSettings(), tostring(primaryError) .. "; using safe defaults"
+    return nil, tostring(primaryReason) .. "; " .. tostring(backupReason)
 end
 
--- @ama-summary: Serialize and replace a JSON document through its validated storage path.
-function Storage.writeJson(path, value, dependencies)
+-- Summary: Validate and replace JSON, retaining the previous valid document as a backup.
+local function writeDocument(path, value, dependencies, validate)
     local fsApi, jsonApi = api(dependencies)
     if not fsApi or type(fsApi.open) ~= "function" or type(fsApi.move) ~= "function" or
         type(fsApi.delete) ~= "function" or type(fsApi.exists) ~= "function" or
         not jsonApi or type(jsonApi.serializeJSON) ~= "function" then
         return false, "ComputerCraft filesystem or JSON serialization is unavailable"
+    end
+    if validate then
+        local valid, reason = validate(value)
+        if not valid then return false, reason end
     end
     local okEncode, encoded = pcall(jsonApi.serializeJSON, value)
     if not okEncode or type(encoded) ~= "string" then return false, "could not encode JSON: " .. tostring(encoded) end
@@ -552,10 +608,8 @@ function Storage.writeJson(path, value, dependencies)
         if not okDir then return false, "could not create settings directory: " .. tostring(dirError) end
     end
 
-    -- A locked/denied backup is a persistence failure, not a reason to stop
-    -- the bridge or control runtime. Cleanup must also never throw over the
-    -- original write error. Keep the primary untouched if rotation fails.
-    -- @ama-summary: Remove the selected stored entry and update its containing collection.
+    -- Rotate stored data after the replacement has passed read-back validation.
+    -- Summary: Remove a transaction file and return any filesystem error.
     local function remove(file)
         local okExists,exists=pcall(fsApi.exists,file)
         if not okExists then return false,tostring(exists) end
@@ -573,32 +627,58 @@ function Storage.writeJson(path, value, dependencies)
         return false, "could not open temporary JSON file: " .. tostring(detail)
     end
     local writeOk, writeResult = pcall(handle.write, encoded)
-    pcall(handle.close)
-    if not writeOk or writeResult == false then
+    local closeOk, closeResult = pcall(handle.close)
+    if not writeOk or writeResult == false or not closeOk or closeResult == false then
         remove(temporary)
-        return false, "could not write temporary JSON file: " .. tostring(writeResult)
+        return false, "could not write temporary JSON file: " .. tostring(not closeOk and closeResult or writeResult)
     end
-    local readBack, readBackError = Storage.readJson(temporary, dependencies)
+    local readBack, readBackError = readDocument(temporary, dependencies)
     if not readBack then
         remove(temporary)
         return false, "temporary JSON file failed read-back validation: " .. tostring(readBackError)
+    end
+
+    if validate then
+        local valid, reason = validate(readBack)
+        if not valid then
+            remove(temporary)
+            return false, "temporary JSON validation failed: " .. tostring(reason)
+        end
     end
 
     local movedOld = false
     if fsApi.exists(path) then
         -- Rotate the current primary only after the new temp file is readable.
         -- If primary is missing, retain an existing recovery backup.
-        local removed,removeError=remove(backup)
-        if not removed then
-            remove(temporary)
-            return false,"could not rotate JSON backup: "..tostring(removeError)
+        local previous, previousReason, failure
+        if validate then
+            previous, previousReason, failure = readDocument(path, dependencies)
+            if not previous and failure ~= "decode" and failure ~= "size" then
+                remove(temporary)
+                return false, "could not inspect previous JSON file: " .. tostring(previousReason)
+            end
         end
-        local backupOk, backupError = pcall(fsApi.move, path, backup)
-        if not backupOk then
-            remove(temporary)
-            return false, "could not preserve previous JSON file: " .. tostring(backupError)
+        local rotate = not validate or (previous and validate(previous))
+        if rotate then
+            local removed, removeError = remove(backup)
+            if not removed then
+                remove(temporary)
+                return false, "could not rotate JSON backup: " .. tostring(removeError)
+            end
+            local backupOk, backupError = pcall(fsApi.move, path, backup)
+            if not backupOk then
+                remove(temporary)
+                return false, "could not preserve previous JSON file: " .. tostring(backupError)
+            end
+            movedOld = true
+        else
+            -- Retain the last valid backup when replacing an invalid primary.
+            local removed, removeError = remove(path)
+            if not removed then
+                remove(temporary)
+                return false, "could not replace invalid JSON file: " .. tostring(removeError)
+            end
         end
-        movedOld = true
     end
 
     local installOk, installError = pcall(fsApi.move, temporary, path)
@@ -612,11 +692,72 @@ function Storage.writeJson(path, value, dependencies)
     return true
 end
 
-function Storage.saveSettings(settings, path, dependencies)
-    local ok, reason = Storage.validateSettings(settings)
-    if not ok then return false, reason end
-    return Storage.writeJson(path or "avionics/data/settings.json", settings, dependencies)
+-- Summary: Import legacy records and their retained backups into independent core sections.
+local function importState(statePath, dependencies)
+    local state = {schemaVersion = 1, sections = {}, previous = {}}
+    local legacy, status = readState(LEGACY_STATE_PATH, dependencies)
+    if status ~= "missing" and not legacy then error("combined core state is " .. status, 0) end
+    if legacy then
+        for _, key in pairs(STATE_SECTIONS) do
+            if sectionPath(key) == statePath then
+                state.sections[key] = legacy.sections[key]
+                state.previous[key] = legacy.previous[key]
+            end
+        end
+        return state
+    end
+    for path, key in pairs(STATE_SECTIONS) do
+        if sectionPath(key) == statePath then
+            local backup = readDocument(path .. (key == "remotes" and ".remote-bak" or ".bak"), dependencies)
+            local primary, reason, failure = readDocument(path, dependencies)
+            local fsApi = select(1, api(dependencies))
+            if not primary and fsApi.exists(path) and failure ~= "decode" and failure ~= "size" then
+                error(reason, 0)
+            end
+            if key == "systemsIntent" then
+                state.sections[key] = primary
+            elseif key == "remotes" and not primary and (backup or fsApi.exists(path)) then
+                -- Preserve a failed registry as an explicit invalid section.
+                state.sections[key] = false
+            else
+                state.sections[key] = primary or backup
+            end
+            state.previous[key] = backup
+        end
+    end
+    return state
 end
+
+-- Summary: Serialize section updates across workers and commit through verified JSON replacement.
+function Storage.writeJson(path, value, dependencies, validate)
+    local key = STATE_SECTIONS[path]
+    if not key then return writeDocument(path, value, dependencies, validate) end
+    if not object(value) then return false, "core state section must be a JSON object" end
+    if validate then
+        local valid, reason = validate(value)
+        if not valid then return false, reason end
+    end
+    if os.__amaryllisPersistentStateWrite then return false, "core state write is busy" end
+    os.__amaryllisPersistentStateWrite = true
+    local called, saved, reason = pcall(function()
+        local statePath = sectionPath(key)
+        local state, status = readState(statePath, dependencies)
+        if not state then
+            if status ~= "missing" then return false, "core state is " .. status end
+            state = importState(statePath, dependencies)
+        end
+        local previous = state.sections[key]
+        if object(previous) and (not validate or validate(previous)) then state.previous[key] = previous end
+        state.sections[key] = value
+        return writeDocument(statePath, state, dependencies, validState)
+    end)
+    os.__amaryllisPersistentStateWrite = nil
+    if not called then return false, tostring(saved) end
+    return saved, reason
+end
+
+
+
 
 -- Settings save that preserves edits made to the file. Saving one setting
 -- used to write the whole in-memory configuration, silently reverting any
@@ -631,7 +772,7 @@ local function deepCopy(value)
     if type(value)~="table" then return value end
     local out={};for k,v in pairs(value) do out[k]=deepCopy(v) end;return out
 end
--- @ama-summary: Compare the requested configuration subset with the stored document.
+-- Summary: Compare the requested configuration subset with the stored document.
 local function subsetDiffers(disk,memory)
     if type(disk)~="table" then
         if type(disk)=="number" and type(memory)=="number" then return math.abs(disk-memory)>1e-12 end
@@ -641,7 +782,7 @@ local function subsetDiffers(disk,memory)
     for k,v in pairs(disk) do if subsetDiffers(v,memory[k]) then return true end end
     return false
 end
--- @ama-summary: Merge accepted settings edits into the current stored configuration.
+-- Summary: Merge accepted settings edits into the current stored configuration.
 function Storage.saveConfigChanges(path,memory,changes,dependencies)
     local disk,reason=Storage.readJson(path,dependencies)
     if not disk then return false,"CONFIG FILE UNREADABLE; NOT SAVED: "..tostring(reason) end
@@ -654,6 +795,17 @@ function Storage.saveConfigChanges(path,memory,changes,dependencies)
         local node,mem=disk,memory
         local keys=change.path
         if type(keys)~="table" or #keys<1 then return false,"INVALID SETTING PATH" end
+        -- Registered altitude_control/thrust settings are checked against their units and bounds
+        -- here, so a rejected edit names the setting before the whole-config validation runs.
+        local entry=Registry.entry(table.concat(keys,"."))
+        if entry then
+            if change.value==nil then
+                if entry.required then return false,"SETTING "..entry.section.."."..entry.path.." IS REQUIRED" end
+            else
+                local accepted,reason=Registry.check(entry,change.value)
+                if not accepted then return false,string.upper(reason) end
+            end
+        end
         for i=1,#keys-1 do
             local key=keys[i]
             mem=type(mem)=="table" and mem[key] or nil

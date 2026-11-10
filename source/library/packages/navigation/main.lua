@@ -1,4 +1,4 @@
--- @ama-section: Navigator service | Status reception and acknowledged cockpit requests.
+-- Section: Navigator service | Status reception and acknowledged cockpit requests.
 -- Bridge UI runtime. Receives vessel state from the registry-assigned core.
 -- Owns monitor/touch requests only. No sensor reads or actuator writes.
 package.path = "/?.lua;/?/init.lua;" .. (package.path or "")
@@ -10,8 +10,8 @@ local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.
 -- so the entry cap scales with vessel size. It only guards against runaway
 -- packets; config.status_max_entries can raise it for very large vessels.
 local DEFAULT_MAX_ENTRIES=32768
--- @ama-section: Navigator service | Status reception and acknowledged cockpit requests.
--- @ama-summary: Copy bounded table values into independent operation or transport records.
+-- Section: Navigator service | Status reception and acknowledged cockpit requests.
+-- Summary: Copy bounded table values into independent operation or transport records.
 local function copy(value, depth, budget)
     if depth > 8 then error("status nesting limit",0) end
     if type(value)=="number" then if not finite(value) then error("nonfinite status",0) end; return value end
@@ -31,7 +31,7 @@ function Receiver.new(coreId, timeout, maxEntries)
     if not finite(maxEntries) or maxEntries<1 then maxEntries=DEFAULT_MAX_ENTRIES end
     return setmetatable({coreId=coreId,timeout=timeout,maxEntries=math.floor(maxEntries),retired={},order={}}, {__index=Receiver})
 end
--- @ama-summary: Validate and accept the newest navigator snapshot from the trusted core.
+-- Summary: Validate and accept the newest navigator snapshot from the trusted core.
 function Receiver:accept(sender, message, protocol, now)
     if sender~=self.coreId or protocol~="amaryllis.v1" or type(message)~="table" or
         message.v~=1 or message.kind~="display_status" or type(message.state)~="table" or
@@ -57,9 +57,10 @@ function Receiver:snapshot(now,page)
     for k,v in pairs(self.state or {}) do state[k]=v end
     local fresh=self.at~=nil and now>=self.at and now-self.at<=self.timeout
     state.page=page; state.displayStale=not fresh; state.dataFresh=fresh; state.stale=not fresh
+    state.displayAgeSeconds=self.at~=nil and now>=self.at and now-self.at or nil
     return state
 end
--- @ama-summary: Update navigator routing from the accepted fleet registry.
+-- Summary: Update navigator routing from the accepted fleet registry.
 function Receiver:setRegistry(session, role, computerID, label)
     self.managed=true
     local key
@@ -82,7 +83,7 @@ local function safeRestartToken(value)
     return type(value)=="string" and #value>0 and #value<=128 and
         value:match("^[%w_%.%-:]+$")~=nil
 end
--- @ama-summary: Validate a requested reboot against the configured core, session and local boot.
+-- Summary: Validate a requested reboot against the configured core, session and local boot.
 local function validateRestart(sender,message,protocol,coreId,session,nodeBoot,targetLabel)
     if sender~=coreId or protocol~="amaryllis.v1" or type(message)~="table" or
         message.v~=1 or message.kind~="system_restart" then return false end
@@ -92,7 +93,7 @@ local function validateRestart(sender,message,protocol,coreId,session,nodeBoot,t
     if not safeRestartToken(message.bootToken) or not safeRestartToken(message.requestId) then return false end
     return true
 end
--- @ama-summary: Acknowledge and execute the validated role restart request.
+-- Summary: Acknowledge and execute the validated role restart request.
 local function handleRestart(sender,message,protocol,context,sendAck,reboot)
     context=context or {seen={},order={}}
     context.seen=context.seen or {};context.order=context.order or {}
@@ -117,7 +118,7 @@ local function currentSessionFresh(receiver,timeout,now)
     return type(receiver)=="table" and type(receiver.session)=="string" and receiver.session~="" and
         finite(receiver.at) and finite(timeout) and finite(now) and now>=receiver.at and now-receiver.at<=timeout
 end
--- @ama-summary: Match a navigator command acknowledgement to its active request.
+-- Summary: Match a navigator command acknowledgement to its active request.
 local function bridgeAckMatches(sender,protocol,message,coreId,expectedProtocol,receiver,pending,timeout,now)
     return sender==coreId and protocol==expectedProtocol and type(message)=="table" and
         message.v==1 and message.kind=="bridge_ack" and type(pending)=="table" and
@@ -134,7 +135,7 @@ local priority={emergency_kill_lift=true,systems_stop=true,systems_stop_confirm=
     altitude_disengage=true,ap_disengage=true,anchor_cancel=true,tuning_stop=true,
     propulsion_disable=true,tuning_cancel=true,maintenance_cancel=true,systems_stop_cancel=true}
 local shortLife={emergency_kill_lift=true,disarm_lift_kill=true,restart_systems=true,
-    start_systems=true,recover_systems=true,systems_stop=true,systems_stop_confirm=true,
+    start_systems=true,recover_systems=true,level_reset=true,systems_stop=true,systems_stop_confirm=true,
     maintenance_confirm=true,maintenance_override=true,tuning_confirm=true,altitude_engage=true,
     anchor_engage=true,ap_engage=true,propulsion_enable=true,ap_current=true,destination_save=true}
 local function coalesceKey(action)
@@ -157,7 +158,7 @@ function Requests:synchronize(session)
     self.queue,self.records,self.order,self.active={}, {}, {},nil
     self.session=session
 end
--- @ama-summary: Queue a pilot action and supersede older replaceable requests.
+-- Summary: Queue a pilot action and supersede older replaceable requests.
 function Requests:enqueue(action,receiver,now,epoch)
     self:synchronize(receiver.session)
     if not self.session or receiver.managed and not receiver.registryIdentity then return false,"WAITING FOR CURRENT CORE SESSION" end
@@ -184,7 +185,7 @@ function Requests:enqueue(action,receiver,now,epoch)
     self.queue[#self.queue+1]=entry;self.latest=entry
     return true
 end
--- @ama-summary: Send or retry the active navigator command within its session and expiry.
+-- Summary: Send or retry the active navigator command within its session and expiry.
 function Requests:step(receiver,now,epoch,send)
     self:synchronize(receiver.session)
     if not finite(now) or not finite(epoch) then return end
@@ -260,7 +261,7 @@ if notice then print(notice) end
 local page=settings.display_page
 local receiver=Receiver.new(config.core_id,config.status_timeout_seconds,config.status_max_entries)
 local receiveIssue
--- @ama-summary: Reconcile the current role identity with a trusted registry announcement.
+-- Summary: Reconcile the current role identity with a trusted registry announcement.
 local function syncRegistry()
     local registry=os.__amaryllisFleetRegistry
     local entry=type(registry)=="table" and registry.coreID==config.core_id and
@@ -281,7 +282,7 @@ local restartContext={coreId=config.core_id,targetLabel=os.getComputerLabel(),no
         if receiver.at and os.clock()>=receiver.at and os.clock()-receiver.at<=config.status_timeout_seconds then return receiver.session end
         return nil
     end,seen={},order={}}
--- @ama-summary: Resolve the current monitor or network attachment for the role.
+-- Summary: Resolve the current monitor or network attachment for the role.
 local function bind()
     renderer,monitorName=nil,nil
     local monitors={}
@@ -300,7 +301,7 @@ local function bind()
     elseif #monitors==1 then monitorName=monitors[1] end
     if monitorName then renderer=UI.new(peripheral.wrap(monitorName),config) end
 end
--- @ama-summary: Render the current view into its configured terminal or monitor.
+-- Summary: Render the current view into its configured terminal or monitor.
 local function draw()
     local snapshot=receiver:snapshot(os.clock(),page)
     requests:synchronize(receiver.session)
@@ -316,7 +317,7 @@ local function draw()
         if fault then renderer=nil end
     end
 end
--- @ama-summary: Validate and dispatch received packets for the current role and session.
+-- Summary: Validate and dispatch received packets for the current role and session.
 local function dispatch(action)
     if type(action)~="table" then return end
     if action.type=="page" or action.type=="display_setting" then

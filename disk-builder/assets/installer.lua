@@ -1124,20 +1124,6 @@ function Installer.run(rawConfig, deps)
   return true
 end
 
-local function existingStatus(filesystem, deps)
-  return readStatus(filesystem, deps) or {}
-end
-
-function Installer.setApplicationState(state, fault, deps)
-  local filesystem = (deps and deps.fs) or fs
-  if not filesystem then return false, "ComputerCraft filesystem API is unavailable" end
-  ensureDirs(filesystem)
-  local status = existingStatus(filesystem, deps)
-  status.applicationState = state
-  status.applicationFault = fault and tostring(fault) or nil
-  return writeStatus(filesystem, status, deps)
-end
-
 function Installer.readJSON(path, deps)
   local filesystem = (deps and deps.fs) or fs
   if not filesystem then return nil, "ComputerCraft filesystem API is unavailable" end

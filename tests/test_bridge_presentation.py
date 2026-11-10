@@ -26,7 +26,7 @@ function fixture(width,height,page)
   altitudeControl={enabled=false,available=true},systemsStartup={available=true,active=false,phase='IDLE'},
   systemsRestart={available=false,reason='START SYSTEMS FIRST'},emergencyLift={latched=false},
   settings={entries={}},nodes={},debugMode={enabled=false,state='IDLE'}}
- for _,q in ipairs({'FL','FR','RL','RR'})do s.nodes[q]={online=true,thrustControlState='RDY',liftControlState='CMD',providers={},
+ for _,q in ipairs({'FL','FR','BL','BR'})do s.nodes[q]={online=true,thrustControlState='RDY',liftControlState='CMD',providers={},
   balloon={hasBalloon=true,hasBalloonValid=true,gasMixValid=true,gasMix={steam=33333},lift=50000,liftValid=true}}end
  local function draw()
   s.page=ui.page;local ok,why=ui:draw(s);assert(ok,why);return ui.previous
@@ -60,7 +60,7 @@ end
 class BridgePresentationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = support.b.collect(support.SOURCE)
+        cls.source = support.b.collect_project(support.SOURCE)
         cls.ui_source = cls.source['library']['/packages/navigation/ui.lua']
         # Packing in memory tests the same production loader/file layout, without
         # creating a distributable installer or writing any live computer files.
@@ -209,17 +209,6 @@ for _,size in ipairs({{57,24},{80,30},{100,36}})do for _,page in ipairs({'FLIGHT
  for _,row in ipairs(ui.previous.rows)do check(#row.text==size[1] and #row.foreground==size[1] and #row.background==size[1],'complete surface')end
 end end
 ''')
-
-    def test_overlay_is_idempotent_and_rejects_unknown_revision(self):
-        library={'/packages/navigation/ui.lua':self.ui_source}
-        helper=(support.HOME/'assets/systems-menu.lua').read_bytes()
-        support.b.information.strip_notes(library)
-        support.b.source_notes.revise(library,reverse=True)
-        before=library['/packages/navigation/ui.lua']
-        self.assertFalse(support.b.presentation.apply(library,helper,support.b.require))
-        self.assertEqual(library['/packages/navigation/ui.lua'],before)
-        with self.assertRaises(support.b.BuildError):
-            support.b.presentation.apply(library,helper+b'\n-- unknown revision',support.b.require)
 
     def tearDown(self):
         self.captures.update(support.python_value(self.lua.globals().CAPTURES))

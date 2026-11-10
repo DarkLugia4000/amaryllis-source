@@ -1,4 +1,4 @@
--- @ama-section: Navigator presentation | Character frames, warning selection and pilot input.
+-- Section: Navigator presentation | Character frames, warning selection and pilot input.
 -- Navigator information pages v1
 -- A.E.V. Amaryllis display renderer.
 -- Render cached vessel snapshots and return locally selected operator actions.
@@ -8,8 +8,6 @@ local Info
 UI.TEXT_SCALE = 0.5
 UI.MIN_MAIN_WIDTH = 57
 UI.MIN_MAIN_HEIGHT = 24
-UI.MIN_HEADING_WIDTH = 18
-UI.MIN_HEADING_HEIGHT = 5
 UI.PAGES = { "FLIGHT", "NAV", "SHIP", "SETTINGS" }
 UI.KILL_REVIEW_SECONDS = 10
 
@@ -49,8 +47,21 @@ local function finite(value)
         value ~= math.huge and value ~= -math.huge
 end
 
--- @ama-section: Display data | Field validity, formatting and status selection.
--- @ama-summary: Bound display text to the available character count.
+-- Section: Display data | Field validity, formatting and status selection.
+-- Summary: Whether a message reports an expired or lost command or control lease, which is a recoverable warning.
+local function leaseText(value)
+    return type(value) == "string" and string.find(string.upper(value), "LEASE", 1, true) ~= nil
+end
+
+-- Summary: The pilot-facing wording for a lease problem: the core paused briefly and is retrying by itself.
+local function stallText(snapshot)
+    local recovery = type(snapshot) == "table" and type(snapshot.systemsStartup) == "table" and snapshot.systemsStartup.recovery or {}
+    local attempts = type(recovery) == "table" and tonumber(recovery.attempts) or 0
+    if attempts >= 1 then return "CORE STALL; RESOLVING (RETRY " .. math.floor(attempts) .. ")" end
+    return "CORE STALL; RESOLVING"
+end
+
+-- Summary: Bound display text to the available character count.
 local function clampText(value, limit)
     local text = tostring(value or "")
     -- Keep text to the basic terminal character set so byte positions match
@@ -86,18 +97,13 @@ local function angleText(value)
     return string.format("%05.1f", heading)
 end
 
-local function valueOrUnavailable(value)
-    if value == nil then return "UNAVAILABLE" end
-    return clampText(value, 16)
-end
-
 local function getColor(name)
     if type(colors) == "table" and colors[name] then return colors[name] end
     return colorValues[name] or colorValues.white
 end
 
--- @ama-section: Operator navigation | Local selection, editing and returned actions.
--- @ama-summary: Allocate the main renderer's character, foreground and background cells.
+-- Section: Operator navigation | Local selection, editing and returned actions.
+-- Summary: Allocate the main renderer's character, foreground and background cells.
 local function newSurface(width, height)
     local surface = { width = width, height = height, rows = {} }
     local white, black = getColor("white"), getColor("black")
@@ -111,8 +117,8 @@ local function newSurface(width, height)
     return surface
 end
 
--- @ama-section: Display data | Field validity, formatting and status selection.
--- @ama-summary: Write bounded text cells with the selected foreground colour.
+-- Section: Display data | Field validity, formatting and status selection.
+-- Summary: Write bounded text cells with the selected foreground colour.
 local function put(surface, x, y, text, tone)
     if y < 1 or y > surface.height or x > surface.width then return end
     text = clampText(text, surface.width)
@@ -132,7 +138,7 @@ end
 -- Paint rectangular UI elements by changing each cell's background. The
 -- character stays blank, so buttons and the speed digits are real filled
 -- shapes instead of text characters that merely imitate them.
--- @ama-summary: Fill the bounded surface rectangle with the selected cell colours.
+-- Summary: Fill the bounded surface rectangle with the selected cell colours.
 local function fillRect(surface, x, y, width, height, backgroundTone, foregroundTone)
     local background = getColor(backgroundTone or "black")
     local foreground = getColor(foregroundTone or "white")
@@ -149,8 +155,8 @@ local function fillRect(surface, x, y, width, height, backgroundTone, foreground
     end
 end
 
--- @ama-section: Page rendering | Cached character-cell views and action regions.
--- @ama-summary: Render the label using its selected, enabled, disabled or danger style.
+-- Section: Page rendering | Cached character-cell views and action regions.
+-- Summary: Render the label using its selected, enabled, disabled or danger style.
 local function drawButton(surface, x, y, width, label, state)
     local background, foreground
     if state == "selected" then
@@ -182,8 +188,8 @@ local function centered(surface, y, text, tone)
     put(surface, x, y, text, tone)
 end
 
--- @ama-section: Display data | Field validity, formatting and status selection.
--- @ama-summary: Convert the surface cells into terminal text and blit rows.
+-- Section: Display data | Field validity, formatting and status selection.
+-- Summary: Convert the surface cells into terminal text and blit rows.
 local function finishSurface(surface)
     for y = 1, surface.height do
         local row = surface.rows[y]
@@ -199,7 +205,7 @@ local function finishSurface(surface)
     return surface
 end
 
--- @ama-summary: Read and validate the monitor's current character dimensions.
+-- Summary: Read and validate the monitor's current character dimensions.
 local function monitorSize(monitor)
     if type(monitor) ~= "table" or type(monitor.getSize) ~= "function" then
         return nil, nil, "monitor does not provide getSize()"
@@ -212,7 +218,7 @@ local function monitorSize(monitor)
     return math.floor(width), math.floor(height)
 end
 
--- @ama-summary: Clear the monitor and reset its drawing state.
+-- Summary: Clear the monitor and reset its drawing state.
 local function clearMonitor(monitor)
     if type(monitor.setBackgroundColor) == "function" then
         monitor.setBackgroundColor(getColor("black"))
@@ -227,8 +233,8 @@ local function clearMonitor(monitor)
     if type(monitor.clear) == "function" then monitor.clear() end
 end
 
--- @ama-section: Page rendering | Cached character-cell views and action regions.
--- @ama-summary: Write one character row through the monitor's plain-text methods.
+-- Section: Page rendering | Cached character-cell views and action regions.
+-- Summary: Write one character row through the monitor's plain-text methods.
 local function drawPlainRow(monitor, row, y)
     if type(monitor.setCursorPos) ~= "function" or type(monitor.write) ~= "function" then
         error("monitor lacks setCursorPos() or write()")
@@ -252,7 +258,7 @@ local function drawPlainRow(monitor, row, y)
     end
 end
 
--- @ama-summary: Flush changed character rows to the configured display.
+-- Summary: Flush changed character rows to the configured display.
 local function drawSurface(renderer, surface)
     local monitor = renderer.monitor
     local resized = not renderer.previous or renderer.previous.width ~= surface.width or
@@ -276,6 +282,18 @@ end
 local function isLive(snapshot)
     return snapshot.displayStale ~= true and snapshot.stale ~= true and
         snapshot.dataFresh ~= false
+end
+
+-- Unavailable core snapshots share the auxiliary network-state label. Up to
+-- STALE_NOTICE_SECONDS they read WAITING FOR CORE; after that CORE UNREACHABLE
+-- with the age of the newest snapshot (recorded by UI:draw in displayAge).
+local STALE_NOTICE_SECONDS = 10
+local displayAge = nil
+local function staleLabel()
+    if finite(displayAge) and displayAge > STALE_NOTICE_SECONDS then
+        return string.format("CORE UNREACHABLE %.0f S", displayAge), "yellow"
+    end
+    return "WAITING FOR CORE", "yellow"
 end
 
 local function getTargets(snapshot)
@@ -302,36 +320,7 @@ local function providerMap(node)
     return nil
 end
 
--- @ama-section: Display data | Field validity, formatting and status selection.
--- @ama-summary: Return provider observations in deterministic name order.
-local function providerPairs(node)
-    local providers = providerMap(node)
-    local names = {}
-    for name in pairs(providers or {}) do names[#names + 1] = tostring(name) end
-    table.sort(names)
-    local result = {}
-    for _, name in ipairs(names) do
-        local provider = providers[name]
-        if provider == nil then
-            for key, value in pairs(providers) do
-                if tostring(key) == name then provider = value break end
-            end
-        end
-        result[#result + 1] = { name = name, value = provider }
-    end
-    return result
-end
-
--- @ama-summary: Format the distinguishing end of a long peripheral name.
-local function suffixText(value, limit)
-    local text = tostring(value or "")
-    text = string.gsub(text, "[^%w_%.%-]", "?")
-    if #text <= limit then return text end
-    -- Peripheral names often share a prefix (for example steam_vent_). Keep
-    -- the suffix because it carries the configured vent's distinguishing ID.
-    return "..." .. string.sub(text, -(limit - 3))
-end
-
+-- Section: Display data | Field validity, formatting and status selection.
 local function controlState(node,key)
     if type(node)~="table" or node.online==false then return "FAULT" end
     local v=node[key] or (type(node.status)=="table" and node.status[key])
@@ -339,7 +328,7 @@ local function controlState(node,key)
     return "FAULT"
 end
 local function controlTone(state) return state=="FAULT" and "red" or (state=="CMD" and "yellow" or "green") end
--- @ama-summary: Format a chamber's link, control, lift, gas and target observations.
+-- Summary: Format a chamber's link, control, lift, gas and target observations.
 local function nodeSummary(name, node)
     if type(node) ~= "table" then return name .. " UNKNOWN" end
     local online = node.online == true and "ON" or (node.online == false and "OFF" or "LINK--")
@@ -379,7 +368,7 @@ local function nodeSummary(name, node)
         "   L=" .. lift .. "   G=" .. rate .. "   T=" .. target
 end
 
--- @ama-summary: Choose the chamber status colour from link/readiness and reported faults.
+-- Summary: Choose the chamber status colour from link/readiness and reported faults.
 local function nodeTone(node)
     if type(node) ~= "table" then return "gray" end
     local status = nodeStatus(node) or {}
@@ -392,7 +381,7 @@ local function nodeTone(node)
     return "gray"
 end
 
--- @ama-summary: Resolve the chamber gas, target and lift values for its tile.
+-- Summary: Resolve the chamber gas, target and lift values for its tile.
 local function nodeTileMeasurements(node)
     local status = nodeStatus(node) or {}
     local balloon = type(status.balloon) == "table" and status.balloon or
@@ -424,6 +413,22 @@ local function nodeTileMeasurements(node)
     return lift, rate, target
 end
 
+-- Summary: Report the lowest measured bulk-vent boiler efficiency of a chamber as a whole percent.
+-- The percent is rounded down, so 100% appears only when the start requirement of 100% is met.
+-- The reading is "--" until the chamber reports a valid efficiency (after its probe burner starts).
+local function nodeBoilerText(node)
+    local lowest
+    for _, provider in pairs(providerMap(node) or {}) do
+        if type(provider) == "table" and provider.controlRole == "bulk" and
+            provider.boilerEfficiencyValid == true and finite(provider.boilerEfficiency) and
+            (not lowest or provider.boilerEfficiency < lowest) then
+            lowest = provider.boilerEfficiency
+        end
+    end
+    if not lowest then return "BOILER --" end
+    return string.format("BOILER %d%%", math.floor(lowest * 100))
+end
+
 local function putColumn(surface, x, y, width, text, tone)
     if width < 1 then return end
     put(surface, x, y, clampText(text, width), tone)
@@ -441,23 +446,17 @@ local function centeredColumn(surface, x, width, y, text, tone)
     put(surface, left, y, text, tone)
 end
 
-local function nodeBooleanText(value)
-    if value == true then return "YES" end
-    if value == false then return "NO" end
-    return "--"
-end
-
--- @ama-section: Page rendering | Cached character-cell views and action regions.
--- @ama-summary: Render the four chamber control states and measured outputs.
+-- Section: Page rendering | Cached character-cell views and action regions.
+-- Summary: Render the four chamber control states and measured outputs.
 local function drawQuadrantTiles(surface, nodes, rightX, rightWidth)
-    centeredColumn(surface, rightX, rightWidth, 7, "GAS M3/T  TARGET  LIFT", "gray")
+    centeredColumn(surface, rightX, rightWidth, 7, "CHAMBERS", "gray")
     local gap = rightWidth >= 27 and 1 or 0
     local tileWidth = math.floor((rightWidth - gap) / 2)
     local tiles = {
         { name = "FL", x = rightX, width = tileWidth, y = 8 },
         { name = "FR", x = rightX + tileWidth + gap, width = rightWidth - tileWidth - gap, y = 8 },
-        { name = "RL", label = "BL", x = rightX, width = tileWidth, y = 15 },
-        { name = "RR", label = "BR", x = rightX + tileWidth + gap, width = rightWidth - tileWidth - gap, y = 15 },
+        { name = "BL", x = rightX, width = tileWidth, y = 15 },
+        { name = "BR", x = rightX + tileWidth + gap, width = rightWidth - tileWidth - gap, y = 15 },
     }
     for _, tile in ipairs(tiles) do
         local node = nodes[tile.name]
@@ -476,7 +475,7 @@ local function drawQuadrantTiles(surface, nodes, rightX, rightWidth)
         if type(node) == "table" then
             ready, armed = node.ready, node.armed
         end
-        putColumn(surface, tile.x, tile.y, tile.width, (tile.label or tile.name) .. " " .. link, nodeTone(node))
+        putColumn(surface, tile.x, tile.y, tile.width, tile.name .. " " .. link, nodeTone(node))
         putControlStatus(surface,tile.x,tile.y+1,tile.width,"THRUST ",controlState(node,"thrustControlState"))
         putControlStatus(surface,tile.x,tile.y+2,tile.width,"LIFT ",controlState(node,"liftControlState"))
         putColumn(surface, tile.x, tile.y + 3, tile.width, "GAS " .. rate, "white")
@@ -485,8 +484,8 @@ local function drawQuadrantTiles(surface, nodes, rightX, rightWidth)
     end
 end
 
--- @ama-section: Display data | Field validity, formatting and status selection.
--- @ama-summary: Validate a vessel field's availability within the current display snapshot.
+-- Section: Display data | Field validity, formatting and status selection.
+-- Summary: Validate a vessel field's availability within the current display snapshot.
 local function sensorAvailable(snapshot, vessel, field, live)
     if not live or not finite(vessel[field]) then return false end
     local validFields = type(vessel.validFields) == "table" and vessel.validFields or
@@ -496,7 +495,7 @@ local function sensorAvailable(snapshot, vessel, field, live)
     return true
 end
 
--- @ama-summary: Resolve the current vessel-data availability reason.
+-- Summary: Resolve the current vessel-data availability reason.
 local function vesselReason(snapshot, vessel)
     if vessel.valid ~= false and snapshot.vesselValid ~= false and snapshot.valid ~= false then
         return nil
@@ -506,7 +505,7 @@ local function vesselReason(snapshot, vessel)
     return clampText(reason, 40)
 end
 
--- @ama-summary: Filter successive speed observations into an increasing/decreasing trend marker.
+-- Summary: Filter successive speed observations into an increasing/decreasing trend marker.
 local function speedTrend(renderer, vessel, live, now)
     if not sensorAvailable(renderer.snapshot or {}, vessel, "forwardSpeed", live) then
         renderer.lastAbsSpeed, renderer.lastSpeedAt = nil, nil
@@ -538,7 +537,7 @@ local function speedTrend(renderer, vessel, live, now)
 end
 
 -- Shared geometry keeps drawn selectors and hit regions exactly aligned.
--- @ama-summary: Shared geometry keeps drawn selectors and hit regions exactly aligned.
+-- Summary: Shared geometry keeps drawn selectors and hit regions exactly aligned.
 local function modeRegions(width,field)
     local left=field=="heading" and 1 or math.floor(width/3)+1
     local right=field=="heading" and math.floor(width/3) or math.floor(width*2/3)
@@ -561,7 +560,7 @@ end
 UI.ASSEMBLY_TITLES = {
     DISASSEMBLED = "VESSEL NOT ASSEMBLED", ASSEMBLING = "VESSEL ASSEMBLING", UNKNOWN = "ASSEMBLY UNKNOWN",
 }
-local wrapErrorText -- defined with the heading error helpers below
+local wrapErrorText -- defined with the page rendering helpers below
 local function assemblyProblem(snapshot, live)
     local assembly = type(snapshot.assembly) == "table" and snapshot.assembly or nil
     if not live or not assembly or assembly.state == "ASSEMBLED" then return nil end
@@ -578,7 +577,7 @@ local function systemsStopAvailable(snapshot)
     local systems=type(snapshot.systemsStartup)=="table" and snapshot.systemsStartup or {}
     return systems.active==true or systems.phase=="ABORTED"
 end
--- @ama-summary: Format the retained systems-abort reason for the Flight warning area.
+-- Summary: Format the retained systems-abort reason for the Flight warning area.
 local function altitudeAbortMessage(snapshot, live)
     if not live then return nil end
     local systems=type(snapshot.systemsStartup)=="table" and snapshot.systemsStartup or nil
@@ -599,7 +598,7 @@ local function requestNotice(request)
     if request.status=="UNKNOWN" then return "COMMAND NOT CONFIRMED; CHECK CORE" end
     if request.status=="CANCELLED" then return "COMMAND CANCELLED: "..tostring(request.reason or "") end
 end
--- @ama-summary: Resolve kill/disarm progress text, availability and message-specific colour.
+-- Summary: Resolve kill/disarm progress text, availability and message-specific colour.
 local function emergencyLift(snapshot, live)
     local lift=type(snapshot.emergencyLift)=="table" and snapshot.emergencyLift or {}
     local request=type(snapshot.bridgeRequest)=="table" and snapshot.bridgeRequest or {}
@@ -626,7 +625,7 @@ local function emergencyLift(snapshot, live)
     end
     return {label="KILL LIFT"}
 end
--- @ama-summary: Resolve the cached balanced-capacity model exposed by systems control.
+-- Summary: Resolve the cached balanced-capacity model exposed by systems control.
 local function balancedLift(snapshot)
     local lift=type(snapshot.balancedLift)=="table" and snapshot.balancedLift or nil
     if not lift then
@@ -635,14 +634,13 @@ local function balancedLift(snapshot)
     end
     return lift
 end
--- @ama-summary: Format the active chamber capacity or provider-floor limit.
+-- Summary: Format the active chamber capacity or provider-floor limit.
 local function balancedLiftWarning(snapshot,live)
     if not live then return nil end
     local lift=balancedLift(snapshot)
     local phase=lift and type(lift.phase)=="string" and string.upper(lift.phase) or ""
     if phase=="LIMITED" then
         local quadrant=type(lift.limitingQuadrant)=="string" and string.upper(lift.limitingQuadrant) or ""
-        quadrant=({RL="BL",RR="BR"})[quadrant] or quadrant
         if quadrant~="FL" and quadrant~="FR" and quadrant~="BL" and quadrant~="BR" then quadrant="" end
         local limit=quadrant~="" and (quadrant.." LIFT LIMIT") or "LIFT LIMIT"
         return clampText("TARGET UNREACHABLE: "..limit,55)
@@ -661,7 +659,7 @@ local function fleetMaintenanceAllowed(snapshot)
     local phase=type(snapshot.fleetBoot)=="table" and snapshot.fleetBoot.phase or nil
     return phase=="WAITING_ASSEMBLY" or phase=="FAILED" or phase=="CANCELLED"
 end
--- @ama-summary: Evaluate the selected action against the current fleet startup gate.
+-- Summary: Evaluate the selected action against the current fleet startup gate.
 local function fleetActionAllowed(snapshot,action)
     if not fleetBootBlocked(snapshot) or type(action)~="table" or type(action.type)~="string" then return true end
     local kind=action.type
@@ -676,26 +674,26 @@ local function fleetActionAllowed(snapshot,action)
         kind=="altitude_engage" then return false end
     return true
 end
--- @ama-section: Page rendering | Cached character-cell views and action regions.
--- @ama-summary: Render assembly status, retained lift information and available maintenance access.
+-- Section: Page rendering | Cached character-cell views and action regions.
+-- Summary: Render assembly status and the operator instruction.
 local function drawAssemblyPanel(surface, snapshot, assembly)
     local width = surface.width
     fillRect(surface, 1, 5, width, 17, "black", "white")
     local tone = assembly.state == "ASSEMBLING" and "yellow" or "red"
     centered(surface, 6, "ERROR: " .. (UI.ASSEMBLY_TITLES[assembly.state] or "ASSEMBLY UNKNOWN"), tone)
-    centered(surface, 17, "Source: physics assembler isAssembled()", "gray")
-    local y = 8
-    for _, line in ipairs(wrapErrorText(clampText(assembly.reason or "No detail reported", 300), width - 4)) do
-        if y <= 9 then centered(surface, y, line, "white") end
-        y = y + 1
+    -- The cause starts on row 9; the instruction and the gas-levels line follow on rows 13 and 14.
+    local groups = assembly.state == "DISASSEMBLED" and {
+        { 9, "Core module reports physics assembler is not engaged.", "white", 2 },
+        { 13, "Please assemble the vessel to enable controls.", "yellow", 1 },
+        { 14, "Previous gas levels will be carried over.", "lightGray", 1 },
+    } or { { 9, clampText(assembly.reason or "No detail reported", 300), "white", 2 } }
+    for _, group in ipairs(groups) do
+        for n, line in ipairs(wrapErrorText(group[2], width - 4)) do
+            if n <= group[4] then centered(surface, group[1] + n - 1, line, group[3]) end
+        end
     end
-    centered(surface, 11, "Blocked: START SYSTEMS, altitude hold, trim,", "lightGray")
-    centered(surface, 12, "PID tuning, cockpit modes and propulsion.", "lightGray")
-    centered(surface, 14, "Applied lift ceilings are retained.", "yellow")
-    centered(surface, 15, "Nothing resumes automatically after reassembly.", "yellow")
-    centered(surface, 20, "Settings > Lift maintenance remains available.", "gray")
 end
--- @ama-summary: Render the fleet operation phase, current role and progress.
+-- Summary: Render the fleet operation phase, current role and progress.
 local function drawFleetBootPanel(surface,fleet)
     local width=surface.width
     local failed=fleet.phase=="FAILED" or fleet.phase=="CANCELLED"
@@ -721,8 +719,8 @@ local function drawFleetBootPanel(surface,fleet)
     centered(surface,20,"Settings and stop controls remain available.","gray")
 end
 
--- @ama-section: Display data | Field validity, formatting and status selection.
--- @ama-summary: Render the common heading, mode selectors and Systems control.
+-- Section: Display data | Field validity, formatting and status selection.
+-- Summary: Render the common heading, mode selectors and Systems control.
 local function addHeader(surface, snapshot, page, live)
     local width = surface.width
     local title = "A.E.V. AMARYLLIS"
@@ -796,7 +794,7 @@ local function addHeader(surface, snapshot, page, live)
     end
 end
 
--- @ama-summary: Calculate the current page-tab touch rectangles.
+-- Summary: Calculate the current page-tab touch rectangles.
 local function tabRegions(width, height)
     local count = #UI.PAGES
     local regions = {}
@@ -811,8 +809,8 @@ local function tabRegions(width, height)
     return regions
 end
 
--- @ama-section: Page rendering | Cached character-cell views and action regions.
--- @ama-summary: Render the page tabs and return their current touch regions.
+-- Section: Page rendering | Cached character-cell views and action regions.
+-- Summary: Render the page tabs and return their current touch regions.
 local function drawTabs(surface, selected)
     local regions = tabRegions(surface.width, surface.height)
     for _, region in ipairs(regions) do
@@ -845,8 +843,8 @@ local thrustDataLabels = { "primary-left", "primary-right" }
 local lateralRoles = {
     FL = { controller = "thrust-lb", port = "lateral-lb-p", starboard = "lateral-lb-s" },
     FR = { controller = "thrust-rb", port = "lateral-rb-p", starboard = "lateral-rb-s" },
-    RL = { controller = "thrust-ls", port = "lateral-ls-p", starboard = "lateral-ls-s" },
-    RR = { controller = "thrust-rs", port = "lateral-rs-p", starboard = "lateral-rs-s" },
+    BL = { controller = "thrust-ls", port = "lateral-ls-p", starboard = "lateral-ls-s" },
+    BR = { controller = "thrust-rs", port = "lateral-rs-p", starboard = "lateral-rs-s" },
 }
 
 local function thrustSnapshot(snapshot)
@@ -858,8 +856,8 @@ local function roleIsFresh(role, live)
         role.available == true and role.statusFresh == true
 end
 
--- @ama-section: Display data | Field validity, formatting and status selection.
--- @ama-summary: Extract a bounded issue message from the endpoint's cached fault data.
+-- Section: Display data | Field validity, formatting and status selection.
+-- Summary: Extract a bounded issue message from the endpoint's cached fault data.
 local function roleFaultText(role)
     if type(role) ~= "table" then return nil end
     local fault = role.fault
@@ -878,7 +876,7 @@ local function roleFaultText(role)
     return nil
 end
 
--- @ama-summary: Classify endpoint discovery, link, freshness and control readiness.
+-- Summary: Classify endpoint discovery, link, freshness and control readiness.
 local function roleDisplayStatus(role, live, controller)
     if not live then return "STALE" end
     if type(role) ~= "table" then return "MISSING" end
@@ -893,7 +891,7 @@ local function roleDisplayStatus(role, live, controller)
     return "LIVE"
 end
 
--- @ama-summary: Count the ready/live endpoints in the selected role group.
+-- Summary: Count the ready/live endpoints in the selected role group.
 local function roleCounts(map, labels, live, controller)
     if not live or type(map) ~= "table" then return nil, #labels end
     local ready = 0
@@ -906,9 +904,9 @@ local function roleCounts(map, labels, live, controller)
     return ready, #labels
 end
 
--- @ama-summary: Resolve the first reported fault or availability issue in a role group.
+-- Summary: Resolve the first reported fault or availability issue in a role group.
 local function roleIssue(map, labels, live, controller)
-    if not live then return "THRUST STATUS STALE" end
+    if not live then return (staleLabel("THRUST STATUS")) end
     if type(map) ~= "table" then return controller and "THRUST CONTROL UNAVAILABLE" or "PROP DATA UNAVAILABLE" end
     for _, label in ipairs(labels) do
         local role = map[label]
@@ -938,7 +936,7 @@ local function readbackPercent(role, live)
     return math.floor(role.appliedTransmissionLevel * 100 / 256 + 0.5)
 end
 
--- @ama-summary: Format the measured left/right primary drive output.
+-- Summary: Format the measured left/right primary drive output.
 local function appliedThrottleReadback(snapshot, live)
     local thrust = thrustSnapshot(snapshot)
     local roles = type(thrust.roles) == "table" and thrust.roles or nil
@@ -955,7 +953,8 @@ end
 
 local function propulsionMode(snapshot, thrust)
     local mode = type(thrust.mode) == "string" and thrust.mode or
-        (type(snapshot.modes) == "table" and snapshot.modes.throttle or nil)
+        (type(snapshot.effectiveModes) == "table" and snapshot.effectiveModes.throttle or
+            (type(snapshot.modes) == "table" and snapshot.modes.throttle or nil))
     return type(mode) == "string" and string.upper(mode) or "UNAVAILABLE"
 end
 
@@ -980,15 +979,17 @@ local function headingControlSnapshot(snapshot, thrust)
     return type(thrust.headingControl) == "table" and thrust.headingControl or nil
 end
 
+-- Summary: Resolve controller operating mode, then effective authority and pilot selections.
 local function controlMode(snapshot, control, field)
     local mode = type(control) == "table" and control.mode or nil
     if type(mode) ~= "string" then
-        mode = type(snapshot.modes) == "table" and snapshot.modes[field] or nil
+        local modes=type(snapshot.effectiveModes)=="table" and snapshot.effectiveModes or snapshot.modes
+        mode = type(modes) == "table" and modes[field] or nil
     end
     return type(mode) == "string" and string.upper(mode) or nil
 end
 
--- @ama-summary: Check the selected feedback controller's reported availability.
+-- Summary: Check the selected feedback controller's reported availability.
 local function controlUnavailable(control, selectedMode)
     if type(control) ~= "table" then return true end
     if control.available ~= true then return true end
@@ -1010,9 +1011,9 @@ local function uncommissionedReason(reason)
         string.find(string.upper(reason), "UNCOMMISSIONED", 1, true) ~= nil
 end
 
--- @ama-summary: Format measured acceleration feedback and its availability reason.
+-- Summary: Format measured acceleration feedback and its availability reason.
 local function manualAccelerationDetail(snapshot, live, thrust)
-    if not live then return "MAN ACCEL STALE", "red" end
+    if not live then return staleLabel("MAN ACCEL") end
     local selectedMode = controlMode(snapshot, nil, "throttle")
     local control = manualAccelerationSnapshot(snapshot, thrust)
     if not control then
@@ -1040,9 +1041,9 @@ local function manualAccelerationDetail(snapshot, live, thrust)
     return "MAN " .. state .. " M" .. measured .. " b/s^2", "white"
 end
 
--- @ama-summary: Format current heading/yaw feedback and its availability reason.
+-- Summary: Format current heading/yaw feedback and its availability reason.
 local function headingFeedbackDetail(snapshot, live, thrust)
-    if not live then return "HDG STATUS STALE", "red" end
+    if not live then return staleLabel("HDG STATUS") end
     local selectedMode = controlMode(snapshot, nil, "heading")
     if selectedMode ~= "MANUAL" and selectedMode ~= "SEL" then return nil, "gray" end
     local control = headingControlSnapshot(snapshot, thrust)
@@ -1074,7 +1075,7 @@ local function headingFeedbackDetail(snapshot, live, thrust)
     return "HDG " .. state .. " T" .. targetRate .. " R" .. measured .. "d/s", "white"
 end
 
--- @ama-summary: Resolve the supported selected-speed feedback state for display.
+-- Summary: Resolve the supported selected-speed feedback state for display.
 local function speedControlStatus(speedControl)
     if type(speedControl) ~= "table" then return nil end
     local status = type(speedControl.controlStatus) == "string" and
@@ -1088,7 +1089,7 @@ local function speedControlStatus(speedControl)
     return status
 end
 
--- @ama-summary: Resolve the current selected-speed target from feedback or pilot selection.
+-- Summary: Resolve the current selected-speed target from feedback or pilot selection.
 local function speedTarget(snapshot, thrust, live)
     if not live then return nil end
     local speedControl = speedControlSnapshot(snapshot, thrust)
@@ -1111,12 +1112,14 @@ local function propulsionInputPercent(snapshot, live)
     return nil
 end
 
--- @ama-summary: Format the requested acceleration, selected speed or direct drive value.
+-- Summary: Format the requested acceleration, selected speed or direct drive value.
 local function propulsionRequestText(snapshot, live)
     local thrust = thrustSnapshot(snapshot)
-    if not live then return "THRUST REQUEST STALE", "red" end
+    if not live then return staleLabel("THRUST REQUEST") end
     local mode = propulsionMode(snapshot, thrust)
     local request = type(thrust.request) == "table" and thrust.request or {}
+    -- While AP is engaged, the mode and request are AP's own (SEL, or DIRECT at idle in ACQ and CAPTURE).
+    local apActive = (snapshot.autopilot or {}).active == true
     if mode == "MAN" or mode == "MANUAL" then
         if finite(request.manualAcceleration) then
             return "REQ ACC " .. numberText(request.manualAcceleration, 2, true) .. " b/s^2", "white"
@@ -1126,16 +1129,16 @@ local function propulsionRequestText(snapshot, live)
     elseif mode == "SEL" then
         local target = speedTarget(snapshot, thrust, live)
         if finite(target) then
-            return "SEL TARGET " .. numberText(target, 2, true) .. " b/s", "white"
+            return (apActive and "AP TARGET " or "SEL TARGET ") .. numberText(target, 2, true) .. " b/s", "white"
         end
-        return "SEL TARGET UNAVAILABLE", "gray"
+        return apActive and "AP TARGET UNAVAILABLE" or "SEL TARGET UNAVAILABLE", "gray"
     elseif mode == "DIRECT" then
         local settingsRoot = type(snapshot.settings) == "table" and snapshot.settings or {}
         local settings = type(settingsRoot.thrust) == "table" and settingsRoot.thrust or {}
         local rpmVerified = settings.directRpmVerified == true or
             settings.directRpmCalibrationAvailable == true
         if rpmVerified and finite(request.directRpm) then
-            return "REQ RPM " .. numberText(request.directRpm, 0, true), "white"
+            return (apActive and "AP RPM " or "REQ RPM ") .. numberText(request.directRpm, 0, true), "white"
         end
         if finite(request.directDriveRequest) and
             request.directDriveRequest >= 0 and request.directDriveRequest <= 1 then
@@ -1147,7 +1150,7 @@ local function propulsionRequestText(snapshot, live)
     return "THRUST REQUEST UNAVAILABLE", "gray"
 end
 
--- @ama-summary: Format propulsion-mode feedback, calibration and thrust-limit information.
+-- Summary: Format propulsion-mode feedback, calibration and thrust-limit information.
 local function propulsionModeDetail(snapshot, live)
     if not live then return "PROP SETTINGS UNAVAILABLE", "red" end
     local thrust = thrustSnapshot(snapshot)
@@ -1180,9 +1183,9 @@ local function propulsionModeDetail(snapshot, live)
     return "PROP MODE UNAVAILABLE", "gray"
 end
 
--- @ama-summary: Resolve the current propulsion, endpoint or cockpit-feedback issue.
-local function firstThrustIssue(snapshot, live)
-    if not live then return "THRUST STATUS STALE" end
+-- Summary: Resolve the current propulsion, endpoint or cockpit-feedback issue.
+local function rawThrustIssue(snapshot, live)
+    if not live then return (staleLabel("THRUST STATUS")) end
     -- Identity conflict bridge warning v1
     local conflict=snapshot.identityConflict or {}
     if conflict.active then return conflict.text end
@@ -1237,7 +1240,14 @@ local function firstThrustIssue(snapshot, live)
     return nil
 end
 
--- @ama-summary: Read a validated raw value from the cached propulsion endpoint.
+-- Summary: First propulsion issue, with every lease problem shown as one yellow core stall notice.
+local function firstThrustIssue(snapshot, live)
+    local issue = rawThrustIssue(snapshot, live)
+    if leaseText(issue) then return stallText(snapshot) end
+    return issue
+end
+
+-- Summary: Read a validated raw value from the cached propulsion endpoint.
 local function readbackRaw(endpoint, key)
     if type(endpoint) ~= "table" then return nil end
     local readings = type(endpoint.readings) == "table" and endpoint.readings or endpoint
@@ -1270,7 +1280,7 @@ local function readbackRaw(endpoint, key)
     return nil
 end
 
--- @ama-summary: Format the endpoint's raw speed, thrust, vector or assembly observation.
+-- Summary: Format the endpoint's raw speed, thrust, vector or assembly observation.
 local function dataReadout(endpoint, live, compact)
     local status = roleDisplayStatus(endpoint, live, false)
     if status ~= "LIVE" then return status end
@@ -1291,7 +1301,7 @@ local function dataReadout(endpoint, live, compact)
     return "LIVE"
 end
 
--- @ama-summary: Format a controller drive's requested demand and measured level.
+-- Summary: Format a controller drive's requested demand and measured level.
 local function controllerDriveReadback(controller, drive, live)
     local current = live and type(controller) == "table" and controller.online == true
         and controller.statusFresh == true
@@ -1310,7 +1320,7 @@ local function controllerDriveReadback(controller, drive, live)
     return "LVL " .. (level or "--") .. " REQ " .. requestText
 end
 
--- @ama-summary: Map detailed endpoint status into the compact tile label.
+-- Summary: Map detailed endpoint status into the compact tile label.
 local function shortRoleStatus(role, live, controller)
     local status = roleDisplayStatus(role, live, controller)
     if controller and status~="CMD" and status~="RDY" then return "FAULT" end
@@ -1324,8 +1334,8 @@ local function shortRoleStatus(role, live, controller)
     return status
 end
 
--- @ama-section: Page rendering | Cached character-cell views and action regions.
--- @ama-summary: Render speed, vessel motion, propulsion feedback and chamber control tiles.
+-- Section: Page rendering | Cached character-cell views and action regions.
+-- Summary: Render speed, vessel motion, propulsion feedback and chamber control tiles.
 local function drawFlight(surface, snapshot, live, renderer, now)
     local vessel = type(snapshot.vessel) == "table" and snapshot.vessel or {}
     local nodes = type(snapshot.nodes) == "table" and snapshot.nodes or {}
@@ -1393,9 +1403,9 @@ local function drawFlight(surface, snapshot, live, renderer, now)
     centeredColumn(surface, 1, leftWidth, 11, "b/s", "gray")
     local requestText, requestTone = propulsionRequestText(snapshot, live)
     putColumn(surface, 1, 17, leftWidth, requestText, requestTone)
-    put(surface, 1, 12, "APPLIED THROTTLE", "gray")
+    put(surface, 1, 12, "MAIN ENG. POWER", "gray")
     local appliedText, appliedTone = appliedThrottleReadback(snapshot, live)
-    putColumn(surface, 17, 12, leftWidth - 16, appliedText, appliedTone)
+    putColumn(surface, 18, 12, leftWidth - 17, appliedText, appliedTone)
     putColumn(surface, 1, 13, leftWidth,
         "ALTITUDE Y " .. altitude .. " TGT " .. altitudeTarget, "white")
     putColumn(surface, 1, 14, leftWidth, "V/S " .. vertical .. " b/s", "white")
@@ -1445,10 +1455,10 @@ local function drawFlight(surface, snapshot, live, renderer, now)
     local modeDetail, modeTone = propulsionModeDetail(snapshot, live)
     local systems = snapshot.systemsStartup or {}
     if systems.active then
-        local phaseText=systems.displayPhase or (systems.phase=="BUILDING_LIFT" and "BUILD" or tostring(systems.phase or "STARTING"))
+        local phaseText=systems.displayPhase or (systems.phase=="MAIN_LIFT" and "BUILD" or tostring(systems.phase or "STARTING"))
         local detail=systems.displayPhase and phaseText or ("SYSTEMS "..phaseText)
         -- Show which bound is holding the climb back and the chamber ACK wait.
-        if type(systems.speedLimiter) == "string" and systems.phase == "BUILDING_LIFT" then
+        if type(systems.speedLimiter) == "string" and systems.phase == "MAIN_LIFT" then
             detail = detail .. " " .. systems.speedLimiter
         end
         if type(systems.ackWaitSeconds) == "number" and systems.ackWaitSeconds == systems.ackWaitSeconds and
@@ -1480,18 +1490,17 @@ local function drawFlight(surface, snapshot, live, renderer, now)
     local issue = firstThrustIssue(snapshot, live)
     if not issue and type(snapshot.cockpitControl) == "table" then
         local cockpit = snapshot.cockpitControl
-        local waiting = cockpit.headingWaitingForNeutral or cockpit.throttleWaitingForNeutral or cockpit.altitudeWaitingForNeutral
-        if not live then issue = "COCKPIT STALE"
+        if not live then issue = (staleLabel("COCKPIT"))
         elseif type(cockpit.reason) == "string" and cockpit.reason ~= "" then issue = cockpit.reason
-        elseif waiting then issue = "RETURN CONTROLS TO NEUTRAL" end
+        elseif cockpit.thrustNotNeutral == true then issue = "THRUST NOT NEUTRAL" end
     end
     local issueTone = not issue and "green" or
-        (string.find(issue, "FAULT", 1, true) and "red" or "yellow")
+        ((string.find(issue, "FAULT", 1, true) and not leaseText(issue)) and "red" or "yellow")
     surface.flightMessage={text=issue and (issue:find("UNABLE TO REACH TARGET:",1,true)==1 and issue or ("PROP STATUS "..issue)) or "PROP STATUS AVAILABLE",tone=issueTone}
     drawQuadrantTiles(surface, nodes, rightX, rightWidth)
 end
 
--- @ama-summary: Render destination editing, active route guidance or digital-anchor status.
+-- Summary: Render destination editing, active route guidance or digital-anchor status.
 local function drawNavigation(surface, snapshot, live, renderer)
     renderer.navRegions={}
     local view=renderer.navView or "ANCHOR"
@@ -1543,32 +1552,38 @@ local function drawNavigation(surface, snapshot, live, renderer)
     elseif view=="AUTOPILOT" then
         if ap.active then
             local vessel=snapshot.vessel or {}
-            centered(surface,6,"AUTOPILOT / "..tostring(ap.state or "ACQ"),"cyan")
-            centered(surface,8,clampText(draft.name or "Destination",surface.width-4),"white")
+            local stage=ap.state=="ACQ" and "ACQUIRING HEADING" or
+                (ap.state=="CAPTURE" and "CAPTURING ROUTE" or tostring(ap.state or "ACQ"))
+            local route=ap.route or {}
+            local entry=(route.entries or {})[route.index or 1] or {}
+            centered(surface,6,"AUTOPILOT / "..stage,"cyan")
+            centered(surface,7,"HDG BIAS "..numberText(ap.headingBias or 0,1,true).." DEG","gray")
+            centered(surface,8,clampText(entry.name or draft.label or "--",surface.width-4),"white")
             putColumn(surface,2,10,26,"HDG "..angleText(vessel.heading),"white")
             putColumn(surface,29,10,27,"TARGET "..angleText(ap.requestedHeading),"cyan")
             putColumn(surface,2,12,26,"SPEED "..numberText(live and vessel.forwardSpeed,1,false).." b/s","white")
-            putColumn(surface,29,12,27,"TARGET "..numberText(ap.requestedSpeed,1,false).." b/s","cyan")
+            if not ap.primaryIdle then
+                putColumn(surface,29,12,27,"TARGET "..numberText(ap.requestedSpeed,1,false).." b/s","cyan")
+            end
             putColumn(surface,2,14,54,"DEVIATION "..numberText(ap.crossTrack,1,true).." blocks","white")
             putColumn(surface,2,16,54,"DISTANCE "..numberText(ap.distance,1,false).." blocks","white")
             button(2,18,54,"DISENGAGE AUTOPILOT",{type="ap_disengage"},true)
             if ap.reason then putColumn(surface,2,20,surface.width-2,ap.reason,"yellow")
-            elseif ap.state=="ACQ" then centered(surface,20,"Holding position while acquiring heading","gray")
-            elseif ap.state=="DECEL" then centered(surface,20,"Braking and settling at destination","gray") end
+            elseif ap.state=="DECEL" then centered(surface,20,"Slowing for the destination","gray") end
             return
         end
         centered(surface,6,"PLAN ROUTE","cyan")
-        button(2,8,54,"DESTINATION "..tostring(draft.name or "Destination"),{type="ap_field",key="name",label="destination name",value=draft.name or "Destination"},not ap.active)
+        button(2,8,54,"DESTINATION "..tostring(draft.label or "--"),{type="ap_field",key="name",label="destination name",value=draft.name or ""},not ap.active)
         button(2,10,26,"X "..numberText(draft.x,1,false),{type="ap_field",key="x",label="destination X",value=draft.x or 0},not ap.active)
         button(29,10,27,"Z "..numberText(draft.z,1,false),{type="ap_field",key="z",label="destination Z",value=draft.z or 0},not ap.active)
         button(2,12,26,"SPEED "..numberText(draft.cruiseSpeed,1,false).." b/s",{type="ap_field",key="cruiseSpeed",label="cruise speed",value=draft.cruiseSpeed or 3},not ap.active)
         button(29,12,27,"ALTITUDE "..numberText(draft.altitude,1,false),{type="ap_field",key="altitude",label="flight altitude",value=draft.altitude or 160},not ap.active)
-        button(2,14,26,"USE CURRENT POSITION",{type="ap_current"},not ap.active)
+        button(2,14,26,"SET CURRENT POSITION",{type="ap_current"},not ap.active)
         button(29,14,27,"SAVED DESTINATIONS",{type="nav_view",view="LIBRARY"})
         button(2,16,54,"SAVE DESTINATION TO DISK",{type="destination_save"},(ap.library or {}).writable and draft.x~=nil and draft.z~=nil)
         button(2,18,54,ap.active and "DISENGAGE" or "ENGAGE",{type=ap.active and "ap_disengage" or "ap_engage"},ap.active or ap.available)
         if ap.active then centered(surface,20,"DISTANCE "..numberText(ap.distance,1,false).."  SPEED "..numberText(ap.requestedSpeed,1,false),"white")
-        else putColumn(surface,2,20,surface.width-2,ap.engageReason or "Set destination, cruise speed and altitude","gray") end
+        else putColumn(surface,2,20,surface.width-2,ap.engageReason or "Enter coordinates, cruise speed and altitude","gray") end
         return
     end
     local anchor=snapshot.anchorControl or {}
@@ -1593,32 +1608,34 @@ local function drawNavigation(surface, snapshot, live, renderer)
     centered(surface,8,"POSITION HOLD OFF","white")
     centered(surface,10,"X "..numberText(position.x,1,false).."   Z "..numberText(position.z,1,false),"white")
     centered(surface,12,"SPEED "..numberText(live and vessel.forwardSpeed,1,false).." b/s","white")
-    centered(surface,15,"Capture this position and brake to a stop.","gray")
+    centered(surface,15,"Holds the vessel in the specified coordinate.","gray")
     if not live then centered(surface,18,"WAITING FOR FRESH DATA","yellow")
     elseif not anchor.available then centered(surface,18,anchor.engageReason or "ANCHOR UNAVAILABLE","yellow") end
 end
 
--- @ama-summary: Render the highest-priority cached ship fault.
+-- Summary: Render the highest-priority cached ship fault.
 local function drawShipFaults(surface, snapshot, live)
     local faults = type(snapshot.faults) == "table" and snapshot.faults or {}
-    local faultText, faultTone = "NO REPORTED FAULTS", "green"
+    local faultText, faultTone = "CLEAR", "green"
     local conflict=snapshot.identityConflict or {}
     if live and conflict.active then
         faultText,faultTone=clampText(conflict.text,surface.width-4),"red"
     elseif #faults > 0 then
-        faultText, faultTone = clampText(faults[1], surface.width - 4), "red"
+        -- Boiler checks are yellow; other reported faults stay red.
+        faultText = clampText(faults[1], surface.width - 4)
+        faultTone = tostring(faults[1]):find("CHECK BOILER",1,true) and "yellow" or "red"
     elseif not live then
-        faultText, faultTone = "FAULT STATUS STALE", "red"
+        faultText, faultTone = staleLabel("FAULT STATUS")
     else
         local issue = firstThrustIssue(snapshot, live)
         if issue and string.find(issue, "FAULT", 1, true) then
-            faultText, faultTone = clampText(issue, surface.width - 4), "red"
+            faultText, faultTone = clampText(issue, surface.width - 4), leaseText(issue) and "yellow" or "red"
         end
     end
     putColumn(surface, 2, surface.height - 3, surface.width - 2, "FAULTS " .. faultText, faultTone)
 end
 
--- @ama-summary: Render vessel lift and per-chamber envelope/provider observations.
+-- Summary: Render vessel lift and per-chamber envelope/provider observations.
 local function drawShipLift(surface, snapshot, live)
     local vessel = type(snapshot.vessel) == "table" and snapshot.vessel or {}
     local nodes = type(snapshot.nodes) == "table" and snapshot.nodes or {}
@@ -1631,9 +1648,8 @@ local function drawShipLift(surface, snapshot, live)
         putColumn(surface, 2, 8, surface.width - 2, "ALT: " .. vessel.altitudeSource,
             vessel.altitudeSource == "Sable world CoM" and "gray" or "yellow")
     end
-    centered(surface, 9, "^ BOW ^ / LIFT OUTPUTS", "gray")
-    local quadrants = { "FL", "FR", "RL", "RR" }
-    local quadrantLabels = { RL = "BL", RR = "BR" }
+    centered(surface, 9, "CHAMBER STATUS", "gray")
+    local quadrants = { "FL", "FR", "BL", "BR" }
     local rightX = math.floor(surface.width / 2) + 2
     local tileWidth = math.floor(surface.width / 2) - 1
     -- Match the vessel's quadrant arrangement, with separate gas and target rows.
@@ -1647,7 +1663,7 @@ local function drawShipLift(surface, snapshot, live)
         local ready, armed
         if type(node) == "table" then ready, armed = node.ready, node.armed end
         local lift, rate, target = nodeTileMeasurements(node)
-        local status = (quadrantLabels[id] or id) .. " " .. link
+        local status = id .. " " .. link .. "  " .. nodeBoilerText(node)
         putColumn(surface, x, y, tileWidth, status, nodeTone(node))
         putControlStatus(surface,x,y+1,13,"THRUST ",controlState(node,"thrustControlState"))
         putControlStatus(surface,x+13,y+1,tileWidth-13,"LIFT ",controlState(node,"liftControlState"))
@@ -1658,7 +1674,7 @@ local function drawShipLift(surface, snapshot, live)
     drawShipFaults(surface, snapshot, live)
 end
 
--- @ama-summary: Render configured propulsion endpoints and their readbacks.
+-- Summary: Render configured propulsion endpoints and their readbacks.
 local function drawShipPropulsion(surface, snapshot, live)
     local thrust = thrustSnapshot(snapshot)
     local controllers = type(thrust.roles) == "table" and thrust.roles or {}
@@ -1669,24 +1685,23 @@ local function drawShipPropulsion(surface, snapshot, live)
         "LEFT  " .. dataReadout(units["primary-left"], live, true), "white")
     putColumn(surface, 2, 10, surface.width - 2,
         "RIGHT " .. dataReadout(units["primary-right"], live, true), "white")
-    centered(surface, 12, "LATERALS / APPLIED LEVEL AND REQUEST", "gray")
-    local quadrants = { "FL", "FR", "RL", "RR" }
-    local quadrantLabels = { RL = "BL", RR = "BR" }
+    centered(surface, 11, "LATERALS / APPLIED LEVEL AND REQUEST", "gray")
+    local quadrants = { "FL", "FR", "BL", "BR" }
     for i, id in ipairs(quadrants) do
         local mapping = lateralRoles[id]
         local controller = controllers[mapping.controller]
         local controllerStatus = shortRoleStatus(controller, live, true)
         local portData = controllerDriveReadback(controller, mapping.port, live)
         local starboardData = controllerDriveReadback(controller, mapping.starboard, live)
-        putControlStatus(surface,2,10+i*2,surface.width-2,(quadrantLabels[id] or id).." THRUST ",controllerStatus)
-        local line = "LVL P " .. portData:gsub("^LVL ", "") .. " S " .. starboardData:gsub("^LVL ", "")
+        putControlStatus(surface,2,10+i*2,surface.width-2,id.." THRUST ",controllerStatus)
+        local line = "LVL PORT " .. portData:gsub("^LVL ", "") .. " STB " .. starboardData:gsub("^LVL ", "")
         putColumn(surface, 2, 11 + i * 2, surface.width - 2, line, "white")
     end
     drawShipFaults(surface, snapshot, live)
 end
 
--- @ama-section: Display data | Field validity, formatting and status selection.
--- @ama-summary: Calculate the local Ship subsection touch rectangles.
+-- Section: Display data | Field validity, formatting and status selection.
+-- Summary: Calculate the local Ship subsection touch rectangles.
 local function shipTabRegions(width)
     local first = math.floor(width / 3)
     local second = math.floor(width * 2 / 3)
@@ -1697,8 +1712,8 @@ local function shipTabRegions(width)
     }
 end
 
--- @ama-section: Page rendering | Cached character-cell views and action regions.
--- @ama-summary: Render the Ship subsection labels and selection.
+-- Section: Page rendering | Cached character-cell views and action regions.
+-- Summary: Render the Ship subsection labels and selection.
 local function drawShipTabs(surface, renderer)
     local regions = shipTabRegions(surface.width)
     renderer.shipTabRegions = regions
@@ -1710,7 +1725,7 @@ local function drawShipTabs(surface, renderer)
     end
 end
 
--- @ama-summary: Render manual fore/aft bias, measured attitude difference and trim status.
+-- Summary: Render manual fore/aft bias, measured attitude difference and trim status.
 local function drawShipTrim(surface, snapshot, renderer, live)
     local trim = type(snapshot.trimControl) == "table" and snapshot.trimControl or {}
     local bias = trim.manualForeAftBias
@@ -1719,7 +1734,7 @@ local function drawShipTrim(surface, snapshot, renderer, live)
     local available = live and trim.manualTrimAvailable == true and finite(bias)
     renderer.shipRegions = {}
 
-    -- @ama-summary: Render a bounded action label and record its touch region.
+    -- Summary: Render a bounded action label and record its touch region.
     local function button(x, y, width, label, action, enabled)
         local canPress = enabled == true and available and fleetActionAllowed(snapshot, action)
         drawButton(surface, x, y, width, label, canPress and "enabled" or "disabled")
@@ -1764,10 +1779,9 @@ local function drawShipTrim(surface, snapshot, renderer, live)
     end
     centered(surface, 19, "RANGE " .. numberText(minimum, 1, true) .. " TO " ..
         numberText(maximum, 1, true) .. " BLOCKS", "gray")
-    centered(surface, 20, "SELECTED ALTITUDE STAYS UNCHANGED", "gray")
 end
 
--- @ama-summary: Render the selected Ship lift, propulsion or trim subsection.
+-- Summary: Render the selected Ship lift, propulsion or trim subsection.
 local function drawShip(surface, snapshot, live, renderer)
     drawShipTabs(surface, renderer)
     renderer.shipRegions = {}
@@ -1782,9 +1796,24 @@ end
 
 -- Settings reuse the existing body. Every painted button registers the same
 -- rectangle for touch handling; subpages never extend the monitor footprint.
--- @ama-summary: Render the selected settings page, editor or maintenance review.
+-- Summary: Render the selected settings page, editor or maintenance review.
 local function drawSettings(surface,snapshot,renderer)
     renderer.settingsRegions={}
+    -- Each settings page names its parent page for BACK and, where the group
+    -- name reads poorly as a heading, its title. Pages absent from this table
+    -- return to GENERAL and use "<GROUP> SETTINGS" as their title, so renaming
+    -- a group changes its page and its BACK target together.
+    local SETTINGS_PAGES={
+        ["SEL HEADING"]={parent="TARGET",title="SEL HEADING SETTINGS"},
+        ["SEL THROTTLE"]={parent="TARGET",title="SEL THROTTLE SETTINGS"},
+        ["INPUT ALTITUDE"]={parent="TARGET",title="ALTITUDE SELECTOR SETTINGS"},
+        ["STRAFE SETTINGS"]={parent="TARGET",title="STRAFE SETTINGS"},
+        HARDWARE={parent="MAINTENANCE"},["LEVEL RESET"]={parent="SYSTEMS",title="RESET LEVELING"},
+        ["NAV ANCHOR"]={parent="NAV"},["NAV AUTOPILOT"]={parent="NAV"},
+        ["PROP SPEED PID"]={parent="PROP PID"},["PROP ACCEL PID"]={parent="PROP PID"},["PROP YAW PID"]={parent="PROP PID"},
+        ["PROP PID"]={parent="PROPULSION"},["PROP LIMITS"]={parent="PROPULSION"},["PROPULSION STATUS"]={parent="PROPULSION"},
+        ["ALT PID"]={parent="PID",title="ALTITUDE PID / LIMITS"},["VS PID"]={parent="PID"},LIMITS={parent="PID"},STARTUP={parent="PID"},TUNING={parent="PID"},
+    } -- end SETTINGS_PAGES
     local live=isLive(snapshot)
     local function button(x,y,w,label,action,enabled)
         local available=enabled~=false and fleetActionAllowed(snapshot,action)
@@ -1841,7 +1870,7 @@ local function drawSettings(surface,snapshot,renderer)
     elseif sub=="GENERAL" then
         centered(surface,6,"FLIGHT SETTINGS 1/2","cyan")
         for _,entry in ipairs(entries) do if entry.key=="cockpit_timeout" then edit(entry,8) end end
-        button(2,10,26,"INPUT TUNING",view("TARGET"))
+        button(2,10,26,"COCKPIT INPUTS",view("TARGET"))
         button(29,10,27,"PID / LIMITS",view("PID"))
         button(2,12,26,"NAV / ANCHOR",view("NAV"))
         button(29,12,27,"DISPLAY",view("DISPLAY"))
@@ -1857,11 +1886,11 @@ local function drawSettings(surface,snapshot,renderer)
             "Resume retained lift / selected altitude; no takeoff seed.") or
             "","gray")
     elseif sub=="TARGET" then
-        centered(surface,6,"COCKPIT INPUT TUNING","cyan")
-        button(2,9,54,"SELECTED HEADING INPUT",view("INPUT HEADING"))
-        button(2,12,54,"SELECTED SPEED INPUT",view("INPUT SPEED"))
-        button(2,15,54,"ALTITUDE TARGET INPUT",view("INPUT ALTITUDE"))
-        text(17,"Held-input acceleration: 0 = constant rate.","gray")
+        centered(surface,6,"COCKPIT INPUTS","cyan")
+        button(2,8,54,"SEL HEADING SETTINGS",view("SEL HEADING"))
+        button(2,10,54,"SEL THROTTLE SETTINGS",view("SEL THROTTLE"))
+        button(2,12,54,"ALTITUDE SELECTOR SETTINGS",view("INPUT ALTITUDE"))
+        button(2,14,54,"STRAFE SETTINGS",view("STRAFE SETTINGS"))
     elseif sub=="DEBUG" then
         local debug=snapshot.debugMode or {}
         centered(surface,6,"DISK DEBUG RECORDING","cyan")
@@ -1878,18 +1907,26 @@ local function drawSettings(surface,snapshot,renderer)
         text(18,"SAVED "..tostring(debug.bytes or 0).." bytes  DROPPED "..tostring(debug.dropped or 0),"gray")
     elseif sub=="SYSTEMS" then
         centered(surface,6,"FLIGHT SETTINGS 2/2","cyan")
-        local row=8
-        for _,entry in ipairs(entries) do
-            if entry.group=="LATERAL" then edit(entry,row);row=row+2 end
-        end
         local systems=snapshot.systemsStartup or {}
+        button(2,8,54,"RESET LEVELING",view("LEVEL RESET"))
         local stopSystems=systemsStopAvailable(snapshot)
         button(2,16,26,stopSystems and "STOP SYSTEMS" or "START SYSTEMS",
             {type=stopSystems and "systems_stop" or "start_systems"},
             live and (stopSystems or (systems.available==true and not ((snapshot.emergencyLift or {}).latched))))
         button(29,16,27,"RESTART SYSTEMS",{type="restart_systems"},
             live and (snapshot.systemsRestart or {}).available==true)
-        text(18,"Both pulls in SEL: brake sideways, return to MAN.","gray")
+    elseif sub=="LEVEL RESET" then
+        centered(surface,6,"RESET LEVELING","cyan")
+        local systems=snapshot.systemsStartup or {}
+        local trim=type(snapshot.trimControl)=="table" and snapshot.trimControl or {}
+        text(8,"Resets the learned roll/pitch split back to the values")
+        text(9,"saved while she was last airborne and level. Sets them")
+        text(10,"to zero if none is saved.")
+        text(11,"Use after an outside force held her tilted.","gray")
+        text(13,"LEARNED ROLL "..numberText(trim.coarseSteamTrimRoll,1,true).."  PITCH "..numberText(trim.coarseSteamTrimPitch,1,true))
+        local ready=systems.phase=="READY"
+        text(17,ready and "LEVEL RESET READY" or "AVAILABLE AFTER START SYSTEMS IS READY",ready and "white" or "yellow")
+        button(29,19,27,"CONFIRM RESET",{type="level_reset"},live and ready)
     elseif sub=="MAINTENANCE" then
         centered(surface,6,"LIFT MAINTENANCE","cyan")
         text(8,"CoM Y "..numberText(maintenance.altitude,2,false).."   "..(maintenance.locked and "LOCKED" or "BELOW LIMIT"),"yellow")
@@ -1899,7 +1936,7 @@ local function drawSettings(surface,snapshot,renderer)
         button(2,12,26,stopSystems and "STOP SYSTEMS" or "START SYSTEMS",{type=stopSystems and "systems_stop" or "start_systems"},live and (stopSystems or (systems.available==true and not ((snapshot.emergencyLift or {}).latched))))
         button(29,12,27,"HARDWARE RECHECK",view("HARDWARE"))
         text(14,"RESTART LIFT COMPUTERS (review required)")
-        for i,q in ipairs({"FL","FR","RL","RR"}) do button(2+(i-1)*14,16,12,({RL="BL",RR="BR"})[q] or q,{type="maintenance_review",scope=q},live and not maintenance.job) end
+        for i,q in ipairs({"FL","FR","BL","BR"}) do button(2+(i-1)*14,16,12,q,{type="maintenance_review",scope=q},live and not maintenance.job) end
         button(2,18,54,"RESTART ALL SEQUENTIALLY",{type="maintenance_review",scope="ALL"},live and not maintenance.job)
         text(20,stopSystems and (tostring(systems.phase).."  TARGET "..numberText(systems.target,1,false)) or (maintenance.status or systems.reason or "Recheck reads hardware without changing output."),"gray")
     elseif sub=="HARDWARE" then
@@ -1907,8 +1944,8 @@ local function drawSettings(surface,snapshot,renderer)
         text(9,"Read and verify chamber hardware.","white")
         text(11,"Existing gas targets are retained.","gray")
         button(2,14,54,"RECHECK ALL CHAMBERS",{type="maintenance_recheck",scope="ALL"},live and not maintenance.job)
-        for i,q in ipairs({"FL","FR","RL","RR"}) do
-            button(2+(i-1)*14,17,12,({RL="BL",RR="BR"})[q] or q,
+        for i,q in ipairs({"FL","FR","BL","BR"}) do
+            button(2+(i-1)*14,17,12,q,
                 {type="maintenance_recheck",scope=q},live and not maintenance.job)
         end
         text(20,maintenance.status or "Recheck does not reboot the computers.","gray")
@@ -1934,12 +1971,11 @@ local function drawSettings(surface,snapshot,renderer)
         end
     elseif sub=="PID" then
         centered(surface,6,"PID / CONTROL LIMITS","cyan")
-        button(2,8,54,"ALTITUDE PID",view("ALT PID"))
+        button(2,8,54,"ALTITUDE PID / LIMITS",view("ALT PID"))
         button(2,10,54,"VERTICAL SPEED PID",view("VS PID"))
         button(2,12,54,"ACTUATOR / HOVER / TRIM LIMITS",view("LIMITS"))
         button(2,14,54,"START SYSTEMS SPEED / SHAPING",view("STARTUP"))
         button(2,16,54,"BOUNDED TUNING TESTS",view("TUNING"))
-        text(18,"Edit gains between tests; test mode grants no approval.","yellow")
     elseif sub=="NAV" then
         centered(surface,6,"NAV / ANCHOR SETTINGS","cyan")
         button(2,9,54,"DIGITAL ANCHOR",view("NAV ANCHOR"))
@@ -1960,7 +1996,7 @@ local function drawSettings(surface,snapshot,renderer)
         button(2,15,54,"PROPULSION PID GAINS",view("PROP PID"))
         button(2,17,54,"PROPULSION STATUS / DETAILS",view("PROPULSION STATUS"))
         text(20,propulsion.enabled and "Strong turns: up to 5% primary assistance." or
-            (propulsion.enableReason or "Release throttle and steering inputs to enable."),"gray")
+            (propulsion.enableReason or "Propulsion enables once START SYSTEMS is READY."),"gray")
     elseif sub=="PROP PID" then
         centered(surface,6,"PROPULSION PID GAINS","cyan")
         button(2,9,54,"SELECTED SPEED PID",view("PROP SPEED PID"))
@@ -2026,7 +2062,7 @@ local function drawSettings(surface,snapshot,renderer)
             propulsion.mappingVerified==true and propulsion.reverseVerified==true and "white" or "yellow")
         local status=speedControlStatus(speedControl)
         if not live then
-            text(20,"SEL CONTROL STALE","red")
+            text(20,staleLabel("SEL CONTROL"))
         elseif speedControl and speedControl.available==true then
             text(20,"SEL CONTROL "..(status or "AVAILABLE"),"white")
         elseif speedControl and type(speedControl.reason)=="string" and speedControl.reason~="" then
@@ -2035,7 +2071,7 @@ local function drawSettings(surface,snapshot,renderer)
             text(20,"SEL CONTROL "..(status or "UNAVAILABLE"),"yellow")
         end
     else
-        centered(surface,6,sub.." SETTINGS","cyan")
+        centered(surface,6,(SETTINGS_PAGES[sub] or {}).title or (sub.." SETTINGS"),"cyan")
         local list={}
         if sub=="DISPLAY" then
             local prefs=snapshot.displaySettings or {}
@@ -2051,19 +2087,9 @@ local function drawSettings(surface,snapshot,renderer)
             put(surface,2,18,string.format("PAGE %d/%d  %d-%d OF %d",current,pages,page+1,math.min(page+9,#list),#list),"cyan")
             button(29,18,27,current<pages and "NEXT PAGE" or "FIRST PAGE",{type="settings_next",count=#list})
         end
-        if sub:match("^INPUT") then
-            text(18,"Release inputs after saving a change.","gray")
-        end
     end
     if not renderer.editor and not review and not (snapshot.tuning or {}).review and sub~="GENERAL" then
-        local back="GENERAL"
-        if sub=="HARDWARE" then back="MAINTENANCE"
-        elseif sub:match("^INPUT") then back="TARGET"
-        elseif sub=="NAV ANCHOR" or sub=="NAV AUTOPILOT" then back="NAV"
-        elseif sub=="PROP SPEED PID" or sub=="PROP ACCEL PID" or sub=="PROP YAW PID" then back="PROP PID"
-        elseif sub~="PROPULSION" and sub:match("^PROP") then back="PROPULSION"
-        elseif sub=="ALT PID" or sub=="VS PID" or sub=="LIMITS" or sub=="STARTUP" or sub=="TUNING" then back="PID" end
-        button(2,19,26,"BACK",view(back))
+        button(2,19,26,"BACK",view((SETTINGS_PAGES[sub] or {}).parent or "GENERAL"))
     end
     local feedback=snapshot.bridgeRequest or {}
     local line=renderer.settingsNotice or requestNotice(feedback) or (feedback.status and (feedback.status.." "..tostring(feedback.reason or ""))) or maintenance.status
@@ -2073,7 +2099,7 @@ local function drawSettings(surface,snapshot,renderer)
     elseif line then text(21,line,feedback.status=="REJECTED" and "red" or "yellow") end
 end
 
--- @ama-summary: Compose the common header, selected page, modal reviews and warning area.
+-- Summary: Compose the common header, selected page, modal reviews and warning area.
 local function drawMain(renderer, snapshot, width, height, now)
     local surface = newSurface(width, height)
     local live = isLive(snapshot)
@@ -2147,9 +2173,9 @@ local function drawMain(renderer, snapshot, width, height, now)
     local stopReview=snapshot.systemsStopReview
     if stopReview then
         fillRect(surface,1,6,width,15,"black","white")
-        centered(surface,7,"WARNING: MAIN LIFT OFF","red")
-        centered(surface,10,"Steam off; each trim probe remains at 5 m3.","white")
-        centered(surface,12,"Main buoyancy will be removed. Balloon data stays live.","yellow")
+        centered(surface,7,"WARNING: STOP SYSTEMS","red")
+        centered(surface,10,"This action will stop all lift calculations.","white")
+        centered(surface,12,"Steam vents will be reset, Amaryllis will descend.","white")
         centered(surface,14,"Confirm to stop and reset all four lift controllers.","white")
         local half=math.floor((width-6)/2)
         for _,button in ipairs({{x=3,label="CANCEL",kind="systems_stop_cancel"},
@@ -2220,282 +2246,20 @@ local function drawMain(renderer, snapshot, width, height, now)
     return finishSurface(surface)
 end
 
-local function compassLabel(degrees)
-    if degrees == 0 then return "N" end
-    if degrees == 90 then return "E" end
-    if degrees == 180 then return "S" end
-    if degrees == 270 then return "W" end
-    return string.format("%03d", degrees)
-end
-
-local function shortestDelta(from, to)
-    return (to - from + 540) % 360 - 180
-end
-
-local function putCentered(surface, center, y, text, tone)
-    local x = center - math.floor(#text / 2)
-    x = math.max(1, math.min(surface.width - #text + 1, x))
-    put(surface, x, y, text, tone)
-end
-
--- @ama-summary: Render the compass scale and observed-heading marker.
-local function drawCompass(surface, current, target, row, labelRow)
-    local width = surface.width
-    local center = math.floor((width + 1) / 2)
-    local degreesPerColumn = 120 / math.max(1, width - 1)
-    local halfLeft = (center - 1) * degreesPerColumn
-    local halfRight = (width - center) * degreesPerColumn
-    for x = 1, width do
-        local bearing = (current + (x - center) * degreesPerColumn) % 360
-        local rounded = math.floor(bearing / 10 + 0.5) * 10 % 360
-        local delta = shortestDelta(bearing, rounded)
-        local major = math.abs(delta) <= degreesPerColumn / 2 and rounded % 30 == 0
-        surface.rows[row].chars[x] = major and "|" or "."
-        surface.rows[row].fg[x] = major and getColor("cyan") or getColor("gray")
-    end
-    surface.rows[row].chars[center] = "v"
-    surface.rows[row].fg[center] = getColor("cyan")
-
-    for degrees = 0, 330, 30 do
-        local delta = shortestDelta(current, degrees)
-        if delta >= -halfLeft and delta <= halfRight then
-            local x = center + math.floor(delta / degreesPerColumn + 0.5)
-            local label = compassLabel(degrees)
-            local start = math.max(1, math.min(width - #label + 1, x - math.floor(#label / 2)))
-            put(surface, start, labelRow, label,
-                degrees % 90 == 0 and "cyan" or "gray")
-        end
-    end
-
-end
-
-local function targetAvailable(targets, field, live)
-    if not live or not finite(targets[field]) then return false end
-    if type(targets.validFields) == "table" and targets.validFields[field] == false then return false end
-    if targets[field .. "Valid"] == false then return false end
-    return true
-end
-
--- @ama-section: Display data | Field validity, formatting and status selection.
--- @ama-summary: Format the current altitude-control indicator and its display colour.
-local function altitudeHoldIndicator(snapshot, live)
-    if not live then return nil end
-    local systems=type(snapshot.systemsStartup)=="table" and snapshot.systemsStartup or nil
-    local phase=systems and type(systems.phase)=="string" and string.upper(systems.phase) or ""
-    if systems and systems.displayPhase=="READY" then return "READY","cyan" end
-    if phase=="ABORTED" then return "ABORTED","red" end
-    if phase=="READY" or phase=="HOLDING" then return "READY","cyan" end
-    if phase=="BUILDING_LIFT" then return "ACQUIRING","cyan" end
-    if systems and systems.active==true then return "STARTING","cyan" end
-    local control=type(snapshot.altitudeControl)=="table" and snapshot.altitudeControl or nil
-    if phase=="STOPPED" or phase=="BLOCKED" or phase=="IDLE" or
-        (control and control.enabled==false) then return "ALT OFFLINE","gray" end
-    return nil
-end
-
--- @ama-section: Page rendering | Cached character-cell views and action regions.
--- @ama-summary: Render heading, altitude and selected targets on the center instrument.
-local function drawCenterHeading(renderer, snapshot, width, height)
-    local surface = newSurface(width, height)
-    local live = isLive(snapshot)
-    local vessel = type(snapshot.vessel) == "table" and snapshot.vessel or {}
-    local targets = getTargets(snapshot)
-    local current = sensorAvailable(snapshot, vessel, "heading", live) and
-        normalizeHeading(vessel.heading) or nil
-    local altitude = sensorAvailable(snapshot, vessel, "altitude", live) and vessel.altitude or nil
-    -- The target remains readable if heading sensing is unavailable. The
-    -- tape marker itself still needs a valid current heading for placement.
-    local headingTarget = targetAvailable(targets, "heading", live) and
-        normalizeHeading(targets.heading) or nil
-    local altitudeTarget = targetAvailable(targets, "altitude", live) and targets.altitude or nil
-    local anchored = live and string.upper(tostring(snapshot.anchor or "")) == "ANCHORED"
-
-    local altitudeWidth = math.min(14, math.max(6, math.floor(width / 4)))
-    local headingWidth = width - altitudeWidth - 1
-    local altitudeX = headingWidth + 2
-    local compact = height < 8
-    local markerRow = compact and height or 5
-    local headingCenter = math.floor((headingWidth + 1) / 2)
-    local degreesPerColumn = 120 / math.max(1, headingWidth - 1)
-    local leftSpan = (headingCenter - 1) * degreesPerColumn
-    local rightSpan = (headingWidth - headingCenter) * degreesPerColumn
-
-    putColumn(surface, 1, 1, headingWidth,
-        anchored and "AMARYLLIS / CENTER / ANCHORED" or "AMARYLLIS / CENTER",
-        anchored and "yellow" or "white")
-    if not live then putColumn(surface, math.max(1, width - 4), 1, 5, "STALE", "red") end
-    local currentText = current and angleText(current) or "--.-"
-    local targetText = headingTarget and angleText(headingTarget) or "--.-"
-    centeredColumn(surface, 1, headingWidth, 2, currentText, current and "white" or "gray")
-    centeredColumn(surface, altitudeX, altitudeWidth, 2,
-        numberText(altitude, 1, false), altitude and "white" or "gray")
-    local holdLabel,holdTone=altitudeHoldIndicator(snapshot,live)
-    local targetInactive=holdLabel=="ABORTED" or holdLabel=="HOLD OFF"
-    local altitudeTargetTone=altitudeTarget and (targetInactive and "gray" or "yellow") or "gray"
-    if holdLabel then
-        if altitudeWidth<8 then
-            local compactLabels={ABORTED="ABORT",["HOLD OFF"]="OFF",READY="READY",ACQUIRING="ACQ",STARTING="START"}
-            holdLabel=compactLabels[holdLabel] or holdLabel
-        end
-        centeredColumn(surface,altitudeX,altitudeWidth,1,holdLabel,holdTone)
-    end
-
-    if current then
-        for x = 1, headingWidth do
-            local bearing = (current + (x - headingCenter) * degreesPerColumn) % 360
-            local rounded = math.floor(bearing / 10 + 0.5) * 10 % 360
-            local major = math.abs(shortestDelta(bearing, rounded)) <= degreesPerColumn / 2 and
-                rounded % 30 == 0
-            surface.rows[3].chars[x] = major and "|" or "."
-            surface.rows[3].fg[x] = getColor("gray")
-        end
-        surface.rows[3].chars[headingCenter] = "v"
-        surface.rows[3].fg[headingCenter] = getColor("cyan")
-        if not compact then
-            local occupied = {}
-            for degrees = 0, 330, 30 do
-                local delta = shortestDelta(current, degrees)
-                if delta >= -leftSpan and delta <= rightSpan then
-                    local label = compassLabel(degrees)
-                    local x = headingCenter + math.floor(delta / degreesPerColumn + 0.5)
-                    local first = math.max(1, math.min(headingWidth - #label + 1,
-                        x - math.floor(#label / 2)))
-                    local free = true
-                    for at = first, first + #label - 1 do
-                        if occupied[at] then free = false end
-                    end
-                    if free then
-                        putColumn(surface, first, 4, #label, label, "gray")
-                        for at = first, first + #label - 1 do occupied[at] = true end
-                    end
-                end
-            end
-        end
-    else
-        centeredColumn(surface, 1, headingWidth, 3, "NO HEADING DATA", "gray")
-    end
-
-    if current and headingTarget then
-        local delta = shortestDelta(current, headingTarget)
-        local x, marker
-        if delta < -leftSpan then
-            x, marker = 1, "<"
-        elseif delta > rightSpan then
-            x, marker = headingWidth, ">"
-        else
-            x, marker = headingCenter + math.floor(delta / degreesPerColumn + 0.5), "^"
-        end
-        put(surface, x, markerRow, marker, "yellow")
-    end
-
-    local tapeTop, tapeBottom = 3, height - 2
-    if tapeTop <= tapeBottom then
-        local actualY = math.floor((tapeTop + tapeBottom) / 2)
-        local roundedActual = altitude and math.floor(altitude / 10 + 0.5) * 10 or nil
-        for y = tapeTop, tapeBottom do
-            surface.rows[y].chars[altitudeX + 1] = y == actualY and "|" or "."
-            surface.rows[y].fg[altitudeX + 1] = getColor("gray")
-            if not compact and altitude and altitudeWidth >= 11 then
-                local level = roundedActual + (actualY - y) * 10
-                putColumn(surface, altitudeX + 3, y, altitudeWidth - 4,
-                    string.format("%.0f", level), "gray")
-            end
-        end
-        if altitude then put(surface, altitudeX, actualY, ">", "cyan")
-        else centeredColumn(surface, altitudeX, altitudeWidth, actualY, "NO ALT", "gray") end
-        if altitude and altitudeTarget then
-            local targetY = actualY - math.floor((altitudeTarget - altitude) / 10 + 0.5)
-            local marker = "<"
-            if targetY < tapeTop then targetY, marker = tapeTop, "^" end
-            if targetY > tapeBottom then targetY, marker = tapeBottom, "v" end
-            if compact and tapeTop == tapeBottom and altitudeTarget ~= altitude then
-                marker = altitudeTarget > altitude and "^" or "v"
-            end
-            put(surface, altitudeX + altitudeWidth - 1, targetY, marker, altitudeTargetTone)
-        end
-    end
-
-    local selectedRow = compact and 4 or 6
-    centeredColumn(surface, 1, headingWidth, selectedRow, targetText,
-        headingTarget and "yellow" or "gray")
-    local selectedAltitude = numberText(altitudeTarget, 1, false)
-    local altitudeRow = compact and 4 or height - 1
-    centeredColumn(surface, altitudeX, altitudeWidth, altitudeRow, selectedAltitude,
-        altitudeTargetTone)
-    if height >= 8 then
-        putColumn(surface, 1, height, headingWidth,
-            "V/S " .. liveField(snapshot, vessel, "verticalSpeed", live, 2, true), "white")
-    end
-    local reason = vesselReason(snapshot, vessel)
-    if live and reason and height >= 9 then
-        putColumn(surface, 1, height - 1, headingWidth,
-            "DATA " .. string.sub(reason, 1, math.max(0, headingWidth - 5)), "red")
-    end
-    return finishSurface(surface)
-end
-
--- @ama-summary: Render the configured heading-display layout.
-local function drawHeading(renderer, snapshot, width, height)
-    local surface = newSurface(width, height)
-    local live = isLive(snapshot)
-    local vessel = type(snapshot.vessel) == "table" and snapshot.vessel or {}
-    local targets = type(snapshot.targets) == "table" and snapshot.targets or {}
-    local mode = string.lower(tostring(renderer.config.display or "left"))
-    local centerDisplay = mode == "center" or mode == "main"
-    if centerDisplay then return drawCenterHeading(renderer, snapshot, width, height) end
-    local current = sensorAvailable(snapshot, vessel, "heading", live) and
-        normalizeHeading(vessel.heading) or nil
-    local target = live and normalizeHeading(targets.heading) or nil
-    local anchored = string.upper(tostring(snapshot.anchor or "")) == "ANCHORED"
-
-    local title = "AMARYLLIS / HEADING"
-    if anchored then title = title .. " / ANCHORED" end
-    put(surface, 1, 1, title, anchored and "yellow" or "white")
-    if not live then put(surface, math.max(1, width - 10), 1, "STALE", "red") end
-
-    local headingLine = current and ("HDG " .. angleText(current) .. " deg") or "HDG --.- deg"
-    putCentered(surface, math.floor((width + 1) / 2), 2, headingLine,
-        current and "white" or "gray")
-    if height >= 5 then
-        if current then
-            drawCompass(surface, current, nil, 3, 4)
-        else
-            centered(surface, 3, "NO HEADING DATA", "gray")
-        end
-    end
-
-    if height >= 6 then
-        putCentered(surface, math.floor((width + 1) / 2), 5,
-            target and ("TGT " .. angleText(target) .. " deg") or "TGT --.- deg",
-            target and "yellow" or "gray")
-        if anchored then centered(surface, 6, "ANCHORED", "yellow") end
-    end
-
-    if not live and height >= 5 then
-        putCentered(surface, math.floor((width + 1) / 2), height,
-            "WAITING FOR FRESH CORE STATUS", "red")
-    elseif anchored and height < 6 then
-        putCentered(surface, math.floor((width + 1) / 2), height, "ANCHORED", "yellow")
-    end
-    return finishSurface(surface)
-end
-
--- @ama-summary: Render the required monitor dimensions for the selected display role.
-local function drawTooSmall(renderer, width, height, heading)
+-- Section: Page rendering | Cached character-cell views and action regions.
+-- Summary: Render the required monitor dimensions for the bridge display.
+local function drawTooSmall(renderer, width, height)
     local surface = newSurface(width, height)
     centered(surface, 1, "DISPLAY TOO SMALL", "yellow")
     if height >= 2 then centered(surface, 2, "SIZE " .. width .. "x" .. height, "white") end
     if height >= 3 then
-        local need = heading and
-            ("NEED " .. UI.MIN_HEADING_WIDTH .. "x" .. UI.MIN_HEADING_HEIGHT) or
-            ("NEED " .. UI.MIN_MAIN_WIDTH .. "x" .. UI.MIN_MAIN_HEIGHT)
-        centered(surface, 3, need, "gray")
+        centered(surface, 3, "NEED " .. UI.MIN_MAIN_WIDTH .. "x" .. UI.MIN_MAIN_HEIGHT, "gray")
     end
     return finishSurface(surface)
 end
 
--- @ama-section: Display data | Field validity, formatting and status selection.
--- @ama-summary: Wrap an availability or error message into bounded display rows.
+-- Section: Display data | Field validity, formatting and status selection.
+-- Summary: Wrap an availability or error message into bounded display rows.
 function wrapErrorText(text, width)
     local lines, line = {}, ""
     for word in string.gmatch(text, "%S+") do
@@ -2516,77 +2280,9 @@ function wrapErrorText(text, width)
     return lines
 end
 
--- @ama-summary: Build the heading display's unavailable-data surface.
-local function headingErrorSurface(width, height)
-    local surface = newSurface(width, height)
-    if width < 1 or height < 1 then return finishSurface(surface) end
-    local lines = wrapErrorText("ERROR. View Console", width)
-    local firstY = math.max(1, math.floor((height - #lines) / 2) + 1)
-    for index, line in ipairs(lines) do
-        local y = firstY + index - 1
-        if y <= height then centered(surface, y, line, "red") end
-    end
-    return finishSurface(surface)
-end
-
-local function nonemptyHeadingReason(vessel)
-    if type(vessel.reason) ~= "string" then return nil end
-    local reason = string.sub(clampText(vessel.reason, 2048), 1, 2048)
-    return string.find(reason, "%S") and reason or nil
-end
-
--- @ama-summary: Validate the observations required by the configured heading display.
-local function headingIssue(snapshot, display, width, height)
-    if width < UI.MIN_HEADING_WIDTH or height < UI.MIN_HEADING_HEIGHT then
-        return string.format("monitor is too small (%dx%d); minimum is %dx%d",
-            width, height, UI.MIN_HEADING_WIDTH, UI.MIN_HEADING_HEIGHT)
-    end
-    local vessel = type(snapshot.vessel) == "table" and snapshot.vessel or {}
-    local reason = nonemptyHeadingReason(vessel)
-    local live = isLive(snapshot)
-    if not live then
-        local detail = "core telemetry is stale or unavailable"
-        if reason then detail = detail .. "; vessel reason: " .. reason end
-        return detail
-    end
-
-    local issues = {}
-    if reason then issues[#issues + 1] = "vessel reason: " .. reason end
-    if not sensorAvailable(snapshot, vessel, "heading", live) then
-        issues[#issues + 1] = "required vessel heading is missing or invalid"
-    end
-    if display == "center" or display == "main" then
-        if not sensorAvailable(snapshot, vessel, "altitude", live) then
-            issues[#issues + 1] = "required center altitude is missing or invalid"
-        end
-        if not sensorAvailable(snapshot, vessel, "verticalSpeed", live) then
-            issues[#issues + 1] = "required center vertical speed is missing or invalid"
-        end
-    end
-    if (vessel.valid == false or snapshot.vesselValid == false or snapshot.valid == false) and
-        not reason then
-        issues[#issues + 1] = "vessel telemetry is marked invalid"
-    end
-    if #issues == 0 then return nil end
-    return table.concat(issues, "; ")
-end
-
--- @ama-summary: Record changes in heading-display availability.
-local function reportHeadingIssue(renderer, issue)
-    if issue == renderer.lastHeadingIssue then return end
-    renderer.lastHeadingIssue = issue
-    if not issue then return end
-    local logger = renderer.config.onIssue
-    if type(logger) == "function" then
-        pcall(logger, issue)
-    elseif type(print) == "function" then
-        print("Amaryllis heading display: " .. string.sub(clampText(issue, 2048), 1, 2048))
-    end
-end
-
--- Amaryllis systems menu presentation v1 BEGIN
+-- Systems menu: available commands, presentation and touch routing.
 -- Pure display/input helpers. Core remains the authority for every command.
--- @ama-summary: Amaryllis systems menu presentation v1 BEGIN Pure display/input helpers. Core remains the authority for every command.
+-- Summary: Build Systems menu actions and availability from the current core snapshot.
 local function systemsMenuItems(snapshot)
     local live=isLive(snapshot)
     local systems=snapshot.systemsStartup or {}
@@ -2619,8 +2315,8 @@ local function systemsMenuLayout(width)
     return {x=width-menuWidth+1,y=4,width=menuWidth,height=12}
 end
 
--- @ama-section: Page rendering | Cached character-cell views and action regions.
--- @ama-summary: Render the current Systems dropdown and its available actions.
+-- Section: Page rendering | Cached character-cell views and action regions.
+-- Summary: Render the current Systems dropdown and its available actions.
 local function drawSystemsMenu(surface,renderer,snapshot)
     if renderer.killReview or snapshot.systemsStopReview then renderer.systemsMenu=nil end
     renderer.systemsMenuRegions={}
@@ -2645,8 +2341,8 @@ local function drawSystemsMenu(surface,renderer,snapshot)
     return finishSurface(surface)
 end
 
--- @ama-section: Operator navigation | Local selection, editing and returned actions.
--- @ama-summary: Resolve dropdown touches against the current snapshot's action availability.
+-- Section: Operator navigation | Local selection, editing and returned actions.
+-- Summary: Resolve dropdown touches against the current snapshot's action availability.
 local function touchSystemsMenu(renderer,x,y,snapshot,width)
     if renderer.killReview or snapshot.systemsStopReview then renderer.systemsMenu=nil;return false end
     local trigger=y==3 and x>math.floor(width*2/3)
@@ -2675,16 +2371,20 @@ local function touchSystemsMenu(renderer,x,y,snapshot,width)
     -- Gaps and outside touches are consumed; nothing underneath receives them.
     return true
 end
--- Amaryllis systems menu presentation v1 END
+-- End systems menu helpers.
 
 -- Navigator current issues and warning navigation v1
 Info={}
 -- Collect active notices from the same cached snapshot used by navigation.
--- @ama-section: Current issues | Active warnings, rotation and local issue navigation.
--- @ama-summary: Collect active notices from the same cached snapshot used by navigation.
+-- Section: Current issues | Active warnings, rotation and local issue navigation.
+-- Summary: Collect active notices from the same cached snapshot used by navigation.
 function Info.collect(renderer,snapshot)
     local live=isLive(snapshot);local items,seen={},{}
     local function add(id,message,tone,source,detail)
+        -- Command and control lease problems are the core pausing; one notice covers all of them.
+        if leaseText(message) or leaseText(detail) then
+            id,message,tone,source,detail="core-stall",stallText(snapshot),"yellow","core",nil
+        end
         if type(message)~="string" or message=="" or seen[id] then return end
         seen[id]=true
         items[#items+1]={id=id,text=message,tone=tone or "yellow",source=source,detail=detail}
@@ -2692,6 +2392,14 @@ function Info.collect(renderer,snapshot)
     local kill=emergencyLift(snapshot,live)
     add("kill",kill.message,kill.tone,"core")
     local assembly=assemblyProblem(snapshot,live)
+    -- A disassembled vessel shows only this instruction (and a latched lift kill): the other
+    -- warnings are its consequences, reported again by vessel data, propulsion and faults.
+    -- The assembly check's own message is the issue's detail.
+    if vesselDefinitelyDisassembled(snapshot,live) then
+        add("assembly-lock","ASSEMBLE VESSEL TO ENABLE CONTROLS","red","state",
+            assembly.message or assembly.reason or "VESSEL DISASSEMBLED")
+        return items
+    end
     if assembly then add("assembly-lock",assembly.message or assembly.reason or "VESSEL DISASSEMBLED","red","state") end
     local check=snapshot.assembly or {}
     if live then add("assembly-unverified",check.warning,"yellow","state",
@@ -2735,40 +2443,47 @@ function Info.collect(renderer,snapshot)
                     if status~="RDY" and status~="CMD" and status~="LIVE" then
                         endpointIssue=true
                         local detail=roleFaultText(role) or (type(role)=="table" and role.reason)
-                        add("endpoint-"..label,label.." "..status,status=="FAULT" and "red" or "yellow",label,detail)
+                        add("endpoint-"..label,label.." "..status,(status=="FAULT" and not leaseText(detail)) and "red" or "yellow",label,detail)
                     end
                 end
             end
         end
     end
     if issue and not duplicate and not endpointIssue then
-        add("propulsion",issue,issue:find("FAULT",1,true) and "red" or "yellow","core")
+        add("propulsion",issue,(issue:find("FAULT",1,true) and not leaseText(issue)) and "red" or "yellow","core")
     end
     local cockpit=snapshot.cockpitControl or {}
     if live and cockpit.reason then add("cockpit",cockpit.reason,"yellow","core")
-    elseif live and (cockpit.headingWaitingForNeutral or cockpit.throttleWaitingForNeutral or cockpit.altitudeWaitingForNeutral) then
-        add("neutral","RETURN CONTROLS TO NEUTRAL","yellow","core")
+    elseif live and cockpit.thrustNotNeutral==true then
+        add("neutral","THRUST NOT NEUTRAL","yellow","core")
     end
     add("command",requestNotice(snapshot.bridgeRequest),"yellow","bridge")
+    local trimControl=type(snapshot.trimControl)=="table" and snapshot.trimControl or {}
+    if live and type(trimControl.levelingWarning)=="string" then add("leveling",trimControl.levelingWarning,"yellow","core") end
     local anchor=snapshot.anchorControl or {}
     if anchor.active and renderer.anchorInputNoticeUntil and (os.clock()<=renderer.anchorInputNoticeUntil) then
         add("anchor-input","ANCHOR ENGAGED - RELEASE ANCHOR TO USE CONTROLS","yellow","core")
     end
-    for n,fault in ipairs(snapshot.faults or {}) do
-        add("reported-fault:"..tostring(fault),tostring(fault),"red","core")
+    -- Lease faults and boiler checks (vent faults the probe does not confirm) are yellow.
+    local function reportedTone(fault)
+        if leaseText(fault) or tostring(fault):find("CHECK BOILER",1,true) then return "yellow" end
+        return "red"
     end
-    for _,q in ipairs({"FL","FR","RL","RR"}) do
+    for n,fault in ipairs(snapshot.faults or {}) do
+        add("reported-fault:"..tostring(fault),tostring(fault),reportedTone(fault),"core")
+    end
+    for _,q in ipairs({"FL","FR","BL","BR"}) do
         local node=(snapshot.nodes or {})[q] or {}
-        local source="chamber-"..({FL="fl",FR="fr",RL="bl",RR="br"})[q]
+        local source="chamber-"..string.lower(q)
         for n,fault in ipairs(node.faults or (node.status or {}).faults or {}) do
-            add(source.."-fault:"..tostring(fault),tostring(fault),"red",source)
+            add(source.."-fault:"..tostring(fault),tostring(fault),reportedTone(fault),source)
         end
     end
     add("action",renderer.actionNotice,"yellow","bridge")
     return items
 end
 -- Choose the rotating warning while retaining a stable per-issue age.
--- @ama-summary: Choose the rotating warning while retaining a stable per-issue age.
+-- Summary: Choose the rotating warning while retaining a stable per-issue age.
 function Info.choose(renderer,items,now)
     local ages=renderer.issueAges or {};renderer.issueAges=ages
     local active,top,rank={},0,{red=3,yellow=2,green=1}
@@ -2790,7 +2505,7 @@ function Info.choose(renderer,items,now)
     return chosen
 end
 -- Record the displayed touch target and draw plain warning text.
--- @ama-summary: Record the displayed touch target and draw plain warning text.
+-- Summary: Record the displayed touch target and draw plain warning text.
 function Info.warning(surface,renderer,snapshot,now)
     local items=Info.collect(renderer,renderer.informationSnapshot or snapshot)
     renderer.currentIssues=items
@@ -2812,8 +2527,8 @@ function Info.open(renderer,id)
     for n,item in ipairs(renderer.currentIssues or {}) do if item.id==id then renderer.issuesOffset=math.floor((n-1)/4)*4 end end
 end
 -- Render active issues in four readable entries with cached status details.
--- @ama-section: Page rendering | Cached character-cell views and action regions.
--- @ama-summary: Render the current view into its configured terminal or monitor.
+-- Section: Page rendering | Cached character-cell views and action regions.
+-- Summary: Render the current view into its configured terminal or monitor.
 function Info.draw(surface,renderer,snapshot,now)
     if not renderer.issuesOpen then return surface end
     renderer.systemsMenu=nil;renderer.warningRegion=nil
@@ -2840,8 +2555,8 @@ function Info.draw(surface,renderer,snapshot,now)
     return finishSurface(surface)
 end
 -- Handle issue navigation locally before underlying cockpit touch targets.
--- @ama-section: Operator navigation | Local selection, editing and returned actions.
--- @ama-summary: Handle issue navigation locally before underlying cockpit touch targets.
+-- Section: Operator navigation | Local selection, editing and returned actions.
+-- Summary: Handle issue navigation locally before underlying cockpit touch targets.
 function Info.touch(renderer,x,y,snapshot,width)
     if renderer.killReview or snapshot.systemsStopReview then return false end
     if renderer.issuesOpen then
@@ -2861,7 +2576,7 @@ function Info.touch(renderer,x,y,snapshot,width)
     return false
 end
 
--- @ama-summary: Construct renderer navigation, editor, cache and monitor state.
+-- Summary: Construct renderer navigation, editor, cache and monitor state.
 function UI.new(monitor, config)
     if type(monitor) ~= "table" then return nil, "UI.new requires a wrapped monitor peripheral" end
     config = type(config) == "table" and config or {}
@@ -2878,7 +2593,6 @@ function UI.new(monitor, config)
     local renderer = {
         monitor = monitor,
         config = config,
-        role = config.role or "main",
         page = "FLIGHT",
         shipView = "LIFT",
         tabs = {},
@@ -2892,8 +2606,8 @@ end
 
 -- Display-only retention. Raw snapshots and all command gates retain their
 -- actual validity/age, and are still used by touch handlers and diagnostics.
--- @ama-section: Display data | Field validity, formatting and status selection.
--- @ama-summary: Display-only retention. Raw snapshots and all command gates retain their actual validity/age, and are still used by touch handlers and diagnostics.
+-- Section: Display data | Field validity, formatting and status selection.
+-- Summary: Display-only retention. Raw snapshots and all command gates retain their actual validity/age, and are still used by touch handlers and diagnostics.
 local function retainedDisplay(renderer,snapshot)
  local function copy(t) local out={};for k,v in pairs(t or {}) do out[k]=v end;return out end
  if not isLive(snapshot) or vesselDefinitelyDisassembled(snapshot,true) then
@@ -2919,31 +2633,19 @@ local function retainedDisplay(renderer,snapshot)
  return shown
 end
 
--- @ama-section: Page rendering | Cached character-cell views and action regions.
--- @ama-summary: Build and flush the current cached navigator or heading display.
+-- Section: Page rendering | Cached character-cell views and action regions.
+-- Summary: Build and flush the current cached navigator display.
 function UI:draw(snapshot)
     snapshot = type(snapshot) == "table" and snapshot or {}
+    displayAge = snapshot.displayAgeSeconds
     local actionSnapshot=snapshot
     self.informationSnapshot=snapshot
     snapshot = retainedDisplay(self,snapshot)
     local width, height, sizeError = monitorSize(self.monitor)
-    local heading = self.role == "heading"
-    if not width then
-        if heading then reportHeadingIssue(self, "monitor size unavailable: " .. tostring(sizeError)) end
-        return false, sizeError
-    end
+    if not width then return false, sizeError end
     local surface
-    if heading then
-        local display = string.lower(tostring(self.config.display or "left"))
-        local issue = headingIssue(snapshot, display, width, height)
-        if issue then
-            surface = headingErrorSurface(width, height)
-        else
-            surface = drawHeading(self, snapshot, width, height)
-        end
-        reportHeadingIssue(self, issue)
-    elseif width < UI.MIN_MAIN_WIDTH or height < UI.MIN_MAIN_HEIGHT then
-        surface = drawTooSmall(self, width, height, false)
+    if width < UI.MIN_MAIN_WIDTH or height < UI.MIN_MAIN_HEIGHT then
+        surface = drawTooSmall(self, width, height)
         self.tabs = {};self.systemsMenu=nil
     else
         local now = os.clock and os.clock() or 0
@@ -2964,10 +2666,10 @@ end
 
 -- Page selection is local. Mode and altitude buttons send requests to core;
 -- core must accept them before a snapshot changes. AP remains unavailable.
--- @ama-section: Operator navigation | Local selection, editing and returned actions.
--- @ama-summary: Page selection is local. Mode and altitude buttons send requests to core; core must accept them before a snapshot changes. AP remains unavailable.
+-- Section: Operator navigation | Local selection, editing and returned actions.
+-- Summary: Page selection is local. Mode and altitude buttons send requests to core; core must accept them before a snapshot changes. AP remains unavailable.
 function UI:touch(x, y, snapshot)
-    if self.role == "heading" or type(x) ~= "number" or type(y) ~= "number" then return nil end
+    if type(x) ~= "number" or type(y) ~= "number" then return nil end
     snapshot = type(snapshot) == "table" and snapshot or {}
     local width, height = monitorSize(self.monitor)
     if not width or width < UI.MIN_MAIN_WIDTH or height < UI.MIN_MAIN_HEIGHT then return nil end
@@ -3110,7 +2812,7 @@ function UI:touch(x, y, snapshot)
 end
 
 
--- @ama-summary: Apply local settings-editor input and return a validated save action.
+-- Summary: Apply local settings-editor input and return a validated save action.
 function UI:editorKey(key)
     local e=self.editor;if not e then return nil end
     if key=="CANCEL" then self.editor=nil;return nil end
@@ -3123,7 +2825,7 @@ function UI:editorKey(key)
         return {type=e.entry.localSetting and "display_setting" or "setting_update",key=e.entry.key,value=value}
     elseif #e.buffer<20 and key:match("^[0-9%.%-]$") then e.buffer=e.buffer..key end
 end
--- @ama-summary: Apply local destination-editor input and return a validated navigation action.
+-- Summary: Apply local destination-editor input and return a validated navigation action.
 function UI:navEditorKey(key)
     local e=self.navEditor;if not e then return nil end
     if key=="CANCEL" then self.navEditor=nil;return nil end
@@ -3132,7 +2834,9 @@ function UI:navEditorKey(key)
     elseif key=="SAVE" then
         local name=e.key=="name" or e.type=="destination_rename"
         local value=name and e.buffer or tonumber(e.buffer)
-        if (name and (not value:match("%S") or #value>40)) or (not name and not finite(value)) then self.actionNotice="ENTER A VALID VALUE";return nil end
+        -- A blank destination name is accepted: core then names it by its coordinates. Saved-library names stay required.
+        local blankAllowed=e.key=="name" and e.type~="destination_rename"
+        if (name and ((not value:match("%S") and not blankAllowed) or #value>40)) or (not name and not finite(value)) then self.actionNotice="ENTER A VALID VALUE";return nil end
         self.navEditor=nil;self.actionNotice=nil
         if e.type=="destination_rename" then return {type=e.type,index=e.index,name=value} end
         return {type="ap_edit",key=e.key,value=value}
@@ -3141,7 +2845,7 @@ function UI:navEditorKey(key)
         if #key==1 and not key:find("[%c]") and #e.buffer<40 then e.buffer=e.buffer..key end
     elseif #e.buffer<20 and key:match("^[0-9%.%-]$") then e.buffer=e.buffer..key end
 end
--- @ama-summary: Route keyboard input to the active local editor or navigation context.
+-- Summary: Route keyboard input to the active local editor or navigation context.
 function UI:input(event,value)
     if self.systemsMenu then
         if event=="key" and keys and value==keys.escape then self.systemsMenu=nil;self.systemsMenuNotice=nil end
@@ -3171,8 +2875,6 @@ UI._test = {
     numberText = numberText,
     normalizeHeading = normalizeHeading,
     nodeSummary = nodeSummary,
-    compassLabel = compassLabel,
-    shortestDelta = shortestDelta,
     tabRegions = tabRegions,
 }
 

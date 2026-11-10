@@ -6,8 +6,8 @@ local TITLES={core="Core controller",state="State reader",navigator="Bridge navi
     chamber_fl="Front-left lift chamber",chamber_fr="Front-right lift chamber",
     chamber_bl="Rear-left lift chamber",chamber_br="Rear-right lift chamber",
     primary_l="Left primary controller",primary_r="Right primary controller",
-    ["thrust-lb"]="Rear-left thrust",["thrust-rb"]="Rear-right thrust",
-    ["thrust-ls"]="Left-side thrust",["thrust-rs"]="Right-side thrust"}
+    ["thrust-lb"]="Front-left thrust",["thrust-rb"]="Front-right thrust",
+    ["thrust-ls"]="Rear-left thrust",["thrust-rs"]="Rear-right thrust"}
 local NAMES={core="core",state="state",navigator="bridge",["heading-left"]="hdg-l",["heading-right"]="hdg-r",["heading-main"]="hdg-m",
     chamber_fl="chamber-fl",chamber_fr="chamber-fr",chamber_bl="chamber-bl",chamber_br="chamber-br",
     primary_l="primary-l",primary_r="primary-r",["thrust-lb"]="thrust-lb",["thrust-rb"]="thrust-rb",
@@ -81,7 +81,8 @@ end
 local function payload(media,entry)
     assert(validPath(entry.path),"Unsafe installation path")
     assert(type(entry.object)=="string" and #entry.object==64 and entry.object:match("^[0-9a-f]+$"),"Invalid object name")
-    local data=readFile(fs.combine(media,"objects/"..entry.object))
+    -- Setup.readObject replaces the disk read for a web install (web-setup.lua).
+    local data=Setup.readObject and Setup.readObject(media,entry.object) or readFile(fs.combine(media,"objects/"..entry.object))
     assert(#data==entry.bytes and adler(data)==entry.adler32,"Corrupt release object: "..entry.path)
     return data
 end
@@ -253,6 +254,16 @@ function Setup.installCore(media,release,id)
     print(retained and "Core registered. Existing programs and settings retained." or "Core installed, propulsion disabled. Register auxiliaries using this disk.")
     print("Then return the disk here and IMPORT ROLE ASSIGNMENTS before starting core.")
 end
+local function writeRoleConfig(release,role,id,coreID)
+    if role=="state" then
+        json("/avionics/config.json",{schemaVersion=1,role="state",label=release.roles.state.label,
+            computerID=id,coreID=coreID})
+    else
+        json("/config.json",{protocol="amaryllis.install.v1",core_id=coreID,
+            target_role="auto",chunkBytes=768,maxFileBytes=524288,maxTotalBytes=1048576,
+            retrySeconds=3,offerTimeoutSeconds=15,heartbeatSeconds=5})
+    end
+end
 function Setup.installAuxiliary(media,release,role,id)
     assert(role~="core" and release.roles[role],"Select an auxiliary role")
     if role=="state" then
@@ -264,8 +275,7 @@ function Setup.installAuxiliary(media,release,role,id)
         json(journal,{releaseId=release.releaseId,role=role,id=id,pending=true})
         if not retained then
             installFiles(media,release.state)
-            json("/avionics/config.json",{schemaVersion=1,role="state",label=release.roles.state.label,
-                computerID=id,coreID=state.computers.core.id})
+            writeRoleConfig(release,role,id,state.computers.core.id)
         end
         os.setComputerLabel(release.roles.state.label)
         finish(media,release.state,journal,release,role,id,retained)
@@ -280,9 +290,7 @@ function Setup.installAuxiliary(media,release,role,id)
     json(journal,{releaseId=release.releaseId,role=role,id=id,pending=true})
     if not retained then
         installFiles(media,release.bootstrap)
-        json("/config.json",{protocol="amaryllis.install.v1",core_id=state.computers.core.id,
-            target_role="auto",chunkBytes=768,maxFileBytes=524288,maxTotalBytes=1048576,
-            retrySeconds=3,offerTimeoutSeconds=15,heartbeatSeconds=5})
+        writeRoleConfig(release,role,id,state.computers.core.id)
     end
     os.setComputerLabel(release.roles[role].label)
     finish(media,release.bootstrap,journal,release,role,id,retained)
@@ -828,6 +836,67 @@ function Setup.main(media)
         end
     end
 end
+-- Web install (web-setup.lua): core keeps the deployment record in its media
+-- folder and registers other computers over rednet; each computer installs its
+-- own registration payload after core accepts its role.
+-- A computer that already holds another auxiliary role moves to the new one when
+-- move is set; the computer checked locally that no role package is installed.
+function Setup.registerRole(media,release,role,id,move)
+    assert(role~="core","Core registers itself")
+    local state=deployment(media,release)
+    assert(state.computers.core,"Install core first")
+    assert(state.imported~=true,"Assignments are already imported. Reset installation on core to change them.")
+    local current=roleFor(state,id)
+    if current and current~=role and move then
+        assert(repairable(current) and repairable(role),"Core and state reader assignments cannot be moved")
+        state.computers[current]=nil
+        state.assignmentRevision=math.min(65535,(state.assignmentRevision or 0)+1)
+    end
+    register(media,release,state,role,id)
+    return state
+end
+function Setup.clearRole(media,release,role)
+    assert(role~="core","Core cannot be cleared here; use Reset installation")
+    local state=deployment(media,release)
+    assert(state.imported~=true,"Assignments are already imported. Reset installation on core to change them.")
+    noPendingRepair(media)
+    state.computers[role]=nil
+    state.assignmentRevision=math.min(65535,(state.assignmentRevision or 0)+1)
+    json(fs.combine(media,"deployment.json"),state)
+    return state
+end
+-- A computer that core accepted installs its payload: the wireless receiver
+-- for auxiliaries, the state payload for the state reader. A computer whose
+-- earlier registration has no role package yet changes role in place.
+function Setup.installRegistered(media,release,role,id,coreID)
+    assert(role~="core" and release.roles[role] and integer(coreID) and coreID~=id,"Invalid registration")
+    local journalPath="/amaryllis-install.json"
+    local journal=recordExists(journalPath) and readJSON(journalPath) or nil
+    if journal and journal.pending==false and journal.releaseId==release.releaseId and journal.role~=role
+        and role~="state" and journal.role~="state" then
+        localRepairCheck(release,id,journal.role,role)
+        journal.role=role;json(journalPath,journal)
+        os.setComputerLabel(release.roles[role].label)
+        return "changed"
+    end
+    local entries=role=="state" and release.state or release.bootstrap
+    assert(type(entries)=="table","Role payload missing from release")
+    local _,retained=preflight(media,release,entries,role,id)
+    json(journalPath,{releaseId=release.releaseId,role=role,id=id,pending=true})
+    if not retained then
+        installFiles(media,entries)
+        writeRoleConfig(release,role,id,coreID)
+    end
+    os.setComputerLabel(release.roles[role].label)
+    finish(media,entries,journalPath,release,role,id,retained)
+    return retained and "retained" or "installed"
+end
+function Setup.checkRoleChange(release,id,oldRole,newRole)
+    assert(repairable(oldRole) and repairable(newRole),"Core and state reader assignments cannot be moved")
+    localRepairCheck(release,id,oldRole,newRole)
+end
+Setup.deployment=deployment
+Setup.title=title
 Setup.adler32=adler
 Setup.validPath=validPath
 return Setup

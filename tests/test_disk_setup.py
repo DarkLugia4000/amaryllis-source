@@ -13,7 +13,7 @@ KEYS = {'left':203,'right':205,'up':200,'down':208,'enter':28,'escape':1,'numPad
 _CACHE = ROOT / '.cache'
 _CACHE.mkdir(exist_ok=True)
 _MEDIA_TEMP = tempfile.TemporaryDirectory(prefix='disk-setup-', dir=_CACHE)
-MEDIA, _ = project.builder_module().build(project.fixture(), Path(_MEDIA_TEMP.name))
+MEDIA, _ = project.builder_module().build(project.ROOT, Path(_MEDIA_TEMP.name))
 MEDIA = MEDIA / 'media'
 BIOS_PRINT = """
 function print(...) end

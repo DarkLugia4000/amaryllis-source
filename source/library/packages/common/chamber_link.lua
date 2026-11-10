@@ -4,7 +4,7 @@ local function finite(v) return type(v)=="number" and v==v and math.abs(v)<math.
 local function epoch() return os.epoch("utc") end
 local function chamberLabel(config)
     local q=config.quadrant or ({chamber_fl="FL",chamber_fr="FR",chamber_bl="BL",chamber_br="BR"})[config.role]
-    return ({RL="BL",RR="BR"})[q] or q or "UNKNOWN"
+    return q or "UNKNOWN"
 end
 local function clone(v) if type(v)~="table" then return v end;local o={};for k,x in pairs(v) do o[k]=clone(x) end;return o end
 function Link.peer(config,role)
@@ -14,8 +14,8 @@ function Link.peer(config,role)
     if not selfEntry or selfEntry.id~=os.getComputerID() or selfEntry.label~=config.label or not peer then return nil end
     return peer.id,r.session
 end
--- @ama-section: Module operations | Configured inputs, cached state and operation results.
--- @ama-summary: Resolve the underlying peripheral facade used by the chamber link.
+-- Section: Module operations | Configured inputs, cached state and operation results.
+-- Summary: Resolve the underlying peripheral facade used by the chamber link.
 function Link.unwrap(config,sender,envelope,nowMs)
     if type(envelope)~="table" or envelope.v~=1 or envelope.kind~="chamber_forward" or
         envelope.role~=config.role or type(envelope.packet)~="table" then return nil end
@@ -32,7 +32,7 @@ function Link.unwrap(config,sender,envelope,nowMs)
     elseif p.kind~="thrust_session" and p.kind~="thrust_stop" and p.kind~="system_restart" then return nil end
     return p
 end
--- @ama-summary: Build the chamber-side service for its attached child endpoints.
+-- Summary: Build the chamber-side service for its attached child endpoints.
 function Link.parent(config)
     local rt=os.__amaryllisRuntime or {};os.__amaryllisRuntime=rt;rt.components=rt.components or {}
     local state={running=true,hardwareAvailable=false,faults={},snapshot={role=config.relayChildRole,phase="WAITING FOR THRUST"}}
@@ -40,8 +40,10 @@ function Link.parent(config)
     local boot,childLast,childSeq=nil,nil,-1
     local retired,order={},{}
     local altitudeSeq=-1
-    -- @ama-summary: Publish the current cached component observations to the configured consumer.
+    -- Summary: Publish the current cached component observations to the configured consumer.
     local function publish()
+        local connection=os.__amaryllisCoreConnectionState
+        local unreachable=type(connection)=="function" and connection(os.clock(),config.role)=="CORE UNREACHABLE"
         local fresh=childLast and os.clock()-childLast<=1.5
         local responding=state.lastResponseAt and os.clock()>=state.lastResponseAt and os.clock()-state.lastResponseAt<=1.5
         state.hardwareAvailable=fresh==true and state.snapshot.bindingReady==true
@@ -50,8 +52,13 @@ function Link.parent(config)
         state.controlState=(not fresh or not state.hardwareAvailable or #state.faults>0) and "FAULT" or
             (state.snapshot.thrustControlState or (state.snapshot.ready and "RDY" or "FAULT"))
         state.faultSummary=state.faults[1];state.publishedAt=os.clock()
+        state.networkState=unreachable and "CORE UNREACHABLE" or "CONNECTED"
+        if unreachable then
+            state.controlState="CORE UNREACHABLE"
+            state.faultSummary="CORE UNREACHABLE"
+        end
     end
-    -- @ama-summary: Receive and cache the chamber's local altitude observation.
+    -- Summary: Receive and cache the chamber's local altitude observation.
     local function altitudeReceiver()
         while true do
             local event,sender,msg,protocol=os.pullEventRaw()
@@ -73,7 +80,7 @@ function Link.parent(config)
             end
         end
     end
-    -- @ama-summary: Forward the permitted chamber-link packet to its registered destination.
+    -- Summary: Forward the permitted chamber-link packet to its registered destination.
     local function relay()
     local timer=os.startTimer(.25)
     while true do
@@ -113,7 +120,7 @@ function Link.parent(config)
 end
 -- Sensor reads are read-only and independently retryable. A lost peripheral
 -- completion must not strand the stream behind an unbounded getter or sleep.
--- @ama-summary: Read the cached observation for the selected chamber corner.
+-- Summary: Read the cached observation for the selected chamber corner.
 function Link.readCorner(H,api,sensor)
     local result,completed,terminated=nil,false,false
     local deadline=os.clock()+.75
@@ -131,7 +138,7 @@ function Link.readCorner(H,api,sensor)
     if terminated then return nil end
     return completed and result or {valid=false,reason="CORNER_ALTITUDE_READ_TIMEOUT"}
 end
--- @ama-summary: Wait for the next valid observation from the selected chamber corner.
+-- Summary: Wait for the next valid observation from the selected chamber corner.
 function Link.waitCorner(seconds)
     local deadline=os.clock()+seconds
     local timer=os.startTimer(seconds)
@@ -142,7 +149,7 @@ function Link.waitCorner(seconds)
     return true
 end
 
--- @ama-summary: Connect the child component to its configured chamber-side service.
+-- Summary: Connect the child component to its configured chamber-side service.
 function Link.child(config,programEnv)
     local realOS,realRednet=os,rednet
     local boot=nil
@@ -172,7 +179,7 @@ function Link.child(config,programEnv)
         end
     end)
     local env=setmetatable({os=clock,rednet=radio}, {__index=programEnv});env._G=programEnv._G
-    -- @ama-summary: Publish the available chamber-local sensor observations.
+    -- Summary: Publish the available chamber-local sensor observations.
     local function sensors()
         local H=require("hardware").lift
         local api=H.remotePeripheral({providerDiscovery={networkSide="back"}})

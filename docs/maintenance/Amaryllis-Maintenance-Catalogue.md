@@ -81,12 +81,10 @@ existing guards.
 
 | Tool / path | Audience | Purpose / result | Boundary |
 |---|---|---|---|
-| Build installer | Maintainer | Exports a saved installation into media, distributable ZIP, README, Windows helpers and private build report; optionally includes saved learning. | Reads saved inputs; refuses completion if source files change during export. |
-| Runtime bundler: bundling.py | Builder internal / maintainer | Packs named Lua modules into few installed runtime files; verifies/extracts embedded sources for rebuilds. | Windows packaging step, not an onboard service. Config and persistent JSON remain separate. |
-| Automatic package-source reconstruction | Builder internal | Reconstructs exact package sources from installed bundles and metadata; searches known disk/export locations for matching media if necessary. | Verifies catalogue, receipts and source matches. Recovers build inputs, not a running ship. Manual library override optional. |
-| Update existing ship | Owner / maintainer | Previews Add/Replace/Remove/Keep, backs up externally, overwrites all 16 existing installations and removes obsolete managed code. | Fully closed Minecraft/server; complete supported fleet/receipts. Preserves IDs, existing stored values and all avionics/data bytes. No parallel installation. Distributed entry: windows-update/Update Amaryllis.cmd. |
+| Build installer | Maintainer | Builds the maintained project source into media, distributable ZIP, README, Windows helpers and private build report; optionally includes the shipped hover and leveling defaults. | Reads project inputs; refuses completion if source files change during the build. |
+| Runtime bundler: bundling.py | Builder internal / maintainer | Packs named Lua modules into few installed runtime files; verifies and extracts embedded sources for the updater and tests. | Windows packaging step, not an onboard service. Config and persistent JSON remain separate. |
+| Update existing ship | Owner / maintainer | Previews Add/Replace/Remove/Keep, backs up externally, overwrites all 16 existing installations and removes obsolete managed code. | Minecraft/server may stay open (runtime files `installer/install_status.json` and `avionics/data/` are never touched); complete supported fleet/receipts. Preserves IDs, existing stored values and all avionics/data bytes. No parallel installation. Distributed entry: windows-update/Update Amaryllis.cmd. |
 | Update rollback / Restore backup | Owner / maintainer | Failed-write rollback and interrupted-update recovery from external transaction folder. | Game closed, transaction backup retained. Hash checks refuse overwriting newer edits. |
-| Preview startup repair | Owner / maintainer | Narrow replacement of known faulty auxiliary launchers from the earlier shell-environment defect. | Specific compatibility migration, closed game and external verified backup. Not a general corruption repair utility. |
 | ComputerCraft settings editor | Owner / maintainer | Preview/apply computer capacity, disk capacity and Lua execution threads, with backup/restore. | Selected TOML only, game closed, unrelated settings preserved. Does not change general task budgets. Available in distributed windows-settings helper. |
 | Saved-learning export | Maintainer build option | Validated hover-offset.json and level-bias.json defaults seed missing fresh-core files. | Existing learning wins. Updates preserve target data. No live PID history, sessions or credentials exported as learning defaults. |
 | tools/package_windows_builder.py | Maintainer | Verifies asset hashes and packages a versioned builder ZIP. | Does not build an in-game installer or update a ship. |
@@ -98,8 +96,8 @@ the maintainer's builder.
 ## Persistent pilot modes, builder 2.7.0
 
 Heading/throttle selections use the existing avionics/data/control-presets.json.
-Core restores validated same-vessel selections through the existing neutral and
-readiness gates. Navigator remains a view of core's selection. AP cancellation,
+Core restores validated same-vessel selections through the readiness gate
+(SEL selections hold propulsion until START SYSTEMS is READY). Navigator remains a view of core's selection. AP cancellation,
 anchor release and transient input/identity faults do not force a different mode.
 Explicit mode changes are saved before acknowledgement; setpoint saves retain
 their existing coalesced cadence.

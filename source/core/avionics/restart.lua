@@ -1,17 +1,18 @@
--- @ama-section: Systems restart | One-shot checkpoints, acknowledgements and retained-run restore.
+local Mathx = require("avionics.mathx")
+-- Section: Systems restart | One-shot checkpoints, acknowledgements and retained-run restore.
 -- Intentional core/navigator reboot. Chamber computers and lift outputs stay
 -- running. A one-shot checkpoint restores intent through telemetry recovery.
 local Recovery=require("avionics.telemetry_recovery")
 local Anchor=require("avionics.anchor")
 local Autopilot=require("avionics.autopilot")
 local Restart={}
-local QUADS={"FL","FR","RL","RR"}
+local QUADS={"FL","FR","BL","BR"}
 local function copy(value)
     if type(value)~="table" then return value end
     local result={};for key,item in pairs(value) do result[key]=copy(item) end
     return result
 end
-local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
+local finite = Mathx.finite
 local function token(s) return type(s)=="string" and #s>0 and #s<=128 and s:match("^[%w_%.%-:]+$")~=nil end
 local function log(reason)
     local logger=os and os.__amaryllisLog
@@ -22,13 +23,14 @@ function Restart.new(storage,dependencies,path)
     return setmetatable({storage=storage,dependencies=dependencies or {},
         path=path or "/avionics/data/systems-restart.json"},{__index=Restart})
 end
+-- Summary: Persist a coordinated-restart checkpoint and return its storage result.
 function Restart:write(value)
     local called,ok,reason=pcall(self.storage.writeJson,self.path,value,self.dependencies)
     if not called then return false,tostring(ok) end
     return ok,reason
 end
--- @ama-section: Systems restart | One-shot checkpoints, acknowledgements and retained-run restore.
--- @ama-summary: Load and validate a pending one-shot restart checkpoint.
+-- Section: Systems restart | One-shot checkpoints, acknowledgements and retained-run restore.
+-- Summary: Load and validate a pending one-shot restart checkpoint.
 function Restart:load()
     local fsApi=self.dependencies.fs or fs
     if not fsApi or not fsApi.exists(self.path) then return end
@@ -41,12 +43,13 @@ function Restart:load()
     end
     self.saved=state;self.reason="WAITING FOR FRESH TELEMETRY AFTER REBOOT"
 end
+-- Summary: Clear the restart job and persist its inactive checkpoint.
 function Restart:cancel(reason)
     local ok,issue=self:write({schemaVersion=1,pending=false})
     self.job=nil;self.saved=nil;self.reason=reason or "RESTART CANCELLED"
     if not ok then log("CHECKPOINT CANCEL FAILED: "..tostring(issue)) end
 end
--- @ama-summary: Capture current systems, selections and navigation state for restart.
+-- Summary: Capture current systems, selections and navigation state for restart.
 function Restart:capture(flight,io,now)
     if flight.emergencyLiftLatched then
         local saved,reason=flight:persistEmergencyLock(true)
@@ -61,7 +64,7 @@ function Restart:capture(flight,io,now)
     local controls=flight.controls
     if not controls then return nil,"COCKPIT CONTROL STATE UNAVAILABLE" end
     local selected=controls.targets.altitude
-    if not finite(selected) or selected<flight.config.minimum_world_y or selected>flight.config.maximum_world_y then
+    if not finite(selected) or selected<flight.config.minimum_world_y or selected>flight.config.altitude_ceiling then
         return nil,"SELECTED ALTITUDE UNAVAILABLE / OUT OF LIMITS"
     end
     local run=flight.systemsRun or flight.systemsRetainedRun
@@ -96,7 +99,7 @@ function Restart:capture(flight,io,now)
     for _,key in ipairs({"providerRoles","providerLimits","boots","bindingFingerprints","bindingGenerations",
         "acceptedBootGenerations","nodeIDs","fingerprint","initialGasTarget","coarseTrimApplied",
         "baseline","liftResponseScale","startAltitude"}) do state.run[key]=copy(run[key]) end
-    state.run.phase=run.phase=="BUILDING_LIFT" and "BUILDING_LIFT" or "READY"
+    state.run.phase=run.phase=="MAIN_LIFT" and "MAIN_LIFT" or "READY"
     state.run.currentTargets=copy(retained)
     state.run.baseline=copy(run.baseline or flight.baseline or retained)
     state.run.coarseTrimApplied=copy(run.telemetryRecovery and run.telemetryRecovery.coarseTrimApplied or
@@ -110,7 +113,7 @@ function Restart:capture(flight,io,now)
     state.autopilot=io.autopilot and io.autopilot:checkpoint() or nil
     return state
 end
--- @ama-summary: Save the restart checkpoint and request the navigator restart handshake.
+-- Summary: Save the restart checkpoint and request the navigator restart handshake.
 function Restart:request(flight,io,now)
     if self.job or self.saved then return false,"SYSTEMS RESTART ALREADY IN PROGRESS" end
     local state,reason=self:capture(flight,io,now)
@@ -128,7 +131,7 @@ function Restart:request(flight,io,now)
     log(self.reason)
     return true,self.reason
 end
--- @ama-summary: Validate the navigator acknowledgement for the pending restart.
+-- Summary: Validate the navigator acknowledgement for the pending restart.
 function Restart:ack(sender,message,protocol,io)
     local job=self.job
     if not job or sender~=job.bridgeID or protocol~=io.config.protocol or type(message)~="table" or
@@ -137,7 +140,7 @@ function Restart:ack(sender,message,protocol,io)
         message.requestId~=job.requestId or message.bootToken~=job.bootToken or message.accepted~=true then return false end
     job.acknowledged=true;return true
 end
--- @ama-summary: Advance restart handshakes and reboot core after their guards succeed.
+-- Summary: Advance restart handshakes and reboot core after their guards succeed.
 function Restart:tick(flight,io,now,reboot)
     local job=self.job;if not job then return end
     if (flight.emergencyLiftLatched and not job.killLatched) or
@@ -178,10 +181,10 @@ function Restart:tick(flight,io,now,reboot)
         if now-job.since>=120 then log(self.reason) end
     end
 end
--- @ama-summary: Revalidate fresh vessel data and restore retained systems through recovery.
+-- Summary: Revalidate fresh vessel data and restore retained systems through recovery.
 function Restart:restore(flight,io,now)
     local state=self.saved;if not state then return false end
-    -- @ama-summary: Record the current restore prerequisite and retry it on a later update.
+    -- Summary: Record the current restore prerequisite and retry it on a later update.
     local function wait(reason)
         self.reason=reason
         self.since=self.since or now
@@ -206,8 +209,20 @@ function Restart:restore(flight,io,now)
     -- state is deliberately not updated while a restart is pending; waiting
     -- on it here deadlocked the restore. Saved modes are applied below.
     local s=copy(state.run)
-    -- Resume durable snapshots saved before the completed phase was renamed.
-    if type(s)=="table" and s.phase=="HOLDING" then s.phase="READY" end
+    -- Resume durable snapshots saved before phases were renamed:
+    -- HOLDING became READY, BUILDING_LIFT became MAIN_LIFT and CONTROL_START became VENT_IGNITION.
+    local renamedPhases={HOLDING="READY",BUILDING_LIFT="MAIN_LIFT",CONTROL_START="VENT_IGNITION"}
+    if type(s)=="table" and renamedPhases[s.phase] then s.phase=renamedPhases[s.phase] end
+    -- Snapshots saved before the rear chambers were renamed key them RL and RR; they are BL and BR.
+    if type(s)=="table" then
+        for _,value in pairs(s) do
+            if type(value)=="table" then
+                for old,new in pairs({RL="BL",RR="BR"}) do
+                    if value[old]~=nil and value[new]==nil then value[new]=value[old];value[old]=nil end
+                end
+            end
+        end
+    end
     if type(s)~="table" or type(s.currentTargets)~="table" or type(s.boots)~="table" or
         type(s.providerRoles)~="table" or type(s.providerLimits)~="table" or type(s.nodeIDs)~="table" then
         return wait("RESTART GAS / HARDWARE STATE INVALID")
@@ -246,7 +261,9 @@ function Restart:restore(flight,io,now)
     end
     s.uuid=state.uuid;s.coreID=io.localID;s.coreSession=io.session
     s.target=state.controls.targets.altitude
-    if not finite(s.target) or s.target<flight.config.minimum_world_y or s.target>flight.config.maximum_world_y then
+    -- A saved target above the ceiling (the ceiling was lowered) is lowered to it.
+    if finite(s.target) and s.target>flight.config.altitude_ceiling then s.target=flight.config.altitude_ceiling end
+    if not finite(s.target) or s.target<flight.config.minimum_world_y then
         return wait("SAVED ALTITUDE OUT OF LIMITS")
     end
     s.startedAt=now;s.phaseStartedAt=now;s.lastSystemsUpdateAt=now;s.lastControlAt=now;s.lastPidAt=now
@@ -273,7 +290,8 @@ function Restart:restore(flight,io,now)
     end
     controls.uuid=state.uuid;controls.headingTargetUuid=state.uuid;controls.speedTargetUuid=state.uuid
     controls.linkBinding=io.inventory and io.inventory.linkBridge
-    controls.lastSample=nil;controls.holds={};controls.waitHeading=true;controls.waitThrottle=true;controls.waitAltitude=true
+    controls.lastSample=nil;controls.holds={}
+    if type(controls.noteHandover)=="function" then controls:noteHandover() end
     flight.systemsRun=s;flight.enabled=true;flight.target=s.target;flight.baseline=copy(s.baseline)
     flight:resetTrim()
     flight.trim=copy(state.trim or flight.trim)

@@ -1,4 +1,4 @@
--- @ama-section: Diagnostic client | Bounded inventory, cached status and permitted read requests.
+-- Section: Diagnostic client | Bounded inventory, cached status and permitted read requests.
 -- Amaryllis's shared diagnostic client, installed locally on every node.
 -- Reads inventory, explicitly approved getters, cached runtime state and the
 -- bounded console log. It never loads flight code or writes vessel hardware.
@@ -28,8 +28,8 @@ local ROLE_LABELS = {
     chamber_br="chamber_br",primary_l="primary_l",primary_r="primary_r",
 }
 
--- @ama-section: Diagnostic client | Bounded inventory, cached status and permitted read requests.
--- @ama-summary: Validate this diagnostic client's installed role and computer identity.
+-- Section: Diagnostic client | Bounded inventory, cached status and permitted read requests.
+-- Summary: Validate this diagnostic client's installed role and computer identity.
 local function localIdentity()
     local id,label
     local ok,value=pcall(os.getComputerID);if ok then id=value end
@@ -105,7 +105,7 @@ local function jsonDecode(value)
     return decoded
 end
 
--- @ama-summary: Convert diagnostic values into bounded serializable fields.
+-- Summary: Convert diagnostic values into bounded serializable fields.
 local function safeValue(value, depth, seen)
     local kind = type(value)
     if kind == "nil" or kind == "boolean" then return value end
@@ -134,7 +134,7 @@ local function safeValue(value, depth, seen)
     return result
 end
 
--- @ama-summary: Collect a bounded inventory of attached peripheral names and types.
+-- Summary: Collect a bounded inventory of attached peripheral names and types.
 local function listPeripherals()
     local names = peripheral.getNames()
     table.sort(names)
@@ -153,7 +153,7 @@ local function peripheralExists(target)
     return false
 end
 
--- @ama-summary: Validate a diagnostic file path against the permitted read locations.
+-- Summary: Validate a diagnostic file path against the permitted read locations.
 local function validReadPath(path)
     if type(path) ~= "string" or #path > 256 or string.sub(path, 1, 10) ~= "/avionics/" or
         path:find("\\", 1, true) or path:find("\0", 1, true) or path:find(":", 1, true) or
@@ -166,7 +166,7 @@ local function validReadPath(path)
     return true
 end
 
--- @ama-summary: Read a permitted diagnostic file with bounded output.
+-- Summary: Read a permitted diagnostic file with bounded output.
 local function readDiagnosticFile(path)
     if not validReadPath(path) then return nil, "invalid /avionics/ text path" end
     local file, openError = fs.open(path, "r")
@@ -181,7 +181,7 @@ local function readDiagnosticFile(path)
     return content
 end
 
--- @ama-summary: Collect the available terminal-tab identities for diagnostics.
+-- Summary: Collect the available terminal-tab identities for diagnostics.
 local function listMultishellTabs()
     local api = multishell
     if type(api) ~= "table" or type(api.getCount) ~= "function" or type(api.getTitle) ~= "function" then
@@ -203,7 +203,7 @@ local function listMultishellTabs()
     return count, titles
 end
 
--- @ama-summary: Dispatch a validated diagnostic request to its bounded read handler.
+-- Summary: Dispatch a validated diagnostic request to its bounded read handler.
 local function execute(command, args)
     if type(command) ~= "string" or type(args) ~= "table" then
         return false, "invalid command envelope"
@@ -320,7 +320,7 @@ end
 -- startup an explicit socket cleanup hook without granting hardware access.
 os.__amaryllisCloseDiagnostic = function() closeSocket(activeSocket) end
 
--- @ama-summary: Connect the read-only diagnostic client and serve correlated host requests.
+-- Summary: Connect the read-only diagnostic client and serve correlated host requests.
 local function connectAndServe()
     if not isDiagnosticOwner() then return end
     local role,id,label,identityValid=localIdentity()

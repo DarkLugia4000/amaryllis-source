@@ -1,4 +1,6 @@
--- @ama-section: Altitude authority | Startup, retained lift, PID demand and operator lifecycle.
+local Mathx = require("avionics.mathx")
+local Registry = require("avionics.config_registry")
+-- Section: Altitude authority | Startup, retained lift, PID demand and operator lifecycle.
 -- Vessel association adoption v1
 -- Navigator information startup revision v1
 -- Recoverable vessel telemetry v1
@@ -15,24 +17,26 @@ local TelemetryRecovery=require("avionics.telemetry_recovery")
 local Anchor=require("avionics.anchor")
 local Autopilot=require("avionics.autopilot")
 local Flight={}
-local QUADS={"FL","FR","RL","RR"}
+-- Settings groups edited from the navigator's COCKPIT INPUTS menu.
+Flight.COCKPIT_INPUT_GROUPS={["SEL HEADING"]=true,["SEL THROTTLE"]=true,["INPUT ALTITUDE"]=true,["STRAFE SETTINGS"]=true}
+local QUADS={"FL","FR","BL","BR"}
 local EMERGENCY_LIFT_KILL_ATTEMPTS=4
 local EMERGENCY_LIFT_KILL_RETRY_SECONDS=1.5
 local EMERGENCY_LIFT_KILL_DISCOVERY_SECONDS=30
-local EMERGENCY_LIFT_KILL_QUADRANTS={"FL","FR","RL","RR"}
+local EMERGENCY_LIFT_KILL_QUADRANTS={"FL","FR","BL","BR"}
 local MANUAL_TRIM_MIN=-2
 local MANUAL_TRIM_MAX=2
 local MANUAL_TRIM_STEPS={0.1,0.5}
-local function finite(n) return type(n)=="number" and n==n and math.abs(n)<math.huge end
-local function clamp(n,a,b) return math.max(a,math.min(b,n)) end
+local finite = Mathx.finite
+local clamp = Mathx.clamp
 local function boundedBindingFingerprint(value)
     return type(value)=="string" and #value>0 and #value<=1024 and not value:find("[%c]")
 end
 local function logText(value,limit)
     return tostring(value or ""):gsub("[%c]"," "):sub(1,limit or 160)
 end
--- @ama-section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
--- @ama-summary: Write a bounded event to the core log with its operation scope.
+-- Section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
+-- Summary: Write a bounded event to the core log with its operation scope.
 local function emitCoreLog(message,key)
     local logger=type(os)=="table" and os.__amaryllisLog or nil
     if type(logger)=="function" then
@@ -45,7 +49,7 @@ end
 local function issueScope(component,operation)
     return component..":"..operation
 end
--- @ama-summary: Record the active issue for a flight-operation scope.
+-- Summary: Record the active issue for a flight-operation scope.
 local function logOperationIssue(self,component,operation,reason,details)
     reason=logText(reason,160)
     if reason=="" then return false end
@@ -61,7 +65,7 @@ local function logOperationIssue(self,component,operation,reason,details)
     local key=logText("core."..component.."."..operation..":"..reason,240)
     return emitCoreLog(message,key)
 end
--- @ama-summary: Clear the recovered operation issue and record its recovery message.
+-- Summary: Clear the recovered operation issue and record its recovery message.
 local function clearOperationIssue(self,component,operation,message)
     local scope=issueScope(component,operation)
     local active=self.coreLogIssues and self.coreLogIssues[scope]
@@ -72,8 +76,8 @@ local function clearOperationIssue(self,component,operation,message)
     return emitCoreLog(logText(message or ("Core "..component.." "..operation.." recovered"),240),
         "core."..component.."."..operation..":recovered")
 end
--- @ama-section: Recovery | Physical target reconciliation and retained-run resumption.
--- @ama-summary: Record a change in the current systems telemetry-recovery state.
+-- Section: Recovery | Physical target reconciliation and retained-run resumption.
+-- Summary: Record a change in the current systems telemetry-recovery state.
 local function logSystemsTelemetryRecovery(self,reason,recovered)
     local scope=issueScope("flight","systems telemetry recovery")
     self.coreLogIssues=self.coreLogIssues or {}
@@ -96,8 +100,8 @@ end
 local function diagnosticNumber(value)
     return finite(value) and string.format("%.6g",value) or nil
 end
--- @ama-section: Systems control | Startup, measured dynamics and bounded provider demand.
--- @ama-summary: Format the retained abort measurements and guard details for diagnostics.
+-- Section: Systems control | Startup, measured dynamics and bounded provider demand.
+-- Summary: Format the retained abort measurements and guard details for diagnostics.
 local function systemsAbortText(details)
     if type(details)~="table" then return nil end
     local parts={}
@@ -107,15 +111,17 @@ local function systemsAbortText(details)
         {"sampleGapLimitSeconds","runtime gap limit seconds"},
         {"pendingAckSeconds","pending ACK wait seconds"},{"lastUpdateAt","last update"},
         {"lastControlAt","last control sample"},{"lastPidAt","last PID sample"},
-        {"lastTargetCommandAt","last target command"}}) do
+        {"lastTargetCommandAt","last target command"},
+        {"boilerWaitedSeconds","boiler wait seconds"}}) do
         local value=diagnosticNumber(details[field[1]])
         if value then parts[#parts+1]=field[2].."="..value end
     end
     if type(details.phase)=="string" then parts[#parts+1]="phase="..logText(details.phase,32) end
+    if type(details.boiler)=="string" then parts[#parts+1]="boiler="..logText(details.boiler,64) end
     return #parts>0 and table.concat(parts,"; ") or nil
 end
--- @ama-section: Emergency lift | Latched operator shutdown and verified disarm.
--- @ama-summary: Collect chamber verification details for an incomplete emergency shutdown.
+-- Section: Emergency lift | Latched operator shutdown and verified disarm.
+-- Summary: Collect chamber verification details for an incomplete emergency shutdown.
 local function emergencyKillFailureDetails(job)
     local parts={}
     for _,q in ipairs(EMERGENCY_LIFT_KILL_QUADRANTS) do
@@ -130,8 +136,8 @@ local function airPressure(v)
     local p=v.environment and v.environment.airPressure
     return finite(p) and p>0 and p or nil
 end
--- @ama-section: Persistent learning | Validated calibration and retained operating records.
--- @ama-summary: Resolve the configured activation level for a provider role.
+-- Section: Persistent learning | Validated calibration and retained operating records.
+-- Summary: Resolve the configured activation level for a provider role.
 local function configuredProviderStrength(config,provider)
     local strengths=config.verified_gas_lift_strengths or {}
     if provider.gasTypeValid and type(provider.gasType)=="string" then return strengths[provider.gasType] end
@@ -142,8 +148,8 @@ local function configuredProviderStrength(config,provider)
         if provider.controlRole=="fine" then return strengths.default end
     end
 end
--- @ama-section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
--- @ama-summary: Construct altitude-control state, PID loops and runtime operation records from configuration.
+-- Section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
+-- Summary: Construct altitude-control state, PID loops and runtime operation records from configuration.
 function Flight.new(config)
     local c=config.altitude_control
     if config.thrust and config.thrust.primary_max_rpm==nil then
@@ -160,6 +166,8 @@ function Flight.new(config)
         -- neutral target in the same core JSON document.
         c.manual_fore_aft_trim_blocks=0
     end
+    if c and c.level_boost_start_blocks==nil then c.level_boost_start_blocks=0.5 end
+    if c and c.level_boost_max==nil then c.level_boost_max=10 end
     if c and not c.trim_pid then
         -- Existing JSON installations gain trim learning without losing any
         -- user-set altitude gains, ceiling limits or slew limits.
@@ -169,8 +177,8 @@ function Flight.new(config)
         controls=config.cockpit and Controls.new(config),
         outer=c and PID.new(c.altitude_pid),inner=c and PID.new(c.vertical_speed_pid)}, {__index=Flight})
 end
--- @ama-section: Emergency lift | Latched operator shutdown and verified disarm.
--- @ama-summary: Load the persisted Kill Lift latch and prepare its verification state.
+-- Section: Emergency lift | Latched operator shutdown and verified disarm.
+-- Summary: Load the persisted Kill Lift latch and prepare its verification state.
 function Flight:configureEmergencyLock(storage,dependencies,path)
     self.emergencyLockStorage=storage
     self.emergencyLockDependencies=dependencies or {}
@@ -209,17 +217,14 @@ end
 -- Level memory: the steam differential that held the ship level last time
 -- is saved and used as the starting split for the next launch, so a fixed
 -- weight imbalance does not have to be rediscovered by pitching first.
--- @ama-section: Leveling | Chamber-height feedback and retained trim allocation.
--- @ama-summary: Load the stored leveling bias and its persistence dependencies.
+-- Section: Leveling | Chamber-height feedback and retained trim allocation.
+-- Summary: Load the stored leveling bias and its persistence dependencies.
 function Flight:configureLevelMemory(storage,dependencies,path)
     self.levelStorage=storage
     self.levelDependencies=dependencies or {}
     self.levelPath=path or "/avionics/data/level-bias.json"
     self.levelBias=nil
     if type(storage)~="table" or type(storage.readJson)~="function" then return end
-    local fsApi=self.levelDependencies.fs or fs
-    local okExists,exists=pcall(fsApi.exists,self.levelPath)
-    if not okExists or not exists then return end
     local ok,state=pcall(storage.readJson,self.levelPath,self.levelDependencies)
     if ok and type(state)=="table" and state.schemaVersion==1 and finite(state.roll) and finite(state.pitch) and
         math.abs(state.roll)<=10000 and math.abs(state.pitch)<=10000 then
@@ -232,17 +237,14 @@ end
 -- new hold starts from it instead of relearning during the approach.
 local HOVER_BAND_BLOCKS=20
 local function hoverBandKey(altitude) return tostring(math.floor(altitude/HOVER_BAND_BLOCKS)*HOVER_BAND_BLOCKS) end
--- @ama-section: Persistent learning | Validated calibration and retained operating records.
--- @ama-summary: Load learned hover offsets and configure their persistence.
+-- Section: Persistent learning | Validated calibration and retained operating records.
+-- Summary: Load learned hover offsets and configure their persistence.
 function Flight:configureHoverMemory(storage,dependencies,path)
     self.hoverStorage=storage
     self.hoverDependencies=dependencies or {}
     self.hoverPath=path or "/avionics/data/hover-offset.json"
     self.hoverOffsets={}
     if type(storage)~="table" or type(storage.readJson)~="function" then return end
-    local fsApi=self.hoverDependencies.fs or fs
-    local okExists,exists=pcall(fsApi.exists,self.hoverPath)
-    if not okExists or not exists then return end
     local ok,state=pcall(storage.readJson,self.hoverPath,self.hoverDependencies)
     if ok and type(state)=="table" and state.schemaVersion==1 and type(state.bands)=="table" then
         for key,entry in pairs(state.bands) do
@@ -252,7 +254,7 @@ function Flight:configureHoverMemory(storage,dependencies,path)
         end
     end
 end
--- @ama-summary: Interpolate the learned hover offset for the current altitude.
+-- Summary: Interpolate the learned hover offset for the current altitude.
 function Flight:learnedHoverOffset(altitude)
     if not finite(altitude) or type(self.hoverOffsets)~="table" then return nil end
     local key=hoverBandKey(altitude)
@@ -266,7 +268,7 @@ function Flight:learnedHoverOffset(altitude)
     end
     return best
 end
--- @ama-summary: Apply the learned hover offset to the altitude-control baseline.
+-- Summary: Apply the learned hover offset to the altitude-control baseline.
 function Flight:seedHoverOffset(altitude)
     local offset=self:learnedHoverOffset(altitude)
     local g=self.inner and self.inner.g
@@ -275,7 +277,46 @@ function Flight:seedHoverOffset(altitude)
     self.inner.i=clamp(offset/g.ki,-limit,limit)
     self.hoverOffsetSeeded=offset
 end
--- @ama-summary: Update learned hover offsets from stable measured hover conditions.
+-- The propulsion state is saved in config.json (thrust.enabled) and survives core reboots, START
+-- SYSTEMS and RESTART SYSTEMS. A confirmed STOP SYSTEMS saves it as disabled. When it is disabled,
+-- READY enables it automatically after 10 s of steady altitude hold, retrying every 2 s while
+-- propulsion refuses.
+-- Summary: Save propulsion as disabled when STOP SYSTEMS is confirmed, cancelling AP and the anchor.
+function Flight:disablePropulsionForStop(io,now)
+    local thrust=io.thrust
+    if not thrust or type(thrust.setEnabled)~="function" then return end
+    if not (thrust.config and thrust.config.thrust and thrust.config.thrust.enabled==true) then return end
+    if io.autopilot then io.autopilot:cancel(io,self.controls,"SYSTEMS STOPPED",false) end
+    if io.positionAnchor then io.positionAnchor:cancel(self.controls,"SYSTEMS STOPPED") end
+    local accepted,reason=thrust:setEnabled(io,now,self.controls,false,self.storage,self.settingsDependencies,
+        "PROPULSION OFF: SYSTEMS STOPPED")
+    if not accepted then logOperationIssue(self,"flight","propulsion disable at stop",reason) end
+end
+-- Summary: Enable propulsion once per start sequence after the altitude hold has stayed settled.
+function Flight:autoEnablePropulsion(io,s,now)
+    if s.propulsionAutoDone or not io.thrust or type(io.thrust.setEnabled)~="function" then return end
+    local thrustConfig=io.thrust.config and io.thrust.config.thrust or {}
+    if thrustConfig.enabled==true then s.propulsionAutoDone=true;return end
+    local v=io.vessel or {}
+    local settled=s.phase=="READY" and finite(v.altitude) and finite(v.verticalSpeed) and finite(s.target) and
+        math.abs(v.verticalSpeed)<=0.1 and math.abs(s.target-v.altitude)<=1.5
+    if not settled then s.propulsionSettledSince=nil;return end
+    s.propulsionSettledSince=s.propulsionSettledSince or now
+    if now-s.propulsionSettledSince<10 then return end
+    if s.propulsionAutoTriedAt and now-s.propulsionAutoTriedAt<2 then return end
+    s.propulsionAutoTriedAt=now
+    io.systemsReady=true
+    local accepted,reason=io.thrust:setEnabled(io,now,self.controls,true,self.storage,self.settingsDependencies)
+    if accepted then
+        s.propulsionAutoDone=true
+        if type(os.__amaryllisLog)=="function" then
+            pcall(os.__amaryllisLog,"Propulsion enabled automatically after the altitude hold settled","core.flight")
+        end
+    else
+        s.propulsionAutoReason=reason
+    end
+end
+-- Summary: Update learned hover offsets from stable measured hover conditions.
 function Flight:rememberHoverOffset(v,s,actualRatio,now)
     local g=self.inner and self.inner.g
     local settled=s.phase=="READY" and finite(v.altitude) and finite(v.verticalSpeed) and
@@ -306,8 +347,26 @@ function Flight:seedLevelBias()
     self.coarseSteamTrimIntegral={roll=bias.roll,pitch=bias.pitch}
     self.coarseSteamTrimEngaged={roll=bias.roll~=0,pitch=bias.pitch~=0}
 end
--- @ama-section: Leveling | Chamber-height feedback and retained trim allocation.
--- @ama-summary: Persist the current leveling bias at the configured save cadence.
+-- Summary: Return learned leveling to the saved level bias (zero when none is saved) during the altitude hold.
+function Flight:resetLeveling(io,now)
+    local s=self.systemsRun
+    if not s or s.phase~="READY" then return false,"RESET LEVELING NEEDS START SYSTEMS READY" end
+    if s.telemetryRecovery then return false,"WAIT FOR LIFT TELEMETRY RECOVERY" end
+    local bias=self.levelBias
+    local saved=type(bias)=="table" and finite(bias.roll) and finite(bias.pitch)
+    local roll,pitch=saved and bias.roll or 0,saved and bias.pitch or 0
+    -- The learned split jumps to the reset value; the applied split follows at the leveling slew rate.
+    self.coarseSteamTrimIntegral={roll=roll,pitch=pitch}
+    self.coarseSteamTrimEngaged={roll=false,pitch=false}
+    if self.rollTrim then self.rollTrim:reset() end
+    if self.pitchTrim then self.pitchTrim:reset() end
+    self.levelRates=nil;self.levelTiltSince=nil
+    local reason=saved and "LEVELING RESET TO SAVED BIAS" or "LEVELING RESET TO ZERO"
+    emitCoreLog(string.format("%s (roll %.1f, pitch %.1f)",reason,roll,pitch),"core.flight.leveling")
+    return true,reason
+end
+-- Section: Leveling | Chamber-height feedback and retained trim allocation.
+-- Summary: Persist the current leveling bias at the configured save cadence.
 function Flight:rememberLevelBias(now,force)
     local trim=self.coarseSteamTrim
     if not trim or not finite(trim.roll) or not finite(trim.pitch) then return end
@@ -321,8 +380,8 @@ function Flight:rememberLevelBias(now,force)
         pcall(write,self.levelPath,{schemaVersion=1,roll=trim.roll,pitch=trim.pitch},self.levelDependencies)
     end
 end
--- @ama-section: Emergency lift | Latched operator shutdown and verified disarm.
--- @ama-summary: Write the accepted Kill Lift latch to its persistent record.
+-- Section: Emergency lift | Latched operator shutdown and verified disarm.
+-- Summary: Write the accepted Kill Lift latch to its persistent record.
 function Flight:persistEmergencyLock(latched)
     if not self.emergencyLockStorage then return true end
     local write=self.emergencyLockStorage.writeJson
@@ -341,14 +400,14 @@ function Flight:persistEmergencyLock(latched)
     return true
 end
 
--- @ama-section: Leveling | Chamber-height feedback and retained trim allocation.
--- @ama-summary: Reset trim PID state and optionally retain the coarse trim allocation.
+-- Section: Leveling | Chamber-height feedback and retained trim allocation.
+-- Summary: Reset trim PID state and optionally retain the coarse trim allocation.
 function Flight:resetTrim(preserveCoarse)
     local c=self.config
     local g={kp=c.trim_ceiling_per_block,ki=c.trim_pid.ki,kd=c.trim_pid.kd,
         integral_limit=c.trim_pid.integral_limit,derivative_filter_seconds=c.trim_pid.derivative_filter_seconds}
     self.rollTrim=PID.new(g);self.pitchTrim=PID.new(g)
-    self.trim={FL=0,FR=0,RL=0,RR=0};self.trimStatus=nil;self.levelRates=nil
+    self.trim={FL=0,FR=0,BL=0,BR=0};self.trimStatus=nil;self.levelRates=nil
     if not preserveCoarse then
         self.coarseSteamTrim={roll=0,pitch=0}
         self.coarseSteamTrimIntegral={roll=0,pitch=0}
@@ -359,7 +418,7 @@ end
 -- Height differences are in world blocks, not angles. Symmetric axis mixing
 -- avoids learning four unrelated integrals and distinguishes roll from pitch.
 -- The altitude PID absorbs any common lift added by clipping at probe floors.
--- @ama-summary: Check that chamber observations are aligned closely enough for trim calculations.
+-- Summary: Check that chamber observations are aligned closely enough for trim calculations.
 function Flight:coarseTrimSamplesAligned(io,now)
     local oldest,latest
     for _,q in ipairs(QUADS) do
@@ -378,7 +437,7 @@ function Flight:coarseTrimSamplesAligned(io,now)
     return true
 end
 
--- @ama-summary: Compute bounded roll and pitch corrections from chamber heights and the selected trim bias.
+-- Summary: Compute bounded roll and pitch corrections from chamber heights and the selected trim bias.
 function Flight:updateTrim(io,baseline,dt,slewDt,now)
     if not self.rollTrim then self:resetTrim() end
     -- While still resting on the ground, the measured tilt is the terrain
@@ -412,16 +471,16 @@ function Flight:updateTrim(io,baseline,dt,slewDt,now)
         y[q]=io.nodes[q].altitude.sensorWorldY
         if not finite(y[q]) then return nil,"SECTION ALTITUDE UNAVAILABLE" end
     end
-    local roll=(y.FL+y.RL-y.FR-y.RR)/4
+    local roll=(y.FL+y.BL-y.FR-y.BR)/4
     local measuredRoll=roll
-    local measuredPitch=(y.FL+y.FR-y.RL-y.RR)/4
+    local measuredPitch=(y.FL+y.FR-y.BL-y.BR)/4
     local manualBias=finite(c.manual_fore_aft_trim_blocks) and
         clamp(c.manual_fore_aft_trim_blocks,MANUAL_TRIM_MIN,MANUAL_TRIM_MAX) or 0
     -- Existing pitch error is half the measured fore/aft average-height
     -- difference. A bow-up world-block target therefore maps to bias / 2.
     local pitchTarget=manualBias/2
     local leveledHeights={FL=y.FL-manualBias/2,FR=y.FR-manualBias/2,
-        RL=y.RL+manualBias/2,RR=y.RR+manualBias/2}
+        BL=y.BL+manualBias/2,BR=y.BR+manualBias/2}
     local lowest,highest
     for _,q in ipairs(QUADS) do
         lowest=not lowest and leveledHeights[q] or math.min(lowest,leveledHeights[q])
@@ -441,8 +500,8 @@ function Flight:updateTrim(io,baseline,dt,slewDt,now)
     local pitchError=pitchTarget-pitchControlMeasurement
     local p,ps=self.pitchTrim:step(pitchTarget,pitchControlMeasurement,dt,
         -c.max_trim_ceiling_change,c.max_trim_ceiling_change)
-    local rollSign={FL=1,FR=-1,RL=1,RR=-1}
-    local pitchSign={FL=1,FR=1,RL=-1,RR=-1}
+    local rollSign={FL=1,FR=-1,BL=1,BR=-1}
+    local pitchSign={FL=1,FR=1,BL=-1,BR=-1}
     -- PID rejects an integral increment before it crosses the output cap;
     -- that can leave output one increment below the limit. Still report the
     -- exhausted authority when the next outward increment cannot fit.
@@ -492,12 +551,31 @@ function Flight:updateTrim(io,baseline,dt,slewDt,now)
     local coarseSeconds=finite(slewDt) and slewDt>0 and slewDt or dt
     coarseSeconds=math.min(coarseSeconds,3)
     local coarseFresh,coarseFreshReason=self:coarseTrimSamplesAligned(io,now)
-    -- During BUILDING_LIFT the chambers fill unevenly and the trim burner's
+    -- During MAIN_LIFT the chambers fill unevenly and the trim burner's
     -- small authority is irrelevant, so steam (bulk vent) leveling responds
     -- from the deadband and its gain and slew are multiplied by
     -- climb_trim_boost. HOLDING keeps the original gentle behaviour.
-    local climbing=self.systemsRun~=nil and self.systemsRun.phase=="BUILDING_LIFT"
+    local climbing=self.systemsRun~=nil and self.systemsRun.phase=="MAIN_LIFT"
     local climbBoost=climbing and finite(c.climb_trim_boost) and clamp(c.climb_trim_boost,1,20) or 1
+    -- Large-tilt boost: beyond level_boost_start_blocks of tilt, steam leveling
+    -- (slew, learned transfer, proportional cap and damping) scales with the
+    -- tilt, up to level_boost_max, per axis. The look-ahead damping scales
+    -- with it, as the MAIN_LIFT boost does.
+    local boostStart=finite(c.level_boost_start_blocks) and c.level_boost_start_blocks>0 and c.level_boost_start_blocks or 0.5
+    local boostMax=finite(c.level_boost_max) and clamp(c.level_boost_max,1,20) or 10
+    local function axisBoost(tilt)
+        local tiltBoost=math.abs(tilt)>boostStart and clamp(math.abs(tilt)/boostStart,1,boostMax) or 1
+        return math.max(climbBoost,tiltBoost)
+    end
+    local rollBoost=axisBoost(measuredRoll)
+    local pitchBoost=axisBoost(pitchTarget-measuredPitch)
+    -- A tilt held beyond the boost start for two minutes is reported once leveling has had time to act.
+    local largestTilt=math.max(math.abs(measuredRoll),math.abs(pitchTarget-measuredPitch))
+    if run and run.phase=="READY" and largestTilt>boostStart then
+        self.levelTiltSince=self.levelTiltSince or now
+    else self.levelTiltSince=nil end
+    local levelingWarning=self.levelTiltSince and finite(now) and now-self.levelTiltSince>=120 and
+        "TILT UNCORRECTED 2 MIN: CHECK LOAD OR RESET LEVELING" or nil
     local coarseThreshold=climbBoost>1 and c.trim_deadband_blocks or fineBlocks
     -- Steam lift answers a vent change only after the envelope fills, so
     -- correcting the present tilt overshoots: the ship swings past level
@@ -553,46 +631,46 @@ function Flight:updateTrim(io,baseline,dt,slewDt,now)
         -- per-batch lift discontinuity.
         -- A slower envelope gets a proportionally slower learned transfer;
         -- learning faster than the lift can respond is what winds up the swing.
-        local transferRate=trimRate*0.5*climbBoost*clamp(5/lead,0.15,1)
+        local transferBase=trimRate*0.5*clamp(5/lead,0.15,1)
+        local rollTransfer,pitchTransfer=transferBase*rollBoost,transferBase*pitchBoost
         local rollDirection=measuredRoll>0 and -1 or (measuredRoll<0 and 1 or 0)
-        if math.abs(measuredRoll)>c.trim_deadband_blocks and (climbBoost>1 or rs or math.abs(r)>=cap*0.8) then
+        if math.abs(measuredRoll)>c.trim_deadband_blocks and (rollBoost>1 or rs or math.abs(r)>=cap*0.8) then
             coarseEngaged.roll=true
         end
         if rollDirection~=0 and coarseIntegral.roll*rollDirection<0 then
             coarseIntegral.roll=coarseIntegral.roll+clamp(-coarseIntegral.roll,
-                -transferRate*coarseSeconds,transferRate*coarseSeconds)
+                -rollTransfer*coarseSeconds,rollTransfer*coarseSeconds)
         elseif coarseEngaged.roll and math.abs(measuredRoll)>c.trim_deadband_blocks then
-            coarseIntegral.roll=clamp(coarseIntegral.roll+rollDirection*transferRate*coarseSeconds,
+            coarseIntegral.roll=clamp(coarseIntegral.roll+rollDirection*rollTransfer*coarseSeconds,
                 -coarseLimit,coarseLimit)
         end
         local rawPitchError=pitchTarget-measuredPitch
         local pitchDirection=rawPitchError>0 and 1 or (rawPitchError<0 and -1 or 0)
-        if math.abs(rawPitchError)>c.trim_deadband_blocks and (climbBoost>1 or ps or math.abs(p)>=cap*0.8) then
+        if math.abs(rawPitchError)>c.trim_deadband_blocks and (pitchBoost>1 or ps or math.abs(p)>=cap*0.8) then
             coarseEngaged.pitch=true
         end
         if pitchDirection~=0 and coarseIntegral.pitch*pitchDirection<0 then
             coarseIntegral.pitch=coarseIntegral.pitch+clamp(-coarseIntegral.pitch,
-                -trimRate*climbBoost*coarseSeconds,trimRate*climbBoost*coarseSeconds)
+                -trimRate*pitchBoost*coarseSeconds,trimRate*pitchBoost*coarseSeconds)
         elseif coarseEngaged.pitch and math.abs(rawPitchError)>c.trim_deadband_blocks then
-            coarseIntegral.pitch=clamp(coarseIntegral.pitch+pitchDirection*transferRate*coarseSeconds,
+            coarseIntegral.pitch=clamp(coarseIntegral.pitch+pitchDirection*pitchTransfer*coarseSeconds,
                 -coarseLimit,coarseLimit)
         end
-        local coarseRollP=math.min(cap*climbBoost,math.max(0,math.abs(dampedRoll)-coarseThreshold)*perBlock*climbBoost)
-        local coarsePitchP=math.min(cap*climbBoost,math.max(0,math.abs(dampedPitchError)-coarseThreshold)*perBlock*climbBoost)
+        local coarseRollP=math.min(cap*rollBoost,math.max(0,math.abs(dampedRoll)-coarseThreshold)*perBlock*rollBoost)
+        local coarsePitchP=math.min(cap*pitchBoost,math.max(0,math.abs(dampedPitchError)-coarseThreshold)*perBlock*pitchBoost)
         -- Rate damping: oppose the tilt's motion over one response horizon so
         -- the learned (integral) correction cannot keep swinging the ship.
-        local dampingLimit=cap*climbBoost
         local dampingGain=finite(c.level_damping_gain) and clamp(c.level_damping_gain,0,10) or 1
-        local rollDamping=coarseEngaged.roll and clamp(-rates.roll*lead*perBlock*climbBoost*dampingGain,-dampingLimit,dampingLimit) or 0
-        local pitchDamping=coarseEngaged.pitch and clamp(-rates.pitch*lead*perBlock*climbBoost*dampingGain,-dampingLimit,dampingLimit) or 0
+        local rollDamping=coarseEngaged.roll and clamp(-rates.roll*lead*perBlock*rollBoost*dampingGain,-cap*rollBoost,cap*rollBoost) or 0
+        local pitchDamping=coarseEngaged.pitch and clamp(-rates.pitch*lead*perBlock*pitchBoost*dampingGain,-cap*pitchBoost,cap*pitchBoost) or 0
         coarse.roll=-((dampedRoll>0 and 1 or (dampedRoll<0 and -1 or 0)))*coarseRollP+coarseIntegral.roll+rollDamping
         coarse.pitch=(dampedPitchError>0 and 1 or (dampedPitchError<0 and -1 or 0))*coarsePitchP+coarseIntegral.pitch+pitchDamping
     end
     local previousCoarse=self.coarseSteamTrim or {roll=0,pitch=0}
-    local coarseStep=trimRate*coarseSeconds*climbBoost
+    local rollStep,pitchStep=trimRate*coarseSeconds*rollBoost,trimRate*coarseSeconds*pitchBoost
     self.coarseSteamTrim=coarseFresh and {
-        roll=(previousCoarse.roll or 0)+clamp(coarse.roll-(previousCoarse.roll or 0),-coarseStep,coarseStep),
-        pitch=(previousCoarse.pitch or 0)+clamp(coarse.pitch-(previousCoarse.pitch or 0),-coarseStep,coarseStep)} or previousCoarse
+        roll=(previousCoarse.roll or 0)+clamp(coarse.roll-(previousCoarse.roll or 0),-rollStep,rollStep),
+        pitch=(previousCoarse.pitch or 0)+clamp(coarse.pitch-(previousCoarse.pitch or 0),-pitchStep,pitchStep)} or previousCoarse
     self.trimStatus={active=true,rollHeightError=-roll,pitchHeightError=pitchError,
         foreAftHeightDifferenceBlocks=2*measuredPitch,manualTargetForeAftHeightDifferenceBlocks=manualBias,
         levelIndicated=levelSpread<=levelTolerance,levelSpreadBlocks=levelSpread,
@@ -600,7 +678,8 @@ function Flight:updateTrim(io,baseline,dt,slewDt,now)
         fineAuthorityLimited=limited,authorityLimited=limited,reason=limited and "TRIM AUTHORITY EXHAUSTED" or "TRIM PID ACTIVE",
         coarseSteamTrimRoll=self.coarseSteamTrim.roll,coarseSteamTrimPitch=self.coarseSteamTrim.pitch,
         coarseSteamTrimActive=false,coarseSteamTrimLimited=false,coarseSteamTrimReason=coarseFresh and nil or coarseFreshReason,
-        rollIntegral=self.rollTrim.i,pitchIntegral=self.pitchTrim.i}
+        rollIntegral=self.rollTrim.i,pitchIntegral=self.pitchTrim.i,
+        rollBoost=rollBoost,pitchBoost=pitchBoost,levelingWarning=levelingWarning}
     return true
 end
 
@@ -608,7 +687,7 @@ end
 -- map. Equal verified raw-lift capacity in all four quadrants lets paired
 -- integer offsets preserve requested total support exactly. A single shared
 -- scale honors the tightest provider/floor/quadrant-capacity bound.
--- @ama-summary: Apply a symmetric steam-only differential to an untrimmed common-demand map. Equal verified raw-lift capacity in all four quadrants lets paired integer offsets preserve requested total support exactly. A single shared scale honors the tightest provider/floor/quadrant-capacity bound.
+-- Summary: Apply a symmetric steam-only differential to an untrimmed common-demand map. Equal verified raw-lift capacity in all four quadrants lets paired integer offsets preserve requested total support exactly. A single shared scale honors the tightest provider/floor/quadrant-capacity bound.
 function Flight:applyCoarseSteamTrim(io,baseMaps,model,now)
     local result={}
     for _,q in ipairs(QUADS) do
@@ -656,9 +735,9 @@ function Flight:applyCoarseSteamTrim(io,baseMaps,model,now)
         end
     end
 
-    -- Pair symmetry makes FL/RR and FR/RL equal-and-opposite even after
+    -- Pair symmetry makes FL/BR and FR/BL equal-and-opposite even after
     -- integer quantization, preserving the total steam lift request.
-    local requested={FL=roll+pitch,FR=pitch-roll,RL=roll-pitch,RR=-roll-pitch}
+    local requested={FL=roll+pitch,FR=pitch-roll,BL=roll-pitch,BR=-roll-pitch}
     local availableScale=1
     for _,q in ipairs(QUADS) do
         local delta=requested[q]
@@ -683,7 +762,7 @@ function Flight:applyCoarseSteamTrim(io,baseMaps,model,now)
         steps[q]=delta<0 and -math.floor(-delta+1e-9) or math.floor(delta+1e-9)
     end
     -- Protect exact paired symmetry if a floating-point boundary is hit.
-    steps.RR=-steps.FL;steps.RL=-steps.FR
+    steps.BR=-steps.FL;steps.BL=-steps.FR
     for _,q in ipairs(QUADS) do
         local step=steps[q]
         if step~=0 then
@@ -719,14 +798,17 @@ end
 local FIELDS={}
 local NavigationSettings=require("avionics.navigation_settings")
 local InputTuning=require("avionics.input_tuning")
+-- Settings labels for PID gains: what each term does, with its short name.
+Flight.PID_LABELS={kp="Response to error (kp)",ki="Lasting-error correction (ki)",kd="Damping (kd)",
+    integral_limit="Lasting-error cap (i-limit)",derivative_filter_seconds="Damping smoothing s (d-filter)"}
 local function field(group,key,label,path,min,max,step,unit)
     FIELDS[#FIELDS+1]={group=group,key=key,label=label,path=path,min=min,max=max,step=step,unit=unit}
 end
 field("GENERAL","cockpit_timeout","Cockpit timeout (s)",{"cockpit","input_stale_seconds"},.5,10,.5)
-field("LATERAL","lateral_strength_percent","Manual strafe strength (%)",{"cockpit","lateral_strength_percent"},5,100,5)
-field("LATERAL","lateral_offset_step_blocks","Offset per pull (blocks)",{"cockpit","lateral_offset_step_blocks"},.1,10,.1)
-field("LATERAL","lateral_hold_delay_seconds","Hold delay (seconds)",{"cockpit","lateral_hold_delay_seconds"},.1,3,.1)
-field("LATERAL","lateral_adjustment_blocks_per_second","Held adjustment speed (blocks/s)",{"cockpit","lateral_adjustment_blocks_per_second"},.1,10,.1)
+field("STRAFE SETTINGS","lateral_strength_percent","Manual strafe strength (%)",{"cockpit","lateral_strength_percent"},5,100,5)
+field("STRAFE SETTINGS","lateral_offset_step_blocks","Offset per pull (blocks)",{"cockpit","lateral_offset_step_blocks"},.1,10,.1)
+field("STRAFE SETTINGS","lateral_hold_delay_seconds","Hold delay (seconds)",{"cockpit","lateral_hold_delay_seconds"},.1,3,.1)
+field("STRAFE SETTINGS","lateral_adjustment_blocks_per_second","Held adjustment speed (blocks/s)",{"cockpit","lateral_adjustment_blocks_per_second"},.1,10,.1)
 for _,f in ipairs(NavigationSettings.fields) do
     field(f.group=="anchor" and "NAV ANCHOR" or "NAV AUTOPILOT","nav_"..f.group.."_"..f.key,
         f.label,{"navigation",f.group,f.key},f.min,f.max,f.step)
@@ -740,47 +822,55 @@ field("PROPULSION","primary_max_rpm","Maximum primary RPM",{"thrust","primary_ma
   field("PROP LIMITS","maximum_yaw_rate","Maximum turn rate deg/s",{"thrust","heading_control","maximum_yaw_rate_degrees_per_second"},.1,90,.5)
   field("PROP LIMITS","heading_rate_gain","Turn rate / heading error",{"thrust","heading_control","heading_rate_per_degree"},.01,10,.05)
   field("PROP LIMITS","heading_output_slew","Steering slew / second",{"thrust","heading_control","output_slew_per_second"},.01,1,.05)
+  field("PROP LIMITS","front_back_strafe_percent","Front/back strafe balance (%)",{"thrust","front_back_strafe_percent"},50,150,1)
+  field("PROP LIMITS","lateral_brake_minimum_speed","Strafe brake minimum speed (b/s)",{"cockpit","lateral_brake_minimum_speed"},0,10,.1)
   for _,axis in ipairs({{"PROP SPEED PID","speed_pid"},{"PROP ACCEL PID","manual_acceleration_pid"},
       {"PROP YAW PID","heading_control","rate_pid"}}) do
       for _,gain in ipairs({{"kp",0,100,.01},{"ki",0,100,.005},{"kd",0,100,.005},
           {"integral_limit",0,100,1},{"derivative_filter_seconds",.01,100,.1}}) do
           local path={"thrust",axis[2]};if axis[3] then path[#path+1]=axis[3] end;path[#path+1]=gain[1]
-          field(axis[1],axis[2].."_"..gain[1],gain[1],path,gain[2],gain[3],gain[4])
+          field(axis[1],axis[2].."_"..gain[1],Flight.PID_LABELS[gain[1]],path,gain[2],gain[3],gain[4])
       end
   end
 field("GENERAL","restart_y","Restart lock CoM Y",{"maintenance","restart_altitude_limit"},-2048,2048,1)
 for _,f in ipairs(InputTuning.fields) do
  field(f.group,f.key,f.label,{"cockpit",f.key},f.min,f.max,f.step)
 end
-field("INPUT HEADING","coarse_heading_degrees","Heading tap degrees",{"cockpit","coarse_heading_degrees"},1,90,1)
-field("INPUT HEADING","fine_heading_degrees","Fine heading tap degrees",{"cockpit","fine_heading_degrees"},.1,10,.1)
-field("INPUT HEADING","repeat_delay_seconds","Shared repeat delay s",{"cockpit","repeat_delay_seconds"},.1,2,.1)
-field("INPUT SPEED","speed_target_rate","Speed start (b/s)/s",{"cockpit","speed_selection_blocks_per_second_per_second"},.01,10,.1)
+field("SEL HEADING","coarse_heading_degrees","Heading tap degrees",{"cockpit","coarse_heading_degrees"},1,90,1)
+field("SEL HEADING","fine_heading_degrees","Fine heading tap degrees",{"cockpit","fine_heading_degrees"},.1,10,.1)
+field("SEL HEADING","repeat_delay_seconds","Shared repeat delay s",{"cockpit","repeat_delay_seconds"},.1,2,.1)
+field("SEL THROTTLE","speed_target_rate","Speed start (b/s)/s",{"cockpit","speed_selection_blocks_per_second_per_second"},.01,10,.1)
 local targets={
  {"altitude_rate_slow","Altitude slow",0.1,10,0.5},{"altitude_rate_medium","Altitude medium",0.1,20,1},
  {"altitude_rate_fast","Altitude fast",0.1,50,1},{"altitude_medium_after_seconds","Medium after",1,10,0.5},
  {"altitude_fast_after_seconds","Fast after",2,30,0.5}}
 for _,f in ipairs(targets) do field("INPUT ALTITUDE",f[1],f[2],{"cockpit",f[1]},f[3],f[4],f[5]) end
+field("ALT PID","minimum_world_y","Minimum target Y",{"altitude_control","minimum_world_y"},-2048,2048,1)
+field("ALT PID","altitude_ceiling","Altitude ceiling (Y)",{"altitude_control","altitude_ceiling"},-2048,2048,1)
 for _,axis in ipairs({"altitude_pid","vertical_speed_pid"}) do
  for _,f in ipairs({{"kp",0,100,0.01},{"ki",0,100,0.01},{"kd",0,100,0.01},
   {"integral_limit",0,100,1},{"derivative_filter_seconds",0.01,100,0.1}}) do
-  field(axis=="altitude_pid" and "ALT PID" or "VS PID",axis.."_"..f[1],f[1],{"altitude_control",axis,f[1]},f[2],f[3],f[4])
+  field(axis=="altitude_pid" and "ALT PID" or "VS PID",axis.."_"..f[1],Flight.PID_LABELS[f[1]],{"altitude_control",axis,f[1]},f[2],f[3],f[4])
  end
 end
 for _,f in ipairs({{"ki",0,100,0.01},{"kd",0,100,0.1},{"integral_limit",0,100,1},
  {"derivative_filter_seconds",0.01,100,0.1}}) do
- field("TRIM PID","trim_pid_"..f[1],f[1],{"altitude_control","trim_pid",f[1]},f[2],f[3],f[4])
+ field("TRIM PID","trim_pid_"..f[1],Flight.PID_LABELS[f[1]],{"altitude_control","trim_pid",f[1]},f[2],f[3],f[4])
 end
 for _,f in ipairs({{"max_vertical_speed","Max vertical speed",0.01,5,0.1},
  {"startup_max_vertical_speed","Startup climb V/S",0.01,20,0.1},
  {"startup_vertical_speed_limit","Startup hard V/S limit",0.01,20,0.1},
- {"max_feed_fraction","Max feed fraction",0.001,0.25,0.01},{"minimum_world_y","Minimum target Y",-2048,2048,1},
- {"maximum_world_y","Maximum target Y",-2048,2048,1},{"hover_capture_seconds","Hover capture seconds",1,60,1},
+ {"max_feed_fraction","Max feed fraction",0.001,0.25,0.01},
+ {"hover_capture_seconds","Hover capture seconds",1,60,1},
  {"hover_max_vertical_speed","Hover max V/S",0.01,.5,0.01},{"lift_balance_tolerance_fraction","Lift balance tolerance",0.01,.25,0.01},
  {"trim_deadband_blocks","Trim deadband",0,10,0.05},{"trim_ceiling_per_block","Trim gain",0,50,1},
  {"trim_slew_ceiling_per_second","Trim slew",0.01,10,0.1},{"max_trim_ceiling_change","Max trim change",0,100,1}}) do
  field("LIMITS",f[1],f[2],{"altitude_control",f[1]},f[3],f[4],f[5])
 end
+field("LIMITS","level_boost_start_blocks","Large-tilt boost start (blocks)",
+    {"altitude_control","level_boost_start_blocks"},0.05,10,0.05)
+field("LIMITS","level_boost_max","Large-tilt boost maximum (x)",
+    {"altitude_control","level_boost_max"},1,20,1)
 field("LIMITS","startup_gas_target_m3_per_chamber","Initial gas target / chamber (m3)",
     {"altitude_control","startup_gas_target_m3_per_chamber"},0,100000,1,"m3/chamber")
 field("LIMITS","launch_settle_seconds","Launch settling (seconds)",
@@ -801,6 +891,8 @@ field("STARTUP","level_damping_gain","Leveling damping (x)",
     {"altitude_control","level_damping_gain"},0,10,0.5)
 field("STARTUP","level_lead_seconds","Leveling look-ahead (s, 0 = measured lag)",
     {"altitude_control","level_lead_seconds"},0,60,1)
+-- Settings editor definitions, exposed for the registry consistency test.
+Flight._settingsFields=FIELDS
 local function clone(t)
  if type(t)~="table" then return t end
  local out={};for k,v in pairs(t) do out[k]=clone(v) end;return out
@@ -808,8 +900,8 @@ end
 local function readPath(c,path)
  for _,key in ipairs(path) do if type(c)~="table" then return nil end;c=c[key] end;return c
 end
--- @ama-section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
--- @ama-summary: Validate a settings edit, save its configured value and update the affected live controller.
+-- Section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
+-- Summary: Validate a settings edit, save its configured value and update the affected live controller.
 function Flight:setting(io,action,now)
  local holding=self.systemsRun and self.systemsRun.phase=="READY"
  if (self.enabled and not holding) or self.tuningRun or self.startupPending or
@@ -856,12 +948,11 @@ function Flight:setting(io,action,now)
  if action.key=="cockpit_timeout" then node.maximum_input_gap_seconds=action.value end
  if action.key=="primary_max_rpm" then io.config.thrust.direct_max_request=action.value/256 end
    if action.key=="speed_target_rate" then io.config.thrust.speed_target_rate_bps2=action.value end
-   local inputSetting=definition.group:match("^INPUT")~=nil
+   -- A cockpit-input change restarts held-input ramps so the new rates
+   -- apply from the next sample; levers keep acting at their current position.
+   local inputSetting=Flight.COCKPIT_INPUT_GROUPS[definition.group]==true
    if self.controls and inputSetting then
     self.controls.holds={};self.controls.headingKind=nil
-    if definition.group=="INPUT HEADING" then self.controls.waitHeading=true end
-    if definition.group=="INPUT ALTITUDE" or action.key=="repeat_delay_seconds" then self.controls.waitAltitude=true end
-    if definition.group=="INPUT SPEED" and self.controls.modes.throttle=="SEL" then self.controls.waitSpeedSelection=true end
    end
    if io.thrust and definition.group:match("^PROP") and action.key~="speed_target_rate" then
        io.thrust:resetSpeedLoop();io.thrust:resetManualAccelerationLoop();io.thrust:resetHeadingLoop()
@@ -873,10 +964,10 @@ function Flight:setting(io,action,now)
  self.maintenanceReview=nil;self.tuningReview=nil
  return true,"SETTING SAVED"
 end
--- @ama-section: Leveling | Chamber-height feedback and retained trim allocation.
--- @ama-summary: Evaluate whether the current vessel observations permit a manual fore/aft bias edit.
+-- Section: Leveling | Chamber-height feedback and retained trim allocation.
+-- Summary: Evaluate whether the current vessel observations permit a manual fore/aft bias edit.
 function Flight:manualTrimAvailability(io,now)
- if type(io)~="table" then return false,"CORE STATE UNAVAILABLE" end
+ if type(io)~="table" then return false,"CORE READER UNAVAILABLE" end
  if not finite(now) and type(io.nowSeconds)=="function" then
   local ok,current=pcall(io.nowSeconds,io);if ok and finite(current) then now=current end
  end
@@ -924,7 +1015,7 @@ function Flight:manualTrimAvailability(io,now)
  end
  return true,"READY"
 end
--- @ama-summary: Apply an accepted fore/aft trim adjustment and persist the selected bias.
+-- Summary: Apply an accepted fore/aft trim adjustment and persist the selected bias.
 function Flight:manualTrimRequest(io,action,now)
  local available,reason=self:manualTrimAvailability(io,now)
  if not available then return false,reason end
@@ -985,25 +1076,28 @@ local function failMaintenance(self,job,status)
  self.maintenanceJob=nil
  logOperationIssue(self,"flight","maintenance",job.operation..": "..status)
 end
--- @ama-section: Maintenance | Reviewed chamber rechecks and restarts.
--- @ama-summary: Validate and stage chamber restart or hardware-recheck maintenance.
+-- Section: Maintenance | Reviewed chamber rechecks and restarts.
+-- Status names for each chamber maintenance operation.
+local MAINTENANCE_NAMES={restart="RESTART",recheck="RECHECK",probe_cycle="GAS MIX FIX"}
+-- Summary: Validate and stage chamber restart, hardware-recheck or probe-restart maintenance.
 function Flight:maintenanceRequest(io,action,now)
  local kind=action.type
  if kind=="maintenance_cancel" then self.maintenanceReview=nil;return true end
  if self.maintenanceJob or self.startupPending or self.systemsRun or self.tuningRun then return false,"LIFT OPERATION ALREADY PENDING" end
- if kind=="maintenance_review" or kind=="maintenance_recheck" then
+ if kind=="maintenance_review" or kind=="maintenance_recheck" or kind=="maintenance_probe_cycle" then
   local scope=action.scope or "ALL";local list={}
   if scope=="ALL" then for _,q in ipairs(QUADS) do list[#list+1]=q end
   else for _,q in ipairs(QUADS) do if q==scope then list[1]=q end end end
   if #list==0 then return false,"INVALID MAINTENANCE SCOPE" end
   local boots={};for _,q in ipairs(list) do
-   if not io:nodeFresh(q,now) or not io.nodes[q].boot then return false,q.." LIFT NODE STALE" end
+   if not io:nodeFresh(q,now) or not io.nodes[q].boot then return false,"WAITING FOR LIFT NODE "..q end
    boots[q]=io.nodes[q].boot
   end
-  if kind=="maintenance_recheck" then
+  if kind=="maintenance_recheck" or kind=="maintenance_probe_cycle" then
    if self.enabled then return false,"DISENGAGE ALTITUDE CONTROL FIRST" end
    self.coreLogIssues=self.coreLogIssues or {};self.coreLogIssues[issueScope("flight","maintenance")]=nil
-   self.maintenanceJob={operation="recheck",list=list,index=1,boots=boots};self:updateMaintenance(io,now);return true
+   self.maintenanceJob={operation=kind=="maintenance_recheck" and "recheck" or "probe_cycle",list=list,index=1,boots=boots}
+   self:updateMaintenance(io,now);return true
   end
   if self.enabled then return false,"DISENGAGE ALTITUDE CONTROL FIRST" end
   self.reviewSeq=(self.reviewSeq or 0)+1
@@ -1026,13 +1120,13 @@ function Flight:maintenanceRequest(io,action,now)
  self.maintenanceJob={operation="restart",list=r.list,index=1,boots=r.boots,override=r.override}
  self:updateMaintenance(io,now);return true,"RESTART QUEUED"
 end
--- @ama-summary: Advance the current chamber maintenance operation through acknowledgement and reconnect.
+-- Summary: Advance the current chamber maintenance operation through acknowledgement and reconnect.
 function Flight:updateMaintenance(io,now)
  if self.maintenanceReview and now>self.maintenanceReview.expires then self.maintenanceReview=nil end
  local job=self.maintenanceJob;if not job then return end
  local q=job.list[job.index]
  if not q then
-  self.maintenanceStatus=string.upper(job.operation).." COMPLETE";self.maintenanceJob=nil
+  self.maintenanceStatus=(MAINTENANCE_NAMES[job.operation] or string.upper(job.operation)).." COMPLETE";self.maintenanceJob=nil
   clearOperationIssue(self,"flight","maintenance","Core flight maintenance recovered: "..job.operation.." complete")
   return
  end
@@ -1060,9 +1154,10 @@ function Flight:updateMaintenance(io,now)
  local ok,seq=io:sendLiftMaintenance(q,job.operation)
  if not ok then failMaintenance(self,job,q.." SEND FAILED: "..tostring(seq));return end
  job.seq=seq;job.sentAt=now;job.quadrant=q
- self.maintenanceStatus=q..(job.operation=="restart" and " WAITING FOR RECONNECT" or " RECHECKING HARDWARE")
+ self.maintenanceStatus=q..(job.operation=="restart" and " WAITING FOR RECONNECT" or
+  (job.operation=="probe_cycle" and " RESTARTING PROBE" or " RECHECKING HARDWARE"))
 end
--- @ama-summary: Correlate a chamber maintenance reply with the active operation.
+-- Summary: Correlate a chamber maintenance reply with the active operation.
 function Flight:maintenanceAck(io,sender,message,now)
  local job=self.maintenanceJob
  if not job or type(message)~="table" or message.v~=1 or message.kind~="lift_maintenance_ack" or
@@ -1070,8 +1165,8 @@ function Flight:maintenanceAck(io,sender,message,now)
   message.quadrant~=job.quadrant or message.nodeBoot~=job.boots[job.quadrant] or
   sender~=io.config.node_ids[job.quadrant] then return false end
  if message.ok~=true then failMaintenance(self,job,job.quadrant.." FAILED: "..tostring(message.detail or "REMOTE OPERATION FAILED"):sub(1,160))
- elseif job.operation=="recheck" then
-  self.maintenanceStatus=job.quadrant.." "..tostring(message.detail or "RECHECKED"):sub(1,160)
+ elseif job.operation=="recheck" or job.operation=="probe_cycle" then
+  self.maintenanceStatus=job.quadrant.." "..tostring(message.detail or "DONE"):sub(1,160)
   job.index=job.index+1;job.seq=nil
  end
  return true
@@ -1080,14 +1175,13 @@ end
 
 -- Tuning is temporary authority, never permanent commissioning. Tests capture
 -- actual provider ceilings, bypass approval flags only, and keep burner trim fixed.
--- @ama-section: Bounded tests | Captured baselines, bounded demand and result persistence.
--- @ama-summary: Check telemetry, hover stability and vent headroom for a bounded PID test.
+-- Section: Bounded tests | Captured baselines, bounded demand and result persistence.
+-- Summary: Check telemetry, hover stability and vent headroom for a bounded PID test.
 function Flight:tuningReady(io,now)
  if not io.config.tuning or io.config.tuning.enabled~=true then return false,"TUNING MODE DISABLED" end
  if self.enabled or self.maintenanceJob or self.startupPending or self.systemsRun then return false,"FINISH OTHER LIFT OPERATION FIRST" end
  if io.anchor=="ANCHORED" or io.anchor=="BRAKING" then return false,"RELEASE DIGITAL ANCHOR FIRST" end
  local ok,reason=self:check(io,now,true);if not ok then return false,reason end
- if io.inputs.raw then for _,value in pairs(io.inputs.raw) do if value~=0 then return false,"RETURN COCKPIT CONTROLS TO NEUTRAL" end end end
  for _,q in ipairs(QUADS) do
   local n=io.nodes[q]
   if not self.tuningRun and (n.armed or n.operationBusy) then return false,q.." CONTROLLER STILL OPERATING" end
@@ -1106,7 +1200,7 @@ function Flight:tuningReady(io,now)
  if not within then return false,capReason end
  return true
 end
--- @ama-summary: Store the PID test measurements and its baseline-restoration result.
+-- Summary: Store the PID test measurements and its baseline-restoration result.
 function Flight:finishTuning(io,status)
  local t=self.tuningRun;if not t then return end
  for _,q in ipairs(QUADS) do io:cancelTuning(q,t.id) end
@@ -1135,7 +1229,7 @@ function Flight:abortTuning(io,reason)
  -- Faults cancel queued/future writes. No blind restoration against stale devices.
  self:finishTuning(io,"ABORTED: "..tostring(reason))
 end
--- @ama-summary: Review, confirm, cancel or stop a bounded PID test.
+-- Summary: Review, confirm, cancel or stop a bounded PID test.
 function Flight:tuningRequest(io,action,now)
  if action.type=="tuning_cancel" then self.tuningReview=nil;return true end
  if action.type=="tuning_stop" then
@@ -1158,11 +1252,12 @@ function Flight:tuningRequest(io,action,now)
  if action.type~="tuning_confirm" or not r or r.token~=action.token or now>r.expires then self.tuningReview=nil;return false,"TUNING REVIEW EXPIRED" end
  local ok,reason=self:tuningReady(io,now);if not ok then return false,reason end
  if io.vessel.uuid~=r.uuid or io.hardwareFingerprint~=r.fingerprint then self.tuningReview=nil;return false,"VESSEL CHANGED; REVIEW AGAIN" end
- if not self.tuningHoverSince or now-self.tuningHoverSince<self.config.hover_capture_seconds or math.abs(io.vessel.verticalSpeed)>self.config.hover_max_vertical_speed then return false,"WAIT FOR STABLE HOVER BASELINE" end
+ if not self.tuningHoverSince or now-self.tuningHoverSince<self.config.hover_capture_seconds
+     or math.abs(io.vessel.verticalSpeed)>self.config.hover_max_vertical_speed then return false,"WAIT FOR STABLE HOVER BASELINE" end
  for _,q in ipairs(QUADS) do if io.nodes[q].boot~=r.boots[q] then self.tuningReview=nil;return false,"LIFT BOOT CHANGED" end end
  local c=io.config.tuning
  local target=r.mode=="VS" and r.direction*c.speed_step or io.vessel.altitude+r.direction*c.altitude_step
- if r.mode=="ALT" and (target<self.config.minimum_world_y or target>self.config.maximum_world_y) then return false,"TEST TARGET OUTSIDE WORLD Y LIMITS" end
+ if r.mode=="ALT" and (target<self.config.minimum_world_y or target>self.config.altitude_ceiling) then return false,"TEST TARGET OUTSIDE WORLD Y LIMITS" end
   self.coreLogIssues=self.coreLogIssues or {};self.coreLogIssues[issueScope("flight","tuning")]=nil
   self.tuningRun={id=r.token,mode=r.mode,direction=r.direction,target=target,y=io.vessel.altitude,
   uuid=r.uuid,fingerprint=r.fingerprint,boots=r.boots,start=now,lastUpdate=now,phase="RUNNING",
@@ -1177,7 +1272,7 @@ function Flight:tuningRequest(io,action,now)
  self:sendTuningTargets(io,self.tuningRun.baseline,now,true)
  return self.tuningRun~=nil,self.tuningRun and "TUNING STARTED" or "TUNING SEND FAILED"
 end
--- @ama-summary: Send the bounded test target maps to their configured chambers.
+-- Summary: Send the bounded test target maps to their configured chambers.
 function Flight:sendTuningTargets(io,maps,now,first)
  local t=self.tuningRun
  if not t then return false end
@@ -1191,7 +1286,7 @@ function Flight:sendTuningTargets(io,maps,now,first)
  end
  return true
 end
--- @ama-summary: Advance the active PID test and restore its captured provider ceilings.
+-- Summary: Advance the active PID test and restore its captured provider ceilings.
 function Flight:updateTuning(io,now)
  if self.tuningReview and now>self.tuningReview.expires then self.tuningReview=nil end
  local ready,reason=self:tuningReady(io,now)
@@ -1208,7 +1303,7 @@ function Flight:updateTuning(io,now)
  elseif io.vessel.uuid~=t.uuid or io.hardwareFingerprint~=t.fingerprint then self:abortTuning(io,"VESSEL / SENSOR BINDINGS CHANGED")
  elseif (((io.inputs or {}).raw or {}).ap_disconnect or 0)>0 then self:abortTuning(io,"MANUAL DISCONNECT")
  elseif math.abs(io.vessel.altitude-t.y)>3 or math.abs(io.vessel.verticalSpeed)>.5 or
-  io.vessel.altitude<self.config.minimum_world_y or io.vessel.altitude>self.config.maximum_world_y then self:abortTuning(io,"TEST MOTION LIMIT EXCEEDED")
+  io.vessel.altitude<self.config.minimum_world_y or io.vessel.altitude>self.config.altitude_ceiling then self:abortTuning(io,"TEST MOTION LIMIT EXCEEDED")
  else
   for _,q in ipairs(QUADS) do if io.nodes[q].boot~=t.boots[q] then self:abortTuning(io,"LIFT BOOT CHANGED");break end end
  end
@@ -1257,8 +1352,8 @@ function Flight:updateTuning(io,now)
  self:sendTuningTargets(io,maps,now,false)
 end
 
--- @ama-section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
--- @ama-summary: Validate vessel, cockpit and chamber observations for altitude-control authority.
+-- Section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
+-- Summary: Validate vessel, cockpit and chamber observations for altitude-control authority.
 function Flight:check(io,now,tuning)
     if self.maintenanceJob then return false,"LIFT MAINTENANCE IN PROGRESS" end
     local c=self.config
@@ -1280,7 +1375,8 @@ function Flight:check(io,now,tuning)
         now-inputs.at>io.config.network.sensor_stale_seconds then return false,"COCKPIT INPUTS STALE" end
     for _,q in ipairs(QUADS) do
         local n=io.nodes[q]
-        if not io:nodeFresh(q,now) or (not tuning and not n.commissioned) then return false,q..(tuning and " LIFT STATUS STALE" or " LIFT NOT READY / STALE") end
+        if not io:nodeFresh(q,now) then return false,"WAITING FOR LIFT NODE "..q end
+        if not tuning and not n.commissioned then return false,q.." LIFT NOT COMMISSIONED" end
         if not n.altitude or not n.altitude.valid then return false,q.." SECTION ALTITUDE UNAVAILABLE" end
         local b=n.balloon
         if not b or not b.hasBalloonValid or not b.hasBalloon or not b.gasMixValid or
@@ -1334,7 +1430,7 @@ function Flight:check(io,now,tuning)
     end
     return true
 end
--- @ama-summary: Disengage altitude feedback while retaining applied provider settings.
+-- Summary: Disengage altitude feedback while retaining applied provider settings.
 function Flight:stop(reason)
     local wasEnabled=self.enabled==true
     local outcome=logText(reason or "OPERATOR DISENGAGED",160)
@@ -1346,7 +1442,7 @@ function Flight:stop(reason)
         logOperationIssue(self,"flight","altitude",outcome)
     end
 end
--- @ama-summary: Capture a verified hover baseline and engage the altitude PID loops.
+-- Summary: Capture a verified hover baseline and engage the altitude PID loops.
 function Flight:engage(io,now)
     if self.systemsRun then return false,"START SYSTEMS SEQUENCE ACTIVE" end
     if self.tuningRun then return false,"PID TUNING IN PROGRESS" end
@@ -1371,6 +1467,7 @@ function Flight:engage(io,now)
     clearOperationIssue(self,"flight","altitude","Core altitude control recovered: altitude hold engaged")
     return true
 end
+-- Summary: Cancel lateral guidance, set its manual mode and apply the requested stop lock.
 function Flight:cancelLateral(locked)
  local controls=self.controls
  if not controls then return end
@@ -1384,7 +1481,7 @@ function Flight:shutdownReview(io,now)
     self.stopReview={token="stop:"..self.reviewSeq..":"..now,expires=now+30}
     return true,"WARNING: MAIN LIFT OFF; LOW PROBE REMAINS"
 end
--- @ama-summary: Send the confirmed probe-preserving shutdown and track each chamber acknowledgement.
+-- Summary: Send the confirmed probe-preserving shutdown and track each chamber acknowledgement.
 function Flight:updateShutdown(io,now)
     local job=self.shutdownJob;if not job then return end
     local all=true;local missing={}
@@ -1410,8 +1507,8 @@ end
 -- SYSTEMS and KILL LIFT clear it; reboots, aborts and lease expiry do not.
 -- It survives reboots so control can resume on its own while airborne.
 local SYSTEMS_INTENT_PATH="/avionics/data/systems-intent.json"
--- @ama-section: Systems control | Startup, measured dynamics and bounded provider demand.
--- @ama-summary: Load and return the persisted operator intent to keep systems running.
+-- Section: Systems control | Startup, measured dynamics and bounded provider demand.
+-- Summary: Load and return the persisted operator intent to keep systems running.
 function Flight:systemsIntent()
     if self.systemsIntentLoaded then return self.systemsIntentActive==true end
     self.systemsIntentLoaded=true;self.systemsIntentActive=false
@@ -1421,7 +1518,7 @@ function Flight:systemsIntent()
     end
     return self.systemsIntentActive
 end
--- @ama-summary: Persist a change to the operator's systems-running intent.
+-- Summary: Persist a change to the operator's systems-running intent.
 function Flight:setSystemsIntent(active)
     active=active==true
     if self.systemsIntentLoaded and self.systemsIntentActive==active then return end
@@ -1434,7 +1531,7 @@ end
 -- lease or a fault abort - but only while the pilot's intent is still
 -- "running" and the ship is airborne (current lift >= 90% of weight). It
 -- adopts the existing ceilings (no takeoff or build) and retries every 5 s.
--- @ama-summary: Attempt validated recovery or airborne adoption while retained running intent is active.
+-- Summary: Attempt validated recovery or airborne adoption while retained running intent is active.
 function Flight:autoResumeSystems(io,now)
     if self.systemsRun or self.shutdownJob or self.stopReview or self.emergencyLiftLatched or
         self.tuningRun or self.tuningReview or self.startupPending or self.maintenanceJob or
@@ -1458,24 +1555,25 @@ function Flight:autoResumeSystems(io,now)
         else print(text) end
     end
 end
--- @ama-section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
--- @ama-summary: Accept the matching stop confirmation and start probe-preserving main-lift shutdown.
+-- Section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
+-- Summary: Accept the matching stop confirmation and start probe-preserving main-lift shutdown.
 function Flight:confirmShutdown(io,action,now)
     local review=self.stopReview
     if not review or action.token~=review.token or now>review.expires then return false,"STOP CONFIRMATION EXPIRED" end
     self.stopReview=nil
     self:cancelLateral(true)
     self:setSystemsIntent(false)
+    self:disablePropulsionForStop(io,now)
     if self.systemsRun then self:stopSystems(io,"CONFIRMED SYSTEMS SHUTDOWN",now) end
     self:stop("STOPPING / MAIN LIFT OFF")
     self.tuningRun=nil;self.tuningReview=nil;self.maintenanceJob=nil;self.maintenanceReview=nil
     self.startupPending=nil;self.trimStatus=nil
-    self.shutdownJob={FL={},FR={},RL={},RR={}}
+    self.shutdownJob={FL={},FR={},BL={},BR={}}
     self:updateShutdown(io,now)
     return true,"PROBE-PRESERVING SHUTDOWN REQUESTED"
 end
--- @ama-section: Emergency lift | Latched operator shutdown and verified disarm.
--- @ama-summary: Latch the accepted Kill Lift action and start its dedicated shutdown sequence.
+-- Section: Emergency lift | Latched operator shutdown and verified disarm.
+-- Summary: Latch the accepted Kill Lift action and start its dedicated shutdown sequence.
 function Flight:emergencyKillLift(io,now)
     self.emergencyLiftDisarmJob=nil
     self:cancelLateral(true)
@@ -1515,7 +1613,7 @@ function Flight:emergencyKillLift(io,now)
         reason="Emergency lift kill is being verified"}
     return true,"EMERGENCY LIFT KILL REQUESTED"
 end
--- @ama-summary: Send the active emergency-stop request to each required chamber.
+-- Summary: Send the active emergency-stop request to each required chamber.
 function Flight:sendEmergencyLiftKill(io,q,item,now)
     local node=io.nodes and io.nodes[q]
     if type(io.nodeFresh)~="function" or not io:nodeFresh(q,now) or not node or type(node.boot)~="string" then
@@ -1539,7 +1637,7 @@ function Flight:sendEmergencyLiftKill(io,q,item,now)
     item.ackReason=tostring(seq or "Emergency lift-stop send failed")
     return false
 end
--- @ama-summary: Retry emergency shutdown and verify each chamber's stop readback.
+-- Summary: Retry emergency shutdown and verify each chamber's stop readback.
 function Flight:updateEmergencyLiftKill(io,now)
     local job=self.emergencyLiftJob
     if not job or self.emergencyLiftLatched~=true then return end
@@ -1656,7 +1754,7 @@ function Flight:updateEmergencyLiftKill(io,now)
         clearOperationIssue(self,"flight","emergency lift kill","Core emergency lift kill recovered: BULK OFF / PROBE ON verified")
     end
 end
--- @ama-summary: Start the confirmed disarm operation against the retained emergency latch.
+-- Summary: Start the confirmed disarm operation against the retained emergency latch.
 function Flight:disarmLiftKill(io,now)
     if not self.emergencyLiftLatched then return false,"LIFT KILL IS NOT LATCHED" end
     if self.emergencyLiftDisarmJob then return true,"DISARM KILL ALREADY IN PROGRESS" end
@@ -1666,7 +1764,7 @@ function Flight:disarmLiftKill(io,now)
     return true,"DISARM KILL REQUESTED; SYSTEMS REMAIN STOPPED"
 end
 
--- @ama-summary: Track disarm acknowledgements and clear the completed core latch.
+-- Summary: Track disarm acknowledgements and clear the completed core latch.
 function Flight:updateLiftDisarm(io,now)
     local job=self.emergencyLiftDisarmJob
     if not job then return end
@@ -1711,7 +1809,7 @@ function Flight:updateLiftDisarm(io,now)
     self.systemsSnapshot={active=false,available=false,phase="STOPPED",reason=self.reason}
 end
 
--- @ama-summary: Build the current kill, verification and disarm state for displays.
+-- Summary: Build the current kill, verification and disarm state for displays.
 function Flight:emergencyLiftState()
     local disarm=self.emergencyLiftDisarmJob
     if disarm then return {latched=true,disarming=true,pending=true,phase="DISARMING",
@@ -1733,48 +1831,6 @@ function Flight:emergencyLiftState()
         reason=job.reason,mode=self.emergencyLiftLatched and "BULK_OFF_PROBE_ON" or nil,
         persistenceWarning=self.emergencyLiftPersistenceWarning,quadrants=quadrants}
 end
--- Read-only gate for explicitly recovering from a latched emergency stop.
--- A prior complete job is not enough if any endpoint has since gone stale,
--- changed boot, or stopped reporting the exact probe-preserving policy.
--- @ama-summary: Verify the retained emergency-stop observations during recovery.
-function Flight:emergencyLiftRecoveryVerified(io,now)
-    if self.emergencyLiftLatched~=true then return true end
-    local disarm=self.emergencyLiftDisarmJob
-    if disarm then return {latched=true,disarming=true,pending=true,phase="DISARMING",
-        reason=disarm.reason,quadrants=clone(disarm.quadrants),persistenceWarning=self.emergencyLiftPersistenceWarning} end
-    local job=self.emergencyLiftJob
-    if not job then return false,"EMERGENCY KILL STATUS NOT VERIFIED" end
-    for _,q in ipairs(EMERGENCY_LIFT_KILL_QUADRANTS) do
-        local item=job.quadrants and job.quadrants[q]
-        local node=io.nodes and io.nodes[q]
-        if not item or item.status~="CONFIRMED" then
-            local detail=item and item.ackReason or job.reason or "NO CONFIRMED READBACK"
-            return false,"EMERGENCY KILL "..q.." NOT VERIFIED: "..tostring(detail)
-        end
-        if not node or type(io.nodeFresh)~="function" or not io:nodeFresh(q,now) then
-            return false,"EMERGENCY KILL "..q.." STATUS STALE"
-        end
-        if type(item.boot)~="string" or node.boot~=item.boot then
-            return false,"EMERGENCY KILL "..q.." BOOT CHANGED"
-        end
-        local verified,reason
-        if job.recovering or item.seq==nil then
-            if type(io.emergencyLiftStopStateVerified)~="function" then
-                return false,"EMERGENCY KILL "..q.." READBACK VERIFIER UNAVAILABLE"
-            end
-            verified,reason=io:emergencyLiftStopStateVerified(q,item.boot,now)
-        elseif type(io.emergencyLiftStopWasApplied)=="function" then
-            verified,reason=io:emergencyLiftStopWasApplied(q,item.seq,item.boot,now)
-        else
-            return false,"EMERGENCY KILL "..q.." ACKNOWLEDGEMENT VERIFIER UNAVAILABLE"
-        end
-        if not verified then
-            return false,"EMERGENCY KILL "..q.." NO LONGER VERIFIED: "..tostring(reason or "READBACK INVALID")
-        end
-    end
-    if job.complete~=true then return false,job.reason or "ALL FOUR EMERGENCY KILL READBACKS NOT CONFIRMED" end
-    return true
-end
 local ASSEMBLY_GATED={start_systems=true,restart_systems=true,recover_systems=true,altitude_engage=true,vent_startup=true,cockpit_mode=true,
     tuning_review=true,tuning_confirm=true}
 -- Fake IO tables in older tests have no gate; real IO always does.
@@ -1786,8 +1842,8 @@ function Flight:ensureAutopilot(io)
     io.autopilot=io.autopilot or Autopilot.new(io.config,self.storage,io.navigationDependencies)
     return io.autopilot
 end
--- @ama-section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
--- @ama-summary: Validate a pilot action and dispatch it to the corresponding flight operation.
+-- Section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
+-- Summary: Validate a pilot action and dispatch it to the corresponding flight operation.
 function Flight:request(io,action,now)
     if type(action)~="table" or type(action.type)~="string" then return false,"INVALID ACTION" end
     if action.type=="debug_mode" then
@@ -1808,7 +1864,7 @@ function Flight:request(io,action,now)
             if not ok then logOperationIssue(self,"flight","autopilot engage",why) end
             return ok,why
         elseif action.type=="destination_save" or action.type=="destination_rename" or action.type=="destination_delete" then
-            local entry={name=action.name or ap.draft.name,x=ap.draft.x,z=ap.draft.z}
+            local entry={name=action.name or ap.label(ap.draft),x=ap.draft.x,z=ap.draft.z}
             local operation=action.type:sub(13)
             local ok,why=ap.library:change(operation,action.index,entry)
             if not ok then logOperationIssue(self,"flight","destination library",why) end
@@ -1821,10 +1877,9 @@ function Flight:request(io,action,now)
     end
     if action.type=="cockpit_mode" and io.autopilot and io.autopilot.active then return false,"DISENGAGE AUTOPILOT BEFORE CHANGING MODES" end
     if action.type=="anchor_cancel" then
-        if io.autopilot and io.autopilot.active then io.autopilot:cancel(io,self.controls,"ARRIVAL ANCHOR RELEASED") end
         if io.positionAnchor then io.positionAnchor:cancel(self.controls) end
         if io.thrust then io.thrust:stop(io,"ANCHOR RELEASED") end
-        return true,"ANCHOR RELEASED; SELECTED MODE RETAINED; NEUTRAL REQUIRED"
+        return true,"ANCHOR RELEASED"
     end
     if action.type=="anchor_engage" then
         if io.autopilot and io.autopilot.active then return false,"DISENGAGE AUTOPILOT BEFORE ENGAGING ANCHOR" end
@@ -1873,7 +1928,7 @@ function Flight:request(io,action,now)
     local routeRequired=action.type=="recover_systems" or action.type=="start_systems" or action.type=="restart_systems" or action.type=="altitude_engage" or
         action.type=="vent_startup" or action.type=="cockpit_mode" or
         action.type=="tuning_confirm" or action.type=="tuning_start" or
-        action.type=="maintenance_restart" or action.type=="maintenance_recheck" or
+        action.type=="maintenance_restart" or action.type=="maintenance_recheck" or action.type=="maintenance_probe_cycle" or
         action.type=="manual_trim_adjust" or action.type=="manual_trim_reset"
     if routeRequired and type(io.routeAllowed)=="function" then
         local allowed,why=io:routeAllowed()
@@ -1893,6 +1948,7 @@ function Flight:request(io,action,now)
         return self:manualTrimRequest(io,action,now)
     end
     if action.type=="recover_systems" then return self:recoverSystems(io,now) end
+    if action.type=="level_reset" then return self:resetLeveling(io,now) end
     if action.type=="restart_systems" then
         if not self.restart then return false,"SYSTEMS RESTART UNAVAILABLE" end
         if self.emergencyLiftDisarmJob then return false,"DISARM KILL IN PROGRESS" end
@@ -1902,6 +1958,7 @@ function Flight:request(io,action,now)
     end
     if action.type=="propulsion_enable" then
         if not io.thrust then return false,"PROPULSION CONTROLLER UNAVAILABLE" end
+        io.systemsReady=self.systemsRun~=nil and self.systemsRun.phase=="READY"
         local accepted,reason=io.thrust:setEnabled(io,now,self.controls,true,self.storage,self.settingsDependencies)
         if not accepted then logOperationIssue(self,"flight","propulsion enable",reason) end
         return accepted,reason
@@ -1956,8 +2013,8 @@ end
 -- Minimum-output preparation is a separate, explicitly requested operation.
 -- It cannot grant altitude authority, raise an already operating vent ceiling,
 -- reset the trim probe, or restore itself on boot.
--- @ama-section: Systems control | Startup, measured dynamics and bounded provider demand.
--- @ama-summary: Build bounded startup provider targets from the configured vent request.
+-- Section: Systems control | Startup, measured dynamics and bounded provider demand.
+-- Summary: Build bounded startup provider targets from the configured vent request.
 function Flight:startupTargets(io,now)
     if self.tuningRun then return nil,"PID TUNING IN PROGRESS" end
     if self.maintenanceJob then return nil,"LIFT MAINTENANCE IN PROGRESS" end
@@ -2013,25 +2070,7 @@ function Flight:startupTargets(io,now)
     maps=capped
     return maps
 end
--- @ama-section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
--- @ama-summary: Validate and send the requested initial vent-start operation.
-function Flight:startVents(io,now)
-    if self.startupPending then return false,"VENT STARTUP ALREADY PENDING" end
-    if self.startupComplete then return false,"VENTS ALREADY OPERATING" end
-    local maps,reason=self:startupTargets(io,now)
-    if not maps then return false,reason end
-    self.startupPending={};self.startupSentAt=now;self.startupReason="WAITING FOR VENT TELEMETRY"
-    for _,q in ipairs(QUADS) do
-        local sent,seq=io:sendVentStartup(q,maps[q])
-        if not sent then
-            self.startupPending=nil;self.startupReason=q.." STARTUP SEND FAILED: "..tostring(seq)
-            return false,self.startupReason
-        end
-        self.startupPending[q]={seq=seq,targets=maps[q],boot=io.nodes[q].boot}
-    end
-    return true
-end
-
+-- Section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
 -- START SYSTEMS is an explicit, session-limited route from an idle vessel to
 -- an altitude hold. The controller uses measured balloon lift and vessel
 -- weight; ceiling slew is only a safety limit and does not assume a gas/lift
@@ -2048,6 +2087,12 @@ local SYSTEMS_RECOVERY_RETRY_SECONDS=1.5
 local SYSTEMS_SAMPLE_GAP_SECONDS=3
 local SYSTEMS_ENVELOPE_TIMEOUT_SECONDS=120
 local SYSTEMS_FULL_BOILER_EFFICIENCY=0.95
+-- Startup boiler gate: START SYSTEMS waits this long for every bulk vent
+-- boiler to reach 100%. After the wait it continues with a warning when every
+-- boiler reads at least the minimum, and refuses the start when any boiler is
+-- below the minimum or cannot be read.
+local SYSTEMS_BOILER_WAIT_SECONDS=120
+local SYSTEMS_BOILER_MINIMUM_EFFICIENCY=0.10
 local SYSTEMS_RAMP_FRACTION_PER_SECOND=0.02
 local SYSTEMS_FAST_RAMP_FRACTION_PER_SECOND=0.08
 -- Keep the first ceiling steps small while the envelope is still near its
@@ -2084,7 +2129,7 @@ local function ceilingRiseRates(config)
     local fast=math.max(normal,startupSetting(config,"ceiling_fast_rate",SYSTEMS_FAST_RAMP_FRACTION_PER_SECOND,0.02,0.25))
     return soft,normal,fast
 end
--- @ama-summary: Refresh PID measurement history using the observed elapsed sample time.
+-- Summary: Refresh PID measurement history using the observed elapsed sample time.
 local function observePidMeasurement(pid,measurement,elapsed)
     if not pid or not finite(measurement) then return end
     local gains=pid.g
@@ -2123,8 +2168,8 @@ local function systemsStartupSpeedLimit(config)
     if not finite(legacy) or legacy<=0 then legacy=1 end
     return legacy+1
 end
--- @ama-section: Systems control | Startup, measured dynamics and bounded provider demand.
--- @ama-summary: Bound startup acceleration using configured limits and measured command/response delay.
+-- Section: Systems control | Startup, measured dynamics and bounded provider demand.
+-- Summary: Bound startup acceleration using configured limits and measured command/response delay.
 local function systemsStartupAcceleration(config,lag,sampleSeconds,ackWaitSeconds)
     local nominal=systemsStartupNominalSpeed(config)
     -- Earn nominal startup speed over a fixed conservative physical horizon,
@@ -2149,7 +2194,7 @@ local function systemsStartupSpeedRampHorizon(config,lag,sampleSeconds,ackWaitSe
     local acceleration=systemsStartupAcceleration(config,lag,sampleSeconds,ackWaitSeconds)
     return math.max(systemsStartupControlHorizon(config,lag,sampleSeconds),nominal/math.max(acceleration,0.0001))
 end
--- @ama-summary: Project the lift-to-weight support ratio over the measured response horizon.
+-- Summary: Project the lift-to-weight support ratio over the measured response horizon.
 local function systemsProjectedSupportRatio(actual,rate,horizon,supportDemand)
     if not finite(actual) then return nil end
     local future=actual
@@ -2165,7 +2210,7 @@ local function systemsProjectedSupportRatio(actual,rate,horizon,supportDemand)
     end
     return future
 end
--- @ama-summary: Estimate climb distance from current velocity and the observed lift response.
+-- Summary: Estimate climb distance from current velocity and the observed lift response.
 local function systemsProjectedClimbDistance(v,state,horizon,gravity,supportDemand)
     local rise=finite(v and v.verticalSpeed) and math.max(0,v.verticalSpeed) or 0
     if not finite(horizon) or horizon<=0 then return 0 end
@@ -2207,7 +2252,7 @@ local function systemsSupportProgress(actualRatio,targetRatio)
     local x=clamp(actualRatio/target,0,1)
     return x*x*(3-2*x)
 end
--- @ama-summary: Sum configured bulk-vent ceilings across the selected target maps.
+-- Summary: Sum configured bulk-vent ceilings across the selected target maps.
 local function systemsBulkCeilingSum(maps,nodes)
     local total=0
     for _,q in ipairs(QUADS) do
@@ -2218,7 +2263,7 @@ local function systemsBulkCeilingSum(maps,nodes)
     end
     return total
 end
--- @ama-summary: Compare the requested bulk-vent target maps with the applied maps.
+-- Summary: Compare the requested bulk-vent target maps with the applied maps.
 local function systemsBulkTargetsChanged(targets,previous,nodes)
     if type(previous)~="table" then return true end
     for _,q in ipairs(QUADS) do
@@ -2239,7 +2284,7 @@ local function copyMaps(maps)
 end
 local BALANCED_LIFT_MATCH_FRACTION=0.05
 
--- @ama-summary: Calculate balanced chamber support bounds from verified provider capacity.
+-- Summary: Calculate balanced chamber support bounds from verified provider capacity.
 function Flight:balancedLiftModel(io,targetY,now)
     local function unavailable(reason)
         return {phase="UNAVAILABLE",reason=reason,targetSupportKnown=false,
@@ -2384,7 +2429,7 @@ function Flight:balancedLiftModel(io,targetY,now)
     return model
 end
 
--- @ama-summary: Clamp requested chamber target maps to the balanced provider bounds.
+-- Summary: Clamp requested chamber target maps to the balanced provider bounds.
 function Flight:capBalancedTargets(io,maps,model)
     if type(model)~="table" or not finite(model.rawPerQuadrantMaximum) then
         return nil,"BALANCED LIFT CAPACITY UNAVAILABLE",false
@@ -2442,7 +2487,7 @@ function Flight:capBalancedTargets(io,maps,model)
     return result,nil,anyLimited
 end
 
--- @ama-summary: Sum the provider target amounts for each chamber.
+-- Summary: Sum the provider target amounts for each chamber.
 local function systemsProviderTargetTotals(io,maps)
     local totals={}
     for _,q in ipairs(QUADS) do
@@ -2459,7 +2504,7 @@ local function systemsProviderTargetTotals(io,maps)
     return totals
 end
 
--- @ama-summary: Allocate a chamber's initial gas request across its permitted providers.
+-- Summary: Allocate a chamber's initial gas request across its permitted providers.
 local function distributeInitialGasTotal(entries,total)
     local result={};local minimum=0
     table.sort(entries,function(a,b) return a.name<b.name end)
@@ -2506,7 +2551,7 @@ local function distributeInitialGasTotal(entries,total)
     return result,remaining
 end
 
--- @ama-summary: Calculate initial fill targets from configured gas demand and verified capacity.
+-- Summary: Calculate initial fill targets from configured gas demand and verified capacity.
 function Flight:systemsStartupGasSeedTargets(io,maps,model,startupState)
     local requested=self.config.startup_gas_target_m3_per_chamber
     if not finite(requested) or requested<0 then requested=0 end
@@ -2640,7 +2685,7 @@ end
 -- commanded chamber map inside the support ratio the measured controller has
 -- requested. The seed is only an initial ceiling; it must not be treated as a
 -- minimum while delayed gas is still entering the envelope.
--- @ama-summary: Limit startup fill targets against the measured support envelope.
+-- Summary: Limit startup fill targets against the measured support envelope.
 local function capSeededStartupSupportTargets(io,maps,supportRatio,config)
     local vessel=io.vessel or {}
     local pressure=airPressure(vessel)
@@ -2699,7 +2744,7 @@ local function capSeededStartupSupportTargets(io,maps,supportRatio,config)
         maximumM3PerChamber=maximumM3PerChamber}
 end
 
--- @ama-summary: Check requested chamber targets against the balanced capacity model.
+-- Summary: Check requested chamber targets against the balanced capacity model.
 function Flight:balancedTargetsFit(io,maps,now,targetY)
     local model,reason=self:balancedLiftModel(io,targetY,now)
     if model.phase=="UNAVAILABLE" or model.phase=="INFEASIBLE" then
@@ -2717,8 +2762,8 @@ function Flight:balancedTargetsFit(io,maps,now,targetY)
     return true,nil,model
 end
 
--- @ama-section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
--- @ama-summary: Recognize target maps at the configured provider floors and fine-provider state.
+-- Section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
+-- Summary: Recognize target maps at the configured provider floors and fine-provider state.
 function Flight:isFloorOnlyTargets(io,maps,parkFine,preserveExistingFine,allowTrimBaseline)
     if type(maps)~="table" then return false end
     for _,q in ipairs(QUADS) do
@@ -2751,17 +2796,17 @@ end
 local function freshAt(now,at,limit)
     return finite(at) and now>=at and now-at<=limit
 end
--- @ama-section: Systems control | Startup, measured dynamics and bounded provider demand.
--- @ama-summary: Resolve and validate the selected startup altitude.
+-- Section: Systems control | Startup, measured dynamics and bounded provider demand.
+-- Summary: Resolve and validate the selected startup altitude.
 function Flight:systemsTarget(io)
     local c=self.config
-    local minimum,maximum=c and c.minimum_world_y,c and c.maximum_world_y
+    local minimum,maximum=c and c.minimum_world_y,c and c.altitude_ceiling
     if not finite(minimum) or not finite(maximum) or minimum>=maximum then return nil,"ALTITUDE LIMITS INVALID" end
     local selected=self.controls and self.controls.targets and self.controls.targets.altitude
     if finite(selected) and selected>=minimum and selected<=maximum then return selected,"SELECTED ALTITUDE" end
     return minimum,"MINIMUM ALTITUDE FALLBACK"
 end
--- @ama-summary: Collect verified vessel, cockpit, provider and chamber identity for a systems run.
+-- Summary: Collect verified vessel, cockpit, provider and chamber identity for a systems run.
 function Flight:systemsPreflight(io,now)
     if not self.config or not self.outer or not self.inner then return nil,"SYSTEMS FLIGHT CONTROL CONFIGURATION UNAVAILABLE" end
     local c=self.config
@@ -2800,7 +2845,7 @@ function Flight:systemsPreflight(io,now)
     for _,q in ipairs(QUADS) do
         local n=io.nodes[q]
         if not n or not io:nodeFresh(q,now) or type(n.boot)~="string" or n.boot=="" then
-            return nil,q.." LIFT NODE STALE"
+            return nil,"WAITING FOR LIFT NODE "..q
         end
         if n.systemsStartReady~=true then
             return nil,q.." SYSTEMS RECEIVER UNAVAILABLE"
@@ -2871,7 +2916,7 @@ function Flight:systemsPreflight(io,now)
         bindingGenerations=bindingGenerations,acceptedBootGenerations=acceptedBootGenerations,
         nodeIDs=nodeIDs,coreSession=io.session,coreID=io.localID}
 end
--- @ama-summary: Revalidate the active run's observations, identities and configured provider boundaries.
+-- Summary: Revalidate the active run's observations, identities and configured provider boundaries.
 function Flight:systemsGuard(io,now,s,allowInactiveLease,skipTargetMatch)
     if io.anchor=="ANCHORED" or io.anchor=="BRAKING" then return false,"ANCHOR ENGAGED" end
     local stale=io.config.network.sensor_stale_seconds
@@ -2888,7 +2933,7 @@ function Flight:systemsGuard(io,now,s,allowInactiveLease,skipTargetMatch)
     local speedLimit=(self.config.max_vertical_speed or 1)+1
     local speedFault=v.verticalSpeed>speedLimit or
         (s.phase=="READY" and v.verticalSpeed< -speedLimit)
-    if s.phase=="BUILDING_LIFT" then
+    if s.phase=="MAIN_LIFT" then
         speedLimit=systemsStartupSpeedLimit(self.config)
         speedFault=math.abs(v.verticalSpeed)>speedLimit
     end
@@ -2969,13 +3014,28 @@ function Flight:systemsGuard(io,now,s,allowInactiveLease,skipTargetMatch)
         end
         if count~=steamCount(n)+1 then return false,q.." PROVIDER ALLOWLIST CHANGED" end
     end
-    if (s.phase=="BUILDING_LIFT" or s.phase=="READY") then
+    if (s.phase=="MAIN_LIFT" or s.phase=="READY") then
         local live,liveReason=self:systemsEnvelopeReady(io,false,not allowInactiveLease,allowInactiveLease)
         if not live then return false,liveReason or "BALLOON / PROVIDER TELEMETRY LOST" end
     end
     return true
 end
--- @ama-summary: Check chamber envelope composition and lift observations for startup.
+-- The trim probe burner is the decisive balloon check: when it still sees a balloon, a vent without one points at the boiler.
+-- Only the trim probe burner decides whether a balloon is attached. Vent readings are unreliable, so a vent fault
+-- that the probe does not confirm points at the boiler.
+-- Summary: Word a balloon attachment fault from the trim probe reading, sending vent faults to the boiler check.
+function Flight:ventBalloonIssue(n,q,name)
+    local b=n.balloon
+    local probeName=b and type(b.source)=="string" and b.source
+    local probe=probeName and n.providers and n.providers[probeName]
+    local probeKnown=probe and probe.controlRole=="fine" and b.hasBalloonValid==true
+    if probeKnown and b.hasBalloon==false then return q.." PROBE FAIL: CHECK BALLOON INTEGRITY" end
+    if probeKnown then return q.." VENT "..name.." FAIL; CHECK BOILER" end
+    local vent=n.providers and n.providers[name]
+    if vent and vent.gasOutputValid~=true then return q.." VENT "..name.." LIFT FAIL; CHECK BOILER" end
+    return "CHAMBER "..q.." UNCONFIRMED; CHECK PROBE; CHECK BOILER"
+end
+-- Summary: Check chamber envelope composition and lift observations for startup.
 function Flight:systemsEnvelopeReady(io,requireProbeReady,requireLiveProviders,allowInactiveLease)
     for _,q in ipairs(QUADS) do
         local n=io.nodes[q]
@@ -2985,7 +3045,7 @@ function Flight:systemsEnvelopeReady(io,requireProbeReady,requireLiveProviders,a
         local source=b and type(b.source)=="string" and b.source or "representative provider"
         if not b then return false,q.." BALLOON STATUS UNAVAILABLE" end
         if b.hasBalloonValid~=true then return false,q.." PROVIDER "..source.." BALLOON ATTACHMENT READBACK UNAVAILABLE" end
-        if b.hasBalloon~=true then return false,q.." PROVIDER "..source.." REPORTS NO ATTACHED BALLOON" end
+        if b.hasBalloon~=true then return false,self:ventBalloonIssue(n,q,source) end
         if b.gasMixValid~=true or type(b.gasMix)~="table" then return false,q.." PROVIDER "..source.." BALLOON GAS MIX UNAVAILABLE" end
         if b.liftValid~=true or not finite(b.lift) then return false,q.." PROVIDER "..source.." BALLOON LIFT READBACK UNAVAILABLE" end
         if b.lift<=0 then return false,q.." PROVIDER "..source.." REPORTS NO POSITIVE BALLOON LIFT" end
@@ -3004,7 +3064,7 @@ function Flight:systemsEnvelopeReady(io,requireProbeReady,requireLiveProviders,a
                 if requireLiveProviders and p.signalStrength~=15 then return false,q.." PROVIDER "..name.." ACTIVATION SIGNAL "..tostring(p.signalStrength).." (EXPECTED 15)" end
                 if (requireLiveProviders or allowInactiveLease) and p.signalStrength>1 then
                     if not p.attachedValid then return false,q.." PROVIDER "..name.." BALLOON ATTACHMENT READBACK UNAVAILABLE" end
-                    if not p.attached then return false,q.." PROVIDER "..name.." REPORTS NO ATTACHED BALLOON" end
+                    if not p.attached then return false,self:ventBalloonIssue(n,q,name) end
                     if not p.gasTypeValid or type(p.gasType)~="string" then return false,q.." PROVIDER "..name.." GAS TYPE READBACK UNAVAILABLE" end
                     if p.gasType~="steam" then return false,q.." PROVIDER "..name.." GAS TYPE "..p.gasType.." (EXPECTED steam)" end
                     if requireLiveProviders then
@@ -3020,7 +3080,7 @@ function Flight:systemsEnvelopeReady(io,requireProbeReady,requireLiveProviders,a
                     (p.targetAmount==0 or p.targetAmount==floor)
                 if p.signalStrength>1 then
                 if not p.attachedValid then return false,q.." PROVIDER "..name.." BALLOON ATTACHMENT READBACK UNAVAILABLE" end
-                if not p.attached then return false,q.." PROVIDER "..name.." REPORTS NO ATTACHED BALLOON" end
+                if not p.attached then return false,q.." PROBE FAIL: CHECK BALLOON INTEGRITY" end
                 if not p.gasTypeValid or type(p.gasType)~="string" then return false,q.." PROVIDER "..name.." GAS TYPE READBACK UNAVAILABLE" end
                 end
                 if requireLiveProviders and not parkedFine and p.signalStrength~=15 then return false,q.." PROVIDER "..name.." ACTIVATION SIGNAL "..tostring(p.signalStrength).." (EXPECTED 15)" end
@@ -3032,7 +3092,7 @@ function Flight:systemsEnvelopeReady(io,requireProbeReady,requireLiveProviders,a
     end
     return true
 end
--- @ama-summary: Estimate lift response, vertical acceleration and drag from successive vessel/chamber samples.
+-- Summary: Estimate lift response, vertical acceleration and drag from successive vessel/chamber samples.
 function Flight:observeSystemsDynamics(io,s,now)
     local v=io.vessel
     local pressure=airPressure(v)
@@ -3102,9 +3162,9 @@ function Flight:observeSystemsDynamics(io,s,now)
         local gravity=v.environment and v.environment.gravity and math.abs(v.environment.gravity.y)
         local meanRatio=(current.actualRatio+previous.actualRatio)*0.5
         local minimumDragSpeed=0.02
-        if s.phase=="BUILDING_LIFT" and finite(s.startAltitude) and finite(v.altitude) and
+        if s.phase=="MAIN_LIFT" and finite(s.startAltitude) and finite(v.altitude) and
             v.altitude>s.startAltitude+0.1 then s.launchMotionVerified=true end
-        local groundedStartup=s.phase=="BUILDING_LIFT" and finite(s.startAltitude) and not s.launchMotionVerified
+        local groundedStartup=s.phase=="MAIN_LIFT" and finite(s.startAltitude) and not s.launchMotionVerified
         current.groundedStartup=groundedStartup
         if groundedStartup then
             -- Ground contact supplies an unknown force. Dividing that force
@@ -3294,7 +3354,7 @@ end
 -- sides because Aeronautics applies it to balloon lift as well as vessel
 -- weight. Fresh bulk output and current ceilings are recorded to ground the
 -- response estimate; ceiling commands still use the conservative slew below.
--- @ama-summary: START SYSTEMS uses the same equilibrium feed-forward as normal flight: raw envelope lift is checked against the configured gas strengths, then local pressure and vessel mass convert it to support. Gravity is included on both sides because Aeronautics applies it to balloon lift as well as vessel weight. Fresh bulk output and current ceilings are recorded to ground the response estimate; ceiling commands still use the conservative slew below.
+-- Summary: START SYSTEMS uses the same equilibrium feed-forward as normal flight: raw envelope lift is checked against the configured gas strengths, then local pressure and vessel mass convert it to support. Gravity is included on both sides because Aeronautics applies it to balloon lift as well as vessel weight. Fresh bulk output and current ceilings are recorded to ground the response estimate; ceiling commands still use the conservative slew below.
 function Flight:systemsHoverFeedForward(io,s,now)
     local vessel=io.vessel or {}
     local gravity=vessel.environment and vessel.environment.gravity and
@@ -3351,8 +3411,8 @@ function Flight:systemsHoverFeedForward(io,s,now)
     return feedForward
 end
 
--- @ama-summary: Allocate bounded provider targets from the requested support ratio and trim corrections.
-function Flight:systemsControlTargets(io,s,dt,desiredRatio,actualRatio,now,slewDt)
+-- Summary: Calculate projected support error, correction direction and control horizons.
+local function systemsSupportDemand(self,io,s,dt,desiredRatio,actualRatio,now,slewDt)
     slewDt=finite(slewDt) and slewDt>0 and math.min(slewDt,SYSTEMS_MAX_SLEW_CATCHUP_SECONDS) or dt
     local tolerance=self.config.lift_balance_tolerance_fraction or 0.2
     local gravity=math.abs(io.vessel.environment.gravity.y)
@@ -3361,23 +3421,23 @@ function Flight:systemsControlTargets(io,s,dt,desiredRatio,actualRatio,now,slewD
     local state=s.dynamics or {}
     local lag=s.responseLagSeconds
     local v=io.vessel
-    local maxVs=s.phase=="BUILDING_LIFT" and systemsStartupNominalSpeed(self.config) or
+    local maxVs=s.phase=="MAIN_LIFT" and systemsStartupNominalSpeed(self.config) or
         (self.config.max_vertical_speed or 1)
     -- Keep the lift deadband narrow enough that the commanded ratio can still
     -- correct vertical-speed errors inside the hover capture band.
     local releaseDelay=0
-    if s.phase=="BUILDING_LIFT" and actualRatio>desiredRatio and actualRatio>0 then
+    if s.phase=="MAIN_LIFT" and actualRatio>desiredRatio and actualRatio>0 then
         -- Predict the ceiling slew needed to reduce the current measured lift.
         -- Ceiling travel and envelope fill both continue after a control batch,
         -- so include both in the response horizon used for braking.
         local reduction=clamp((actualRatio-desiredRatio)/actualRatio,0,1)
         releaseDelay=reduction/math.max(SYSTEMS_RELEASE_RAMP_FRACTION_PER_SECOND,0.001)
     end
-    local startupHorizon=s.phase=="BUILDING_LIFT" and
+    local startupHorizon=s.phase=="MAIN_LIFT" and
         systemsStartupControlHorizon(self.config,lag,state.sampleSeconds) or lag
     local supportProjectionHorizon=math.max(finite(state.sampleSeconds) and state.sampleSeconds or 0,
         finite(lag) and lag or 0)
-    local deadbandHorizon=s.phase=="BUILDING_LIFT" and startupHorizon or responseSeconds
+    local deadbandHorizon=s.phase=="MAIN_LIFT" and startupHorizon or responseSeconds
     local deadband=math.max(0.0001,math.min(tolerance*0.005,
         hoverSpeed/(gravity*math.max(deadbandHorizon or responseSeconds,1))*0.25))
     local controlRatio=actualRatio
@@ -3399,7 +3459,7 @@ function Flight:systemsControlTargets(io,s,dt,desiredRatio,actualRatio,now,slewD
     local sampleSeconds=finite(state.sampleSeconds) and math.max(state.sampleSeconds,0.1) or 0.5
     local appliedCommandAge=now-(s.lastTargetAppliedAt or s.lastTargetCommandAt or now)
     local envelopeHorizon=systemsStartupEnvelopeHorizon(lag,state.sampleSeconds)
-    if s.phase=="BUILDING_LIFT" and startupHorizon and controlRatio>desiredRatio and actualRatio<desiredRatio and
+    if s.phase=="MAIN_LIFT" and startupHorizon and controlRatio>desiredRatio and actualRatio<desiredRatio and
         finite(v.verticalSpeed) and v.verticalSpeed<=(self.config.hover_max_vertical_speed or 0.2) and
         finite(v.altitude) and finite(s.target) and s.target>v.altitude then
         -- A forecast may show that the current ceiling is still filling toward
@@ -3408,7 +3468,7 @@ function Flight:systemsControlTargets(io,s,dt,desiredRatio,actualRatio,now,slewD
         -- fill response arrive instead of reversing the ramp abruptly.
         direction=0
     end
-    if s.phase=="BUILDING_LIFT" and direction>0 then
+    if s.phase=="MAIN_LIFT" and direction>0 then
         local requestedSpeed=finite(self.verticalTarget) and self.verticalTarget or 0
         local requestedAcceleration=s.lastRequestedAcceleration
         local measuredAcceleration=state.verticalAccelerationRaw
@@ -3429,26 +3489,50 @@ function Flight:systemsControlTargets(io,s,dt,desiredRatio,actualRatio,now,slewD
     s.lastSupportCorrectionFraction=correctionFraction
     s.lastSupportCorrectionDirection=direction
     s.lastCeilingSlewSeconds=slewDt
-    local remainders=s.supportCorrectionRemainders or {}
-    s.supportCorrectionRemainders=remainders
-    -- @ama-summary: Calculate a bounded provider change from measured support error and actuator limits.
-    local function supportStepFor(q,name,available)
-        local quadrant=remainders[q]
-        if not quadrant then quadrant={};remainders[q]=quadrant end
-        local entry=quadrant[name]
-        if not entry then entry={direction=direction,remainder=0};quadrant[name]=entry end
-        if direction==0 then return 0 end
-        if entry.direction~=direction then
-            if entry.direction~=0 then entry.remainder=0 end
-            entry.direction=direction
-        end
-        if available<=0 then entry.remainder=0;return 0 end
-        local budget=available*correctionFraction+clamp(entry.remainder or 0,0,0.999999)
-        local whole=math.min(available,math.floor(budget))
-        entry.remainder=math.max(0,budget-whole)
-        return whole
-    end
-    local maps={};local allAtMaximum=direction>0
+    return {
+        slewDt=slewDt,
+        tolerance=tolerance,
+        gravity=gravity,
+        responseSeconds=responseSeconds,
+        hoverSpeed=hoverSpeed,
+        state=state,
+        lag=lag,
+        v=v,
+        maxVs=maxVs,
+        releaseDelay=releaseDelay,
+        startupHorizon=startupHorizon,
+        supportProjectionHorizon=supportProjectionHorizon,
+        deadband=deadband,
+        controlRatio=controlRatio,
+        error=error,
+        direction=direction,
+        correctionFraction=correctionFraction,
+        sampleSeconds=sampleSeconds,
+        appliedCommandAge=appliedCommandAge,
+        envelopeHorizon=envelopeHorizon,
+        forecastLiftRate=forecastLiftRate,
+        desiredRatio=desiredRatio,
+        actualRatio=actualRatio,
+    }
+end
+
+-- Summary: Calculate altitude, vertical-speed and lift headroom plus release urgency.
+local function systemsBrakingBudgets(self,s,demand)
+    local state = demand.state
+    local lag = demand.lag
+    local v = demand.v
+    local gravity = demand.gravity
+    local startupHorizon = demand.startupHorizon
+    local responseSeconds = demand.responseSeconds
+    local hoverSpeed = demand.hoverSpeed
+    local maxVs = demand.maxVs
+    local releaseDelay = demand.releaseDelay
+    local forecastLiftRate = demand.forecastLiftRate
+    local supportProjectionHorizon = demand.supportProjectionHorizon
+    local desiredRatio = demand.desiredRatio
+    local actualRatio = demand.actualRatio
+    local controlRatio = demand.controlRatio
+    local deadband = demand.deadband
     -- An observed lag remains useful for braking during a temporary supply
     -- step. Supply instability blocks upward boost, but should not erase the
     -- measured stopping horizon.
@@ -3458,18 +3542,18 @@ function Flight:systemsControlTargets(io,s,dt,desiredRatio,actualRatio,now,slewD
     if startupHorizon and startupHorizon>0 and finite(v.altitude) and finite(v.verticalSpeed) then
         local response=math.max(self.config.hover_capture_seconds or 5,1)
         local rise=math.max(0,v.verticalSpeed)
-        local controlDelay=(s.phase=="BUILDING_LIFT" and
+        local controlDelay=(s.phase=="MAIN_LIFT" and
             systemsStartupEnvelopeHorizon(lag,state.sampleSeconds) or
             math.max(6,finite(lag) and lag or 0,finite(state.sampleSeconds) and state.sampleSeconds or 0))+releaseDelay
         local projectedY=v.altitude+systemsProjectedClimbDistance(v,state,controlDelay,gravity,desiredRatio)
-        local brakeAcceleration=s.phase=="BUILDING_LIFT" and systemsStartupAcceleration(self.config,lag,
+        local brakeAcceleration=s.phase=="MAIN_LIFT" and systemsStartupAcceleration(self.config,lag,
             state.sampleSeconds,s.lastAckWaitSeconds) or maxVs/response
         local commandInterval=finite(state.sampleSeconds) and math.max(0,state.sampleSeconds) or 0
-        local brakingResponse=s.phase=="BUILDING_LIFT" and startupHorizon or
+        local brakingResponse=s.phase=="MAIN_LIFT" and startupHorizon or
             (finite(lag) and lag or response)
         local stoppingDistance=rise*rise/(2*math.max(brakeAcceleration,0.01))+rise*(brakingResponse+commandInterval)
-        local altitudeMargin=s.phase=="BUILDING_LIFT" and hoverSpeed*response or maxVs*response
-        local altitudeScale=s.phase=="BUILDING_LIFT" and math.max(hoverSpeed*response,1) or
+        local altitudeMargin=s.phase=="MAIN_LIFT" and hoverSpeed*response or maxVs*response
+        local altitudeScale=s.phase=="MAIN_LIFT" and math.max(hoverSpeed*response,1) or
             math.max(maxVs*response,1)
         local remaining=(s.target or v.altitude)-projectedY-stoppingDistance-altitudeMargin
         altitudeBudget=clamp(remaining/altitudeScale,0,1)
@@ -3484,7 +3568,7 @@ function Flight:systemsControlTargets(io,s,dt,desiredRatio,actualRatio,now,slewD
         end
         local nominal=systemsStartupNominalSpeed(self.config)
         local remainingTarget=(s.target or v.altitude)-v.altitude
-        if s.phase=="BUILDING_LIFT" and actualRatio<desiredRatio and controlRatio>desiredRatio and
+        if s.phase=="MAIN_LIFT" and actualRatio<desiredRatio and controlRatio>desiredRatio and
             rise<nominal*0.5 and remainingTarget>maxVs*response then
             -- Linear projection can cross demand while the vessel is still
             -- well below neutral lift. Use its distance beyond demand to ask
@@ -3496,11 +3580,20 @@ function Flight:systemsControlTargets(io,s,dt,desiredRatio,actualRatio,now,slewD
                 math.max(desiredRatio-1,deadband*4),0,1)
         end
     end
-    local demandProgress,capacityProgress,capacityLimited={},{},{}
-    local fastBoost={}
+    return altitudeBudget,verticalBudget,liftBudget,releaseUrgency,forecastOnlyRelease
+end
+
+-- Summary: Track demonstrated acquisition motion and its permitted acceleration progress.
+local function systemsMotionProgress(self,s,demand,now)
+    local state = demand.state
+    local lag = demand.lag
+    local v = demand.v
+    local desiredRatio = demand.desiredRatio
+    local actualRatio = demand.actualRatio
+    local maxVs = demand.maxVs
     local startupProgress=1
     local startupMotionProgress=1
-    if s.phase=="BUILDING_LIFT" then
+    if s.phase=="MAIN_LIFT" then
         local supportTarget=(s.hoverFeedForward and s.hoverFeedForward.targetSupportRatio) or desiredRatio
         local nominal=systemsStartupNominalSpeed(self.config)
         local speedProgress=clamp(1-math.max(0,v.verticalSpeed)/math.max(nominal*0.75,0.01),0,1)
@@ -3545,6 +3638,56 @@ function Flight:systemsControlTargets(io,s,dt,desiredRatio,actualRatio,now,slewD
         startupProgress=math.min(systemsSupportProgress(actualRatio,supportTarget),
             speedProgress,accelerationProgress,startupMotionProgress)
     end
+    return startupProgress,startupMotionProgress
+end
+
+-- Summary: Allocate per-provider ceiling changes, trim and fractional correction remainders within current limits.
+local function systemsProviderTargets(self,io,s,demand,now)
+    local state = demand.state
+    local lag = demand.lag
+    local v = demand.v
+    local slewDt = demand.slewDt
+    local tolerance = demand.tolerance
+    local gravity = demand.gravity
+    local hoverSpeed = demand.hoverSpeed
+    local maxVs = demand.maxVs
+    local desiredRatio = demand.desiredRatio
+    local actualRatio = demand.actualRatio
+    local error = demand.error
+    local direction = demand.direction
+    local correctionFraction = demand.correctionFraction
+    local sampleSeconds = demand.sampleSeconds
+    local appliedCommandAge = demand.appliedCommandAge
+    local envelopeHorizon = demand.envelopeHorizon
+    local deadband = demand.deadband
+    local altitudeBudget = demand.altitudeBudget
+    local verticalBudget = demand.verticalBudget
+    local liftBudget = demand.liftBudget
+    local releaseUrgency = demand.releaseUrgency
+    local forecastOnlyRelease = demand.forecastOnlyRelease
+    local startupProgress = demand.startupProgress
+    local startupMotionProgress = demand.startupMotionProgress
+    local remainders = demand.remainders
+    -- Summary: Calculate a bounded provider change from measured support error and actuator limits.
+    local function supportStepFor(q,name,available)
+        local quadrant=remainders[q]
+        if not quadrant then quadrant={};remainders[q]=quadrant end
+        local entry=quadrant[name]
+        if not entry then entry={direction=direction,remainder=0};quadrant[name]=entry end
+        if direction==0 then return 0 end
+        if entry.direction~=direction then
+            if entry.direction~=0 then entry.remainder=0 end
+            entry.direction=direction
+        end
+        if available<=0 then entry.remainder=0;return 0 end
+        local budget=available*correctionFraction+clamp(entry.remainder or 0,0,0.999999)
+        local whole=math.min(available,math.floor(budget))
+        entry.remainder=math.max(0,budget-whole)
+        return whole
+    end
+    local maps={};local allAtMaximum=direction>0
+    local demandProgress,capacityProgress,capacityLimited={},{},{}
+    local fastBoost={}
     local correctionBand=math.max(deadband*4,0.005)
     local commandCadence=finite(s.lastAckWaitSeconds) and math.max(sampleSeconds,
         s.lastAckWaitSeconds+sampleSeconds) or sampleSeconds
@@ -3608,12 +3751,12 @@ function Flight:systemsControlTargets(io,s,dt,desiredRatio,actualRatio,now,slewD
                 if finite(applied) then value=value-applied end
                 local floor=p.minimumNonzeroTarget or 50
                 local maximum=p.maxTarget
-                    local demandScale=(s.phase=="BUILDING_LIFT" or s.phase=="READY") and 0.02 or tolerance
+                    local demandScale=(s.phase=="MAIN_LIFT" or s.phase=="READY") and 0.02 or tolerance
                 local magnitude=math.min(1,math.max(0,(math.abs(error)-deadband)/
                     math.max(demandScale,deadband*4,0.01)))
                 if direction>0 then
                     local supplySettled=not s.supplyStepAt or (lag and now-s.supplyStepAt>=lag)
-                    local fastReady=s.phase=="BUILDING_LIFT" and quadrantHasHeadroom and lag and supplySettled and state.supplyStable and state.complete and
+                    local fastReady=s.phase=="MAIN_LIFT" and quadrantHasHeadroom and lag and supplySettled and state.supplyStable and state.complete and
                         state.outputsValid and state.efficienciesValid and state.fullEfficiency==true and state.quadrants[q] and
                         projectedFill~=nil and not state.supplyStep
                     -- Neutral support with no vessel motion is the most
@@ -3621,7 +3764,7 @@ function Flight:systemsControlTargets(io,s,dt,desiredRatio,actualRatio,now,slewD
                     -- still be waiting on envelope lag. Keep the soft startup
                     -- rate until positive motion is observed across multiple
                     -- samples and one further measured response horizon.
-                    if s.phase=="BUILDING_LIFT" then
+                    if s.phase=="MAIN_LIFT" then
                         fastReady=fastReady and startupMotionProgress>=1
                     end
                     local boost=fastReady and math.min(altitudeBudget,verticalBudget,liftBudget,fillBudget,
@@ -3629,7 +3772,7 @@ function Flight:systemsControlTargets(io,s,dt,desiredRatio,actualRatio,now,slewD
                     fastBoost[q]=boost
                     local softRate,riseRate,fastRate=ceilingRiseRates(self.config)
                     local rate=riseRate
-                    if s.phase=="BUILDING_LIFT" then
+                    if s.phase=="MAIN_LIFT" then
                         rate=softRate+(riseRate-softRate)*startupProgress
                     end
                     rate=rate+(fastRate-riseRate)*boost
@@ -3680,7 +3823,19 @@ function Flight:systemsControlTargets(io,s,dt,desiredRatio,actualRatio,now,slewD
     return maps,direction,allAtMaximum,{curve=anyBoost and "ALTITUDE-AWARE FAST SLEW" or "CONSERVATIVE FEEDBACK",
         fastBoost=fastBoost,demandProgress=demandProgress,capacityProgress=capacityProgress,capacityLimited=capacityLimited}
 end
--- @ama-summary: Describe observed provider-capacity and efficiency limitations during lift acquisition.
+
+-- Summary: Allocate bounded provider targets from the requested support ratio and trim corrections.
+function Flight:systemsControlTargets(io,s,dt,desiredRatio,actualRatio,now,slewDt)
+    local demand=systemsSupportDemand(self,io,s,dt,desiredRatio,actualRatio,now,slewDt)
+    local remainders=s.supportCorrectionRemainders or {}
+    s.supportCorrectionRemainders=remainders
+    demand.remainders=remainders
+    demand.altitudeBudget,demand.verticalBudget,demand.liftBudget,demand.releaseUrgency,demand.forecastOnlyRelease=
+        systemsBrakingBudgets(self,s,demand)
+    demand.startupProgress,demand.startupMotionProgress=systemsMotionProgress(self,s,demand,now)
+    return systemsProviderTargets(self,io,s,demand,now)
+end
+-- Summary: Describe observed provider-capacity and efficiency limitations during lift acquisition.
 local function systemsWarning(io,s)
     local lowEfficiency,capacityLimited={},{}
     for _,q in ipairs(QUADS) do
@@ -3714,7 +3869,7 @@ local function systemsWarning(io,s)
     end
     return #warnings>0 and table.concat(warnings,"; ") or nil
 end
--- @ama-summary: Capture stable hover targets and transition the systems run to READY.
+-- Summary: Capture stable hover targets and transition the systems run to READY.
 function Flight:captureSystemsBaseline(io,s,now)
     s.baseline=copyMaps(s.currentTargets)
     s.supportCorrectionRemainders={}
@@ -3738,7 +3893,7 @@ function Flight:captureSystemsBaseline(io,s,now)
     s.reason="HOLDING SELECTED ALTITUDE"
     clearOperationIssue(self,"flight","systems","Core flight systems recovered: stable altitude hold reached")
 end
--- @ama-summary: Combine trim and altitude demand into the next hold target maps.
+-- Summary: Combine trim and altitude demand into the next hold target maps.
 function Flight:systemsHoldTargets(io,s,dt,actualRatio,now,slewDt)
     local trimOk,trimReason=self:updateTrim(io,s.baseline,dt,slewDt,now)
     if not trimOk then return nil,trimReason end
@@ -3748,59 +3903,18 @@ function Flight:systemsHoldTargets(io,s,dt,actualRatio,now,slewDt)
     return maps
 end
 
--- @ama-summary: Compute bounded vertical-speed and lift-ratio demand from altitude error and measured dynamics.
-function Flight:systemsAcquisitionControl(io,s,dt,actualRatio,now,slewDt)
-    local c=self.config;local v=io.vessel
-    local startupDemand=s.phase=="BUILDING_LIFT"
-    -- Keep virtual speed-target slew bounded across an ACK wait. The startup
-    -- acceleration itself has already been reduced by the measured command
-    -- cadence, so this capped elapsed budget lets a braking target respond
-    -- without feeding the entire wait into either PID integrator.
-    local commandSlewDt=finite(slewDt) and slewDt>0 and
-        math.min(slewDt,SYSTEMS_MAX_SLEW_CATCHUP_SECONDS) or dt
-    local maxVs=startupDemand and systemsStartupNominalSpeed(c) or (c.max_vertical_speed or 1)
-    local responseSeconds=math.max(c.hover_capture_seconds or 5,1)
-    local gravity=math.abs(v.environment.gravity.y)
-    local feedForward,feedReason=self:systemsHoverFeedForward(io,s,now)
-    if not feedForward then
-        if not startupDemand then
-            s.acquisitionPidActive=false;s.feedForwardReason=feedReason
-            return nil,feedReason or "HOLD PLANT INPUTS UNAVAILABLE"
-        end
-        -- Preserve the slow measured-lift ramp if output telemetry is absent,
-        -- but do not claim a nested PID is active without its verified plant
-        -- inputs. No integrator or trim state is changed on this fallback.
-        s.acquisitionPidActive=false;s.feedForwardReason=feedReason
-        s.speedLimiter="NO LIFT OUTPUT DATA"
-        local desired=clamp((s.target-v.altitude)/responseSeconds,-maxVs,maxVs)
-        local lag=s.responseLagSeconds
-        local horizon=systemsStartupControlHorizon(c,lag,(s.dynamics or {}).sampleSeconds)
-        if startupDemand and v.altitude<s.target then
-            local state=s.dynamics or {}
-            local releaseDelay=0
-            if finite(s.lastDesiredRatio) and actualRatio>s.lastDesiredRatio and actualRatio>0 then
-                releaseDelay=clamp((actualRatio-s.lastDesiredRatio)/actualRatio,0,1)/
-                    math.max(SYSTEMS_RELEASE_RAMP_FRACTION_PER_SECOND,0.001)
-            end
-            local envelopeHorizon=systemsStartupEnvelopeHorizon(lag,state.sampleSeconds)
-            local projectedRise=systemsProjectedClimbDistance(v,state,
-                envelopeHorizon+releaseDelay,gravity,s.lastDesiredRatio)
-            local speedLead=math.max(0,v.verticalSpeed)*horizon
-            local remaining=math.max(0,s.target-v.altitude-projectedRise-speedLead)
-            desired=math.min(desired,math.sqrt(2*systemsStartupAcceleration(c,lag,state.sampleSeconds,
-                s.lastAckWaitSeconds)*remaining))
-        end
-        if desired>0 then
-            desired=math.min(desired,maxVs*systemsSupportProgress(actualRatio,1))
-            local acceleration=systemsStartupAcceleration(c,lag,state.sampleSeconds,s.lastAckWaitSeconds)
-            desired=math.min(desired,(self.verticalTarget or 0)+acceleration*commandSlewDt)
-        end
-        self.verticalTarget=desired
-        self.effort=0;self.feedLimited=false;self.speedLimited=false
-        return clamp(1+(self.verticalTarget-v.verticalSpeed)/(gravity*responseSeconds),
-            math.max(0,1-c.lift_balance_tolerance_fraction),1+c.lift_balance_tolerance_fraction)
-    end
-    s.feedForwardReason=nil
+-- Summary: Shape altitude-loop demand using measured lag, approach braking and startup motion limits.
+local function acquisitionVerticalDemand(self,io,s,demand)
+    local c = demand.c
+    local v = demand.v
+    local dt = demand.dt
+    local actualRatio = demand.actualRatio
+    local now = demand.now
+    local commandSlewDt = demand.commandSlewDt
+    local maxVs = demand.maxVs
+    local responseSeconds = demand.responseSeconds
+    local gravity = demand.gravity
+    local startupDemand = demand.startupDemand
     local oldOuterI,oldInnerI=self.outer.i,self.inner.i
     -- READY hold lead. A support change takes effect only after the command
     -- ACK and balloon fill (several seconds), so reacting to the present
@@ -3980,6 +4094,24 @@ function Flight:systemsAcquisitionControl(io,s,dt,actualRatio,now,slewDt)
     s.speedLimiter=limiter
     self.verticalTarget=clamp(desiredVs,-maxVs,maxVs)
     self.speedLimited=outerLimited==true
+    demand.oldInnerI=oldInnerI
+    demand.leadVs=leadVs
+    demand.lag=lag
+    demand.horizon=horizon
+    demand.hoverSpeed=hoverSpeed
+    demand.remainingTarget=remainingTarget
+    demand.holdApproachActive=holdApproachActive
+    demand.captureApproach=captureApproach
+end
+
+-- Summary: Calculate vertical-speed feedback and gate startup integration on supply observations.
+local function acquisitionSpeedEffort(self,io,s,demand)
+    local c = demand.c
+    local dt = demand.dt
+    local startupDemand = demand.startupDemand
+    local oldInnerI = demand.oldInnerI
+    local leadVs = demand.leadVs
+    local lag = demand.lag
     local speedError=self.verticalTarget-leadVs
     local effort,innerLimited=self.inner:step(self.verticalTarget,leadVs,dt,
         -(c.max_feed_fraction or 0.15),c.max_feed_fraction or 0.15)
@@ -4009,6 +4141,27 @@ function Flight:systemsAcquisitionControl(io,s,dt,actualRatio,now,slewDt)
     end
     self.effort=effort;self.feedLimited=innerLimited==true
     s.acquisitionPidActive=true
+    demand.effort=effort
+    demand.innerLimited=innerLimited
+    demand.speedError=speedError
+end
+
+-- Summary: Combine hover feedforward and speed effort within the existing support and acceleration bounds.
+local function acquisitionSupportDemand(self,io,s,demand)
+    local c = demand.c
+    local v = demand.v
+    local maxVs = demand.maxVs
+    local responseSeconds = demand.responseSeconds
+    local gravity = demand.gravity
+    local startupDemand = demand.startupDemand
+    local feedForward = demand.feedForward
+    local oldInnerI = demand.oldInnerI
+    local lag = demand.lag
+    local horizon = demand.horizon
+    local hoverSpeed = demand.hoverSpeed
+    local holdApproachActive = demand.holdApproachActive
+    local effort = demand.effort
+    local speedError = demand.speedError
     local state=s.dynamics or {}
     local dragKnown=finite(state.verticalDragEstimate) and state.verticalDragEstimate>=0
     local drag=dragKnown and state.verticalDragEstimate or 0
@@ -4060,7 +4213,7 @@ function Flight:systemsAcquisitionControl(io,s,dt,actualRatio,now,slewDt)
     -- COMMANDED speed only (never measured speed: that was positive
     -- feedback), so it shrinks smoothly as the altitude loop closes in.
     if not startupDemand then
-        local perBps=finite(c.vertical_drag_support_per_bps) and clamp(c.vertical_drag_support_per_bps,0,0.05) or 0.019
+        local perBps=Registry.number(c,"altitude_control.vertical_drag_support_per_bps")
         local vsFeedForward=clamp(perBps*commanded,-(c.max_feed_fraction or 0.15),c.max_feed_fraction or 0.15)
         supportBaseline=supportBaseline+vsFeedForward
         s.verticalSpeedFeedForward=vsFeedForward
@@ -4165,6 +4318,40 @@ function Flight:systemsAcquisitionControl(io,s,dt,actualRatio,now,slewDt)
     -- extremely small startup speed-loop margin never produces actual motion.
     -- Require sustained quiet motion and output caught up to every bulk target
     -- before renewing bounded acceleration. Never boost a still-filling plant.
+    demand.state=state
+    demand.supportBaseline=supportBaseline
+    demand.holdBraking=holdBraking
+    demand.minimumSupport=minimumSupport
+    demand.maximumSupport=maximumSupport
+    demand.desiredRatio=desiredRatio
+    demand.effort=effort
+end
+
+-- Summary: Apply measured acquisition shortfall and retained hover-drift corrections, then finalize anti-windup.
+local function acquisitionStallCorrection(self,io,s,demand)
+    local c = demand.c
+    local v = demand.v
+    local dt = demand.dt
+    local actualRatio = demand.actualRatio
+    local now = demand.now
+    local responseSeconds = demand.responseSeconds
+    local gravity = demand.gravity
+    local startupDemand = demand.startupDemand
+    local oldInnerI = demand.oldInnerI
+    local lag = demand.lag
+    local hoverSpeed = demand.hoverSpeed
+    local remainingTarget = demand.remainingTarget
+    local holdApproachActive = demand.holdApproachActive
+    local captureApproach = demand.captureApproach
+    local effort = demand.effort
+    local innerLimited = demand.innerLimited
+    local speedError = demand.speedError
+    local state = demand.state
+    local supportBaseline = demand.supportBaseline
+    local holdBraking = demand.holdBraking
+    local minimumSupport = demand.minimumSupport
+    local maximumSupport = demand.maximumSupport
+    local desiredRatio = demand.desiredRatio
     local outputSettled=state.complete==true and state.outputsValid==true
     for _,q in ipairs(QUADS) do
         for name,provider in pairs(io.nodes[q].providers or {}) do
@@ -4270,7 +4457,79 @@ function Flight:systemsAcquisitionControl(io,s,dt,actualRatio,now,slewDt)
     s.lastDesiredRatio=desiredRatio
     return desiredRatio
 end
--- @ama-summary: Send the next pending chamber target and record its acknowledgement deadline.
+
+-- Summary: Compute bounded vertical-speed and lift-ratio demand from altitude error and measured dynamics.
+function Flight:systemsAcquisitionControl(io,s,dt,actualRatio,now,slewDt)
+    local c=self.config;local v=io.vessel
+    local state=s.dynamics or {}
+    local startupDemand=s.phase=="MAIN_LIFT"
+    -- Keep virtual speed-target slew bounded across an ACK wait. The startup
+    -- acceleration itself has already been reduced by the measured command
+    -- cadence, so this capped elapsed budget lets a braking target respond
+    -- without feeding the entire wait into either PID integrator.
+    local commandSlewDt=finite(slewDt) and slewDt>0 and
+        math.min(slewDt,SYSTEMS_MAX_SLEW_CATCHUP_SECONDS) or dt
+    local maxVs=startupDemand and systemsStartupNominalSpeed(c) or (c.max_vertical_speed or 1)
+    local responseSeconds=math.max(c.hover_capture_seconds or 5,1)
+    local gravity=math.abs(v.environment.gravity.y)
+    local feedForward,feedReason=self:systemsHoverFeedForward(io,s,now)
+    if not feedForward then
+        if not startupDemand then
+            s.acquisitionPidActive=false;s.feedForwardReason=feedReason
+            return nil,feedReason or "HOLD PLANT INPUTS UNAVAILABLE"
+        end
+        -- Preserve the slow measured-lift ramp if output telemetry is absent,
+        -- but do not claim a nested PID is active without its verified plant
+        -- inputs. No integrator or trim state is changed on this fallback.
+        s.acquisitionPidActive=false;s.feedForwardReason=feedReason
+        s.speedLimiter="NO LIFT OUTPUT DATA"
+        local desired=clamp((s.target-v.altitude)/responseSeconds,-maxVs,maxVs)
+        local lag=s.responseLagSeconds
+        local horizon=systemsStartupControlHorizon(c,lag,(s.dynamics or {}).sampleSeconds)
+        if startupDemand and v.altitude<s.target then
+            local releaseDelay=0
+            if finite(s.lastDesiredRatio) and actualRatio>s.lastDesiredRatio and actualRatio>0 then
+                releaseDelay=clamp((actualRatio-s.lastDesiredRatio)/actualRatio,0,1)/
+                    math.max(SYSTEMS_RELEASE_RAMP_FRACTION_PER_SECOND,0.001)
+            end
+            local envelopeHorizon=systemsStartupEnvelopeHorizon(lag,state.sampleSeconds)
+            local projectedRise=systemsProjectedClimbDistance(v,state,
+                envelopeHorizon+releaseDelay,gravity,s.lastDesiredRatio)
+            local speedLead=math.max(0,v.verticalSpeed)*horizon
+            local remaining=math.max(0,s.target-v.altitude-projectedRise-speedLead)
+            desired=math.min(desired,math.sqrt(2*systemsStartupAcceleration(c,lag,state.sampleSeconds,
+                s.lastAckWaitSeconds)*remaining))
+        end
+        if desired>0 then
+            desired=math.min(desired,maxVs*systemsSupportProgress(actualRatio,1))
+            local acceleration=systemsStartupAcceleration(c,lag,state.sampleSeconds,s.lastAckWaitSeconds)
+            desired=math.min(desired,(self.verticalTarget or 0)+acceleration*commandSlewDt)
+        end
+        self.verticalTarget=desired
+        self.effort=0;self.feedLimited=false;self.speedLimited=false
+        return clamp(1+(self.verticalTarget-v.verticalSpeed)/(gravity*responseSeconds),
+            math.max(0,1-c.lift_balance_tolerance_fraction),1+c.lift_balance_tolerance_fraction)
+    end
+    s.feedForwardReason=nil
+    local demand={
+        c=c,
+        v=v,
+        dt=dt,
+        actualRatio=actualRatio,
+        now=now,
+        commandSlewDt=commandSlewDt,
+        maxVs=maxVs,
+        responseSeconds=responseSeconds,
+        gravity=gravity,
+        startupDemand=startupDemand,
+        feedForward=feedForward,
+    }
+    acquisitionVerticalDemand(self,io,s,demand)
+    acquisitionSpeedEffort(self,io,s,demand)
+    acquisitionSupportDemand(self,io,s,demand)
+    return acquisitionStallCorrection(self,io,s,demand)
+end
+-- Summary: Send the next pending chamber target and record its acknowledgement deadline.
 function Flight:sendSystemsNext(io,now)
     local s=self.systemsRun;if not s then return false end
     if s.batchStage=="control" then s.lastTargetCommandAt=now end
@@ -4303,16 +4562,16 @@ function Flight:sendSystemsNext(io,now)
         s.reason=s.balancedReason
     elseif s.batchStage=="probe" then
         s.reason=s.phase=="VERIFYING" and "KEEPING PROBE BURNERS ACTIVE" or "ACTIVATING PROBE BURNERS"
-    elseif s.phase=="CONTROL_START" then s.reason="ACTIVATING BULK VENTS"
+    elseif s.phase=="VENT_IGNITION" then s.reason="ACTIVATING BULK VENTS"
     elseif s.phase=="READY" then s.reason=self.trimStatus and self.trimStatus.authorityLimited and
         "HOLDING ALTITUDE / TRIM AUTHORITY EXHAUSTED" or "HOLDING SELECTED ALTITUDE"
     else s.reason="BUILDING LIFT TO TARGET" end
     return true
 end
--- @ama-summary: Stage a complete chamber target batch with its command stage and trim allocation.
+-- Summary: Stage a complete chamber target batch with its command stage and trim allocation.
 function Flight:beginSystemsBatch(io,stage,maps,now,coarseTrimApplied)
     local s=self.systemsRun;if not s then return false end
-    if not s.telemetryRecovery and stage=="control" and s.phase=="BUILDING_LIFT" and not s.responseProbe and not s.responseLagSeconds and
+    if not s.telemetryRecovery and stage=="control" and s.phase=="MAIN_LIFT" and not s.responseProbe and not s.responseLagSeconds and
         systemsBulkCeilingSum(maps,io.nodes)>systemsBulkCeilingSum(s.currentTargets,io.nodes) then
         local dynamics=s.dynamics or {}
         s.responseProbe={excitation=true,at=now,actualRatio=dynamics.actualRatio or 0,
@@ -4327,7 +4586,7 @@ end
 -- Never lower an active vent below the ceiling it held when START SYSTEMS
 -- began (preflight records them). Floors from the takeoff seed or balance
 -- caps must not take lift away from a vessel that is already flying.
--- @ama-summary: Retain observed bulk-vent targets while constructing a probe-stage recovery map.
+-- Summary: Retain observed bulk-vent targets while constructing a probe-stage recovery map.
 local function retainActiveBulk(maps,retained)
     if type(maps)~="table" or type(retained)~="table" then return maps end
     for q,entries in pairs(retained) do
@@ -4341,7 +4600,7 @@ local function retainActiveBulk(maps,retained)
 end
 -- Current balloon lift carrying at least 90% of the weight means the ship is
 -- flying (or effectively floating): there is nothing to take off or build.
--- @ama-summary: Current balloon lift carrying at least 90% of the weight means the ship is flying (or effectively floating): there is nothing to take off or build.
+-- Summary: Current balloon lift carrying at least 90% of the weight means the ship is flying (or effectively floating): there is nothing to take off or build.
 function Flight:systemsAirborneAtStart(io)
     local v=io.vessel or {}
     local pressure=airPressure(v)
@@ -4359,7 +4618,7 @@ end
 -- like a core restart restore: probe, re-arm control at those same maps,
 -- then normal READY/HOLD control toward the selected altitude. No takeoff
 -- seed, launch settle or lift build is run.
--- @ama-summary: Adopt verified existing lift into an airborne altitude-control run.
+-- Summary: Adopt verified existing lift into an airborne altitude-control run.
 function Flight:startSystemsAirborne(io,now,prepared)
     local v=io.vessel
     local maps={}
@@ -4404,9 +4663,9 @@ function Flight:startSystemsAirborne(io,now,prepared)
     self.reason="AIRBORNE START: ADOPTING CURRENT LIFT"
     self.systemsSnapshot={active=true,available=false,phase="READY",pending=true,complete=false,
         target=s.target,reason=self.reason}
-    return true,"AIRBORNE START: CURRENT LIFT ADOPTED; NO TAKEOFF OR BUILD"
+    return true,"AIRBORNE START"
 end
--- @ama-summary: Validate startup and initialize its probe, target and retained-identity state.
+-- Summary: Validate startup and initialize its probe, target and retained-identity state.
 function Flight:startSystems(io,now,prepared)
     if self.systemsRun then return false,"START SYSTEMS ALREADY ACTIVE" end
     local reason
@@ -4484,8 +4743,8 @@ function Flight:startSystems(io,now,prepared)
 end
 -- An explicit airborne recovery reuses verified retained gas, not the takeoff
 -- seed. Validation is read-only and also supplies the bridge's availability.
--- @ama-section: Recovery | Physical target reconciliation and retained-run resumption.
--- @ama-summary: Record a terminal recovery guard result while retaining applied lift intent.
+-- Section: Recovery | Physical target reconciliation and retained-run resumption.
+-- Summary: Record a terminal recovery guard result while retaining applied lift intent.
 function Flight:abortRecoveryState(io,now)
     if self.systemsRun or self.shutdownJob or self.stopReview or self.emergencyLiftLatched or
         self.tuningRun or self.startupPending or self.maintenanceJob or
@@ -4495,7 +4754,7 @@ function Flight:abortRecoveryState(io,now)
     if not self.systemsLastOutcome or self.systemsLastOutcome.phase~="ABORTED" or
         type(self.systemsRetainedRun)~="table" then return nil,"NO RETAINED ABORT TO RECOVER" end
     local s=clone(self.systemsRetainedRun)
-    if s.phase~="READY" and s.phase~="BUILDING_LIFT" then return nil,"NO RETAINED AIRBORNE CONTROL STATE" end
+    if s.phase~="READY" and s.phase~="MAIN_LIFT" then return nil,"NO RETAINED AIRBORNE CONTROL STATE" end
     local assembled,why=Flight.assemblyGate(io,now)
     if not assembled then return nil,why or "VESSEL ASSEMBLY UNAVAILABLE" end
     if type(io.routeAllowed)=="function" then
@@ -4523,7 +4782,9 @@ function Flight:abortRecoveryState(io,now)
     s.phase="READY"
     local valid,reason=self:systemsGuard(io,now,s,true,true)
     if not valid then return nil,reason end
-    if not finite(s.target) or s.target<self.config.minimum_world_y or s.target>self.config.maximum_world_y then
+    -- A retained target above the ceiling (the ceiling was lowered) is lowered to it.
+    if finite(s.target) and s.target>self.config.altitude_ceiling then s.target=self.config.altitude_ceiling end
+    if not finite(s.target) or s.target<self.config.minimum_world_y then
         return nil,"RETAINED ALTITUDE TARGET OUT OF RANGE"
     end
     -- A command may have applied to only some providers before the
@@ -4538,7 +4799,7 @@ function Flight:abortRecoveryState(io,now)
     s.climbStallBoost=0;s.climbStallSince=nil;s.holdDriftSince=nil
     return s
 end
--- @ama-summary: Reconstruct altitude control from retained target maps and fresh provider observations.
+-- Summary: Reconstruct altitude control from retained target maps and fresh provider observations.
 function Flight:recoverSystems(io,now)
     local s,reason=self:abortRecoveryState(io,now)
     if not s then return false,reason end
@@ -4554,8 +4815,8 @@ function Flight:recoverSystems(io,now)
     TelemetryRecovery.suspend(self,s,now,"AIRBORNE ABORT RECOVERY REQUESTED")
     return true,"RECOVERING RETAINED LIFT; NO TAKEOFF SEED"
 end
--- @ama-section: Systems control | Startup, measured dynamics and bounded provider demand.
--- @ama-summary: Release the renewable systems lease and retain the applied provider ceilings.
+-- Section: Systems control | Startup, measured dynamics and bounded provider demand.
+-- Summary: Release the renewable systems lease and retain the applied provider ceilings.
 function Flight:stopSystems(io,reason,now,abortDetails)
     local s=self.systemsRun
     if not s then return false,"NO ACTIVE SYSTEMS SEQUENCE" end
@@ -4586,7 +4847,7 @@ function Flight:stopSystems(io,reason,now,abortDetails)
     end
     return true,outcome
 end
--- @ama-summary: Update altitude and attitude PID measurements after target acknowledgement.
+-- Summary: Update altitude and attitude PID measurements after target acknowledgement.
 function Flight:observeSystemsPidAfterAck(io,s,now)
     local elapsed=now-(s.lastPidAt or now)
     observePidMeasurement(self.outer,io.vessel.altitude,elapsed)
@@ -4596,8 +4857,8 @@ function Flight:observeSystemsPidAfterAck(io,s,now)
         y[q]=io.nodes[q].altitude and io.nodes[q].altitude.sensorWorldY
         if not finite(y[q]) then s.lastPidAt=now;return end
     end
-    local roll=(y.FL+y.RL-y.FR-y.RR)/4
-    local measuredPitch=(y.FL+y.FR-y.RL-y.RR)/4
+    local roll=(y.FL+y.BL-y.FR-y.BR)/4
+    local measuredPitch=(y.FL+y.FR-y.BL-y.BR)/4
     local config=self.config
     if math.abs(roll)<config.trim_deadband_blocks then roll=0 end
     local manualBias=finite(config.manual_fore_aft_trim_blocks) and
@@ -4611,8 +4872,8 @@ function Flight:observeSystemsPidAfterAck(io,s,now)
     observePidMeasurement(self.pitchTrim,pitchControlMeasurement,elapsed)
     s.lastPidAt=now
 end
--- @ama-section: Recovery | Physical target reconciliation and retained-run resumption.
--- @ama-summary: Classify the chambers' current probe/control lease stages.
+-- Section: Recovery | Physical target reconciliation and retained-run resumption.
+-- Summary: Classify the chambers' current probe/control lease stages.
 local function recoveryStageMode(io)
     local mode=nil
     for _,q in ipairs(QUADS) do
@@ -4626,7 +4887,7 @@ local function recoveryStageMode(io)
     end
     return mode or "mixed"
 end
--- @ama-summary: Construct probe recovery maps from the retained chamber targets.
+-- Summary: Construct probe recovery maps from the retained chamber targets.
 local function recoveryProbeMaps(io,maps)
     local result=copyMaps(maps)
     for _,q in ipairs(QUADS) do
@@ -4642,56 +4903,21 @@ local function recoveryProbeMaps(io,maps)
     end
     return result
 end
--- @ama-summary: Reconcile physical targets, renew authority and resume the retained systems run.
-function Flight:updateSystemsRecovery(io,now,s)
-    local recovery=s.telemetryRecovery
-    local function wait(reason,pending)
-        TelemetryRecovery.suspend(self,s,now,reason)
-        logSystemsTelemetryRecovery(self,recovery.failed and
-            ("RECOVERY FAILED AFTER 120 SECONDS: "..tostring(reason).."; CONTINUING RETRIES") or reason,false)
-        self.systemsSnapshot.pending=pending==true
-        return false
-    end
-    local assembled,assemblyReason,assembly=Flight.assemblyGate(io,now)
-    if not assembled then
-        if assembly and assembly.state=="DISASSEMBLED" then
-            self:stopSystems(io,assemblyReason or "VESSEL DISASSEMBLED",now);return false
-        end
-        self.assembly=assembly
-        return wait(assemblyReason or "ASSEMBLY STATE UNKNOWN",s.pending~=nil)
-    end
-    local mode=recoveryStageMode(io)
-    local allowInactive=true -- Recovery reapplies activation as well as ceilings.
-    local good,fault,abortDetails=self:systemsGuard(io,now,s,allowInactive,true)
-    if not good then
-        if TelemetryRecovery.isTransientGuardFault(io,s,now,fault,self) then
-            return wait(fault,s.pending~=nil)
-        end
-        self:stopSystems(io,fault,now,abortDetails);return false
-    end
-    for _,q in ipairs(QUADS) do
-        local node=io.nodes[q]
-        if node.systemsSupported~=true then
-            self:stopSystems(io,q.." SYSTEMS CAPABILITY CHANGED",now);return false
-        end
-        if node.systemsStartReady~=true then
-            return wait(q.." WAITING FOR START SYSTEMS HARDWARE READINESS",s.pending~=nil)
-        end
-    end
-
-    -- @ama-summary: Complete the active recovery stage using verified physical target maps.
+-- Summary: Bind retained-map verification, batch renewal and completion to the current recovery run.
+local function systemsRecoveryOperations(self,io,now,s,recovery,wait)
+    -- Summary: Complete the active recovery stage using verified physical target maps.
     local function finishActive(actualMaps,actualCoarse)
         local priorPhase=recovery.resumePhase or s.phase
         TelemetryRecovery.complete(self,io,s,now,actualMaps,actualCoarse)
         logSystemsTelemetryRecovery(self,nil,true)
-        if priorPhase=="CONTROL_START" and s.initialGasTarget and s.initialGasTarget.waitingForCapacity and
+        if priorPhase=="VENT_IGNITION" and s.initialGasTarget and s.initialGasTarget.waitingForCapacity and
             not s.seedBatchPendingAck then
             local gasInfo=s.initialGasTarget
             gasInfo.bootstrapAppliedM3PerChamberByQuadrant=systemsProviderTargetTotals(io,s.currentTargets)
             gasInfo.controlMapPendingAck=false
             s.phase="VERIFYING";s.phaseStartedAt=now
             s.acquisitionPidActive=false;s.lastPidAt=now;s.lastTargetCommandAt=now;s.lastTargetAppliedAt=now
-        elseif priorPhase=="CONTROL_START" then
+        elseif priorPhase=="VENT_IGNITION" then
             local gasInfo=s.initialGasTarget
             if gasInfo then
                 local actual=systemsProviderTargetTotals(io,s.currentTargets)
@@ -4716,7 +4942,7 @@ function Flight:updateSystemsRecovery(io,now,s)
                 end
             end
             s.seedBatchPendingAck=false
-            s.phase="BUILDING_LIFT";s.phaseStartedAt=now
+            s.phase="MAIN_LIFT";s.phaseStartedAt=now
             if not s.launchStartedAt and (s.launchDurationSeconds or 0)>0 then s.launchStartedAt=now end
             s.baseline=copyMaps(s.currentTargets);self.baseline=copyMaps(s.currentTargets)
             self.outer:reset(io.vessel.altitude);self.inner:reset(io.vessel.verticalSpeed)
@@ -4734,7 +4960,7 @@ function Flight:updateSystemsRecovery(io,now,s)
             curve=s.curve,demandProgress=s.demandProgress,capacityProgress=s.capacityProgress}
         return true
     end
-    -- @ama-summary: Compare a chamber's physical provider readback with the retained target map.
+    -- Summary: Compare a chamber's physical provider readback with the retained target map.
     local function verifyMap(node,q,expected)
         local actual,reason=TelemetryRecovery.readTargetMap(node,expected,s.providerRoles[q])
         if not actual then return false,q.." "..tostring(reason) end
@@ -4743,7 +4969,7 @@ function Flight:updateSystemsRecovery(io,now,s)
         end
         return true
     end
-    -- @ama-summary: Check recovery acknowledgements and readbacks for the active command stage.
+    -- Summary: Check recovery acknowledgements and readbacks for the active command stage.
     local function verifyCommand(stage)
         local all=true
         local leaseExpired=false
@@ -4807,7 +5033,7 @@ function Flight:updateSystemsRecovery(io,now,s)
         if leaseExpired then return false,"lease-expired" end
         return all
     end
-    -- @ama-summary: Stage the next verified probe/control recovery batch.
+    -- Summary: Stage the next verified probe/control recovery batch.
     local function sendRecoveryBatch(stage,maps,coarse)
         s.recoveryStages=nil
         if stage=="probe" then
@@ -4836,6 +5062,49 @@ function Flight:updateSystemsRecovery(io,now,s)
             "REVALIDATING LIFT PROBE; RETAINING APPLIED OUTPUTS" or
             "REAPPLYING CORE LIFT TARGETS AND CONTROL LEASE"),true)
     end
+
+    return finishActive,verifyMap,verifyCommand,sendRecoveryBatch
+end
+
+-- Summary: Reconcile physical targets, renew authority and resume the retained systems run.
+function Flight:updateSystemsRecovery(io,now,s)
+    local recovery=s.telemetryRecovery
+    local function wait(reason,pending)
+        TelemetryRecovery.suspend(self,s,now,reason)
+        logSystemsTelemetryRecovery(self,recovery.failed and
+            ("RECOVERY FAILED AFTER 120 SECONDS: "..tostring(reason).."; CONTINUING RETRIES") or reason,false)
+        self.systemsSnapshot.pending=pending==true
+        return false
+    end
+    local assembled,assemblyReason,assembly=Flight.assemblyGate(io,now)
+    if not assembled then
+        if assembly and assembly.state=="DISASSEMBLED" then
+            self:stopSystems(io,assemblyReason or "VESSEL DISASSEMBLED",now);return false
+        end
+        self.assembly=assembly
+        return wait(assemblyReason or "ASSEMBLY STATE UNKNOWN",s.pending~=nil)
+    end
+    local mode=recoveryStageMode(io)
+    local allowInactive=true -- Recovery reapplies activation as well as ceilings.
+    local good,fault,abortDetails=self:systemsGuard(io,now,s,allowInactive,true)
+    if not good then
+        if TelemetryRecovery.isTransientGuardFault(io,s,now,fault,self) then
+            return wait(fault,s.pending~=nil)
+        end
+        self:stopSystems(io,fault,now,abortDetails);return false
+    end
+    for _,q in ipairs(QUADS) do
+        local node=io.nodes[q]
+        if node.systemsSupported~=true then
+            self:stopSystems(io,q.." SYSTEMS CAPABILITY CHANGED",now);return false
+        end
+        if node.systemsStartReady~=true then
+            return wait(q.." WAITING FOR START SYSTEMS HARDWARE READINESS",s.pending~=nil)
+        end
+    end
+
+    local finishActive,verifyMap,verifyCommand,sendRecoveryBatch=
+        systemsRecoveryOperations(self,io,now,s,recovery,wait)
 
     -- Rebinding starts a new node command sequence, so the old boot's ACK is
     -- never used to complete a pending batch. Verify the exact live provider
@@ -4990,8 +5259,8 @@ function Flight:updateSystemsRecovery(io,now,s)
     end
     return wait("WAITING FOR ALL LIFT NODES TO REACH A CONSISTENT LEASE STATE",false)
 end
--- @ama-section: Systems control | Startup, measured dynamics and bounded provider demand.
--- @ama-summary: Measure stable hover duration near the selected altitude and report capture readiness.
+-- Section: Systems control | Startup, measured dynamics and bounded provider demand.
+-- Summary: Measure stable hover duration near the selected altitude and report capture readiness.
 function Flight:systemsCaptureReady(s,v,now,supportSettled,actualRatio)
     local liftReady=supportSettled and math.abs(actualRatio-1)<=self.config.lift_balance_tolerance_fraction
     local distance=math.abs(s.target-v.altitude)
@@ -5003,358 +5272,355 @@ function Flight:systemsCaptureReady(s,v,now,supportSettled,actualRatio)
     return (s.hoverSince~=nil and now-s.hoverSince>=self.config.hover_capture_seconds) or
         (s.wideHoverSince~=nil and now-s.wideHoverSince>10)
 end
--- @ama-summary: Advance startup, acquisition, recovery and altitude-hold target batches.
-function Flight:updateSystems(io,now)
-    local s=self.systemsRun
-    if not s then
-        local prepared,reason=self:systemsPreflight(io,now)
-        self.systemsAvailable=prepared~=nil;self.systemsBlockedReason=reason
-        local previous=self.systemsLastOutcome
-        self.systemsSnapshot={active=false,available=self.systemsAvailable==true,
-            phase=previous and previous.phase or (self.systemsAvailable and "READY" or "IDLE"),pending=false,
-            complete=false,target=previous and previous.target or nil,
-            reason=reason or (previous and previous.reason or nil),
-            abortReason=previous and previous.phase=="ABORTED" and previous.reason or nil,
-            abortDetails=previous and previous.abortDetails or nil}
-        return
-    end
-    if s.telemetryRecovery then
-        self:updateSystemsRecovery(io,now,s)
-        return
-    end
-    local good,fault,abortDetails=self:systemsGuard(io,now,s)
-    if not good then
-        if TelemetryRecovery.isTransientGuardFault(io,s,now,fault,self) then
-            TelemetryRecovery.suspend(self,s,now,fault)
-            self:updateSystemsRecovery(io,now,s)
-        else self:stopSystems(io,fault,now,abortDetails) end
-        return
-    end
-    local previousUpdateAt=s.lastSystemsUpdateAt
-    if finite(previousUpdateAt) and now-previousUpdateAt>SYSTEMS_SAMPLE_GAP_SECONDS then
-        local pending=s.pending and s.pending[QUADS[1]]
-        local pendingAckSeconds=pending and finite(pending.sentAt) and now-pending.sentAt or nil
-        -- Scheduling gaps suspend integration and retain lift; recovery must
-        -- revalidate live identity, providers, targets and ACKs before resuming.
-        TelemetryRecovery.suspend(self,s,now,"SYSTEMS RUNTIME SAMPLE GAP")
-        s.telemetryRecovery.sampleGapDetails={phase=s.phase,lastUpdateAt=previousUpdateAt,
-            elapsedSeconds=now-previousUpdateAt,sampleGapLimitSeconds=SYSTEMS_SAMPLE_GAP_SECONDS,
-            pendingAckSeconds=pendingAckSeconds}
-        return
-    elseif finite(previousUpdateAt) and now<previousUpdateAt then
-        self:stopSystems(io,"SYSTEMS RUNTIME CLOCK MOVED BACKWARD",now,{phase=s.phase,
-            lastUpdateAt=previousUpdateAt,elapsedSeconds=now-previousUpdateAt,
-            sampleGapLimitSeconds=SYSTEMS_SAMPLE_GAP_SECONDS})
-        return
-    end
-    s.lastSystemsUpdateAt=now
-    -- A fresh node may have lost its renewable lease before the command's
-    -- rejection arrives. Re-probe using the retained run instead of waiting
-    -- for a matching rejected sequence or letting an ACK timeout abort it.
-    if s.batchStage=="control" or s.phase=="READY" or s.phase=="BUILDING_LIFT" then
-        for _,q in ipairs(QUADS) do
-            local node=io.nodes[q]
-            if node.systemsStage==nil and node.systemsProbeReady~=true then
-                TelemetryRecovery.suspend(self,s,now,q.." LIFT CONTROL LEASE LOST")
-                self:updateSystemsRecovery(io,now,s);return
-            end
-        end
-    end
-    self:observeSystemsDynamics(io,s,now)
-    s.warning=systemsWarning(io,s)
-    self.reason=s.reason or self.reason
-    if (s.phase=="BUILDING_LIFT" or s.phase=="READY") and self.controls and
-        finite(self.controls.targets.altitude) and self.controls.targets.altitude>=self.config.minimum_world_y and
-        self.controls.targets.altitude<=self.config.maximum_world_y then
-        -- START SYSTEMS seeds this target from the selected cockpit value.
-        -- Later valid cockpit edits remain live even while an ACK is pending.
-        if s.target~=self.controls.targets.altitude then s.supportCorrectionRemainders={} end
-        s.target=self.controls.targets.altitude
-    end
-    local balanced,balancedReason=self:balancedLiftModel(io,s.target,now)
-    self.balancedLift=balanced;s.balancedLift=balanced
-    if balanced.phase=="UNAVAILABLE" or balanced.phase=="INFEASIBLE" then
-        s.balancedReason=balancedReason or balanced.reason or "BALANCED LIFT CAPACITY UNAVAILABLE"
-    elseif balanced.targetUnreachable then
-        s.balancedReason=balanced.reason
-    else
-        s.balancedReason=nil
-    end
-    if s.pending then
-        local allApplied=true
-        for _,q in ipairs(QUADS) do
-            local pending=s.pending[q]
-            local node=io.nodes[q]
-            -- A fresh response for this sequence can explicitly reject the
-            -- command. Surface that reason instead of waiting for an ACK that
-            -- will never arrive. Historical faults cannot reject a new packet.
-            if node.lastReceivedSeq==pending.seq and node.lastAppliedSeq~=pending.seq then
-                for _,fault in ipairs(node.faults or {}) do
-                    if type(fault)=="string" and fault:match("^SYSTEMS") then
-                        TelemetryRecovery.suspend(self,s,now,q.." "..fault)
-                        self:updateSystemsRecovery(io,now,s);return
-                    end
-                end
-            end
-            if io:commandWasApplied(q,pending.seq,pending.targets) then
-                s.appliedMaps[q]=clone(pending.targets)
-            else
-                allApplied=false
-                if now-pending.sentAt>SYSTEMS_ACK_TIMEOUT_SECONDS then
-                    TelemetryRecovery.suspend(self,s,now,q.." SYSTEMS COMMAND ACK TIMEOUT")
+-- Summary: Verify pending command results and transfer acknowledged startup or control maps.
+local function systemsAcknowledgeBatch(self,io,now,s)
+    local allApplied=true
+    for _,q in ipairs(QUADS) do
+        local pending=s.pending[q]
+        local node=io.nodes[q]
+        -- A fresh response for this sequence can explicitly reject the
+        -- command. Surface that reason instead of waiting for an ACK that
+        -- will never arrive. Historical faults cannot reject a new packet.
+        if node.lastReceivedSeq==pending.seq and node.lastAppliedSeq~=pending.seq then
+            for _,fault in ipairs(node.faults or {}) do
+                if type(fault)=="string" and fault:match("^SYSTEMS") then
+                    TelemetryRecovery.suspend(self,s,now,q.." "..fault)
                     self:updateSystemsRecovery(io,now,s);return
                 end
             end
         end
-        if not allApplied then
-            self.systemsSnapshot={active=true,available=false,phase=s.phase,pending=true,complete=false,
-                target=s.target,reason=s.reason,warning=s.warning,curve=s.curve,
-                demandProgress=s.demandProgress,capacityProgress=s.capacityProgress,
-                desiredLiftRatio=s.lastDesiredRatio}
-            return
+        if io:commandWasApplied(q,pending.seq,pending.targets) then
+            s.appliedMaps[q]=clone(pending.targets)
+        else
+            allApplied=false
+            if now-pending.sentAt>SYSTEMS_ACK_TIMEOUT_SECONDS then
+                TelemetryRecovery.suspend(self,s,now,q.." SYSTEMS COMMAND ACK TIMEOUT")
+                self:updateSystemsRecovery(io,now,s);return
+            end
         end
-        local stage=s.batchStage
-        if stage=="control" then
-            local ackWait=0
-            for _,q in ipairs(QUADS) do
-                local pending=s.pending[q]
-                if pending and finite(pending.sentAt) then ackWait=math.max(ackWait,now-pending.sentAt) end
-            end
-            s.lastAckWaitSeconds=ackWait
+    end
+    if not allApplied then
+        self.systemsSnapshot={active=true,available=false,phase=s.phase,pending=true,complete=false,
+            target=s.target,reason=s.reason,warning=s.warning,curve=s.curve,
+            demandProgress=s.demandProgress,capacityProgress=s.capacityProgress,
+            desiredLiftRatio=s.lastDesiredRatio}
+        return
+    end
+    local stage=s.batchStage
+    if stage=="control" then
+        local ackWait=0
+        for _,q in ipairs(QUADS) do
+            local pending=s.pending[q]
+            if pending and finite(pending.sentAt) then ackWait=math.max(ackWait,now-pending.sentAt) end
         end
-        s.pending=nil
-        if stage=="control" and (s.phase=="BUILDING_LIFT" or s.phase=="READY") then
-            self:observeSystemsPidAfterAck(io,s,now)
-        end
-        if stage=="probe" then
-            if s.phase=="PROBING" then
-                s.phase="VERIFYING";s.phaseStartedAt=now;s.reason="WAITING FOR PROBE BALLOON DATA"
-                s.renewAt=now+SYSTEMS_PROBE_RENEW_SECONDS;s.renewing=false
-            else
-                s.renewing=false;s.renewAt=now+SYSTEMS_PROBE_RENEW_SECONDS
-            end
-            return
-        end
-        local controlTargetsChanged=stage=="control" and
-            systemsBulkTargetsChanged(s.batchTargets,s.currentTargets,io.nodes)
-        s.currentTargets=copyMaps(s.batchTargets);s.lastControlAt=now
-        if stage=="control" then s.coarseTrimApplied=clone(s.batchCoarseTrimApplied or {}) end
-        if controlTargetsChanged then s.lastTargetAppliedAt=now end
-        if s.phase=="CONTROL_START" then
-            local gasInfo=s.initialGasTarget
-            if gasInfo and gasInfo.waitingForCapacity and not s.seedBatchPendingAck then
-                gasInfo.bootstrapAppliedM3PerChamberByQuadrant=systemsProviderTargetTotals(io,s.currentTargets)
-                gasInfo.status="WAITING_FOR_VERIFIED_CAPACITY"
-                gasInfo.controlMapPendingAck=false
-                s.phase="VERIFYING";s.phaseStartedAt=now;s.reason="WAITING FOR VERIFIED BALANCED CAPACITY FOR INITIAL GAS TARGET"
-                s.acquisitionPidActive=false;s.lastPidAt=now;s.lastTargetCommandAt=now;s.lastTargetAppliedAt=now
-                self.systemsSnapshot={active=true,available=false,phase=s.phase,pending=false,complete=false,
-                    target=s.target,reason=s.reason,initialGasTarget=clone(gasInfo)}
-                return
-            end
-            if gasInfo then
-                local actualTotals,actualReason=systemsProviderTargetTotals(io,s.currentTargets)
-                if actualTotals then gasInfo.appliedM3PerChamberByQuadrant=actualTotals end
-                gasInfo.controlMapPendingAck=false;gasInfo.waitingForCapacity=false
-                if gasInfo.requestedM3PerChamber>0 and s.seedBatchPendingAck then
-                    gasInfo.seeded=true
-                    gasInfo.status=gasInfo.limited and "APPLIED_LIMITED" or "APPLIED"
-                elseif gasInfo.requestedM3PerChamber>0 then
-                    gasInfo.seeded=false;gasInfo.status="LIMITED_NOT_APPLIED"
-                    gasInfo.reason=gasInfo.limitReason or actualReason or "INITIAL GAS TARGET WAS NOT APPLIED"
-                    gasInfo.limited=true
-                else
-                    gasInfo.seeded=false;gasInfo.status="DISABLED"
-                end
-                s.seedBatchPendingAck=false
-            end
-            if s.airborneStart then
-                -- Already flying: no launch settle and no lift build. Hold
-                -- from the acknowledged current ceilings in READY.
-                s.launchComplete=true;s.launchDurationSeconds=0;s.airborne=true
-                self:captureSystemsBaseline(io,s,now)
-                s.reason="AIRBORNE START COMPLETE; HOLDING SELECTED ALTITUDE"
-                self.reason=s.reason
-                return
-            end
-            s.phase="BUILDING_LIFT";s.phaseStartedAt=now
-            if not s.launchStartedAt and (s.launchDurationSeconds or 0)>0 then s.launchStartedAt=now end
-            s.lastLiftRatio=nil;s.lastLiftProgressAt=now;s.reason="BUILDING LIFT TO TARGET"
-            -- The acknowledged control-start map is the acquisition baseline.
-            -- Reset derivative history here so probe activation time cannot
-            -- enter either PID, and give trim symmetric authority immediately.
-            s.baseline=copyMaps(s.currentTargets);self.baseline=copyMaps(s.currentTargets)
-            self.outer:reset(io.vessel.altitude);self.inner:reset(io.vessel.verticalSpeed)
-            self:resetTrim();self:seedLevelBias();self.effort=0;self.verticalTarget=0
-            s.coarseTrimApplied={};s.batchCoarseTrimApplied={}
-            s.acquisitionPidActive=false;s.lastPidAt=now;s.lastTargetCommandAt=now;s.lastTargetAppliedAt=now
+        s.lastAckWaitSeconds=ackWait
+    end
+    s.pending=nil
+    if stage=="control" and (s.phase=="MAIN_LIFT" or s.phase=="READY") then
+        self:observeSystemsPidAfterAck(io,s,now)
+    end
+    if stage=="probe" then
+        if s.phase=="PROBING" then
+            s.phase="VERIFYING";s.phaseStartedAt=now;s.reason="WAITING FOR PROBE BALLOON DATA"
+            s.renewAt=now+SYSTEMS_PROBE_RENEW_SECONDS;s.renewing=false
+        else
+            s.renewing=false;s.renewAt=now+SYSTEMS_PROBE_RENEW_SECONDS
         end
         return
     end
-    if s.phase=="PROBING" then return end
-    if s.phase=="VERIFYING" then
-        local envelopeReady,envelopeReason=self:systemsEnvelopeReady(io)
-        if s.initialGasTarget and s.initialGasTarget.waitingForCapacity and
-            (not envelopeReady or balanced.phase=="UNAVAILABLE" or balanced.phase=="INFEASIBLE") then
-            s.reason=not envelopeReady and (envelopeReason or "WAITING FOR VERIFIED STARTUP GAS CAPACITY") or
-                (balancedReason or balanced.reason or "WAITING FOR VERIFIED STARTUP GAS CAPACITY")
+    local controlTargetsChanged=stage=="control" and
+        systemsBulkTargetsChanged(s.batchTargets,s.currentTargets,io.nodes)
+    s.currentTargets=copyMaps(s.batchTargets);s.lastControlAt=now
+    if stage=="control" then s.coarseTrimApplied=clone(s.batchCoarseTrimApplied or {}) end
+    if controlTargetsChanged then s.lastTargetAppliedAt=now end
+    if s.phase=="VENT_IGNITION" then
+        local gasInfo=s.initialGasTarget
+        if gasInfo and gasInfo.waitingForCapacity and not s.seedBatchPendingAck then
+            gasInfo.bootstrapAppliedM3PerChamberByQuadrant=systemsProviderTargetTotals(io,s.currentTargets)
+            gasInfo.status="WAITING_FOR_VERIFIED_CAPACITY"
+            gasInfo.controlMapPendingAck=false
+            s.phase="VERIFYING";s.phaseStartedAt=now;s.reason="WAITING FOR VERIFIED BALANCED CAPACITY FOR INITIAL GAS TARGET"
+            s.acquisitionPidActive=false;s.lastPidAt=now;s.lastTargetCommandAt=now;s.lastTargetAppliedAt=now
             self.systemsSnapshot={active=true,available=false,phase=s.phase,pending=false,complete=false,
-                target=s.target,reason=s.reason,warning=s.warning,curve=s.curve,
-                demandProgress=s.demandProgress,capacityProgress=s.capacityProgress,
-                initialGasTarget=clone(s.initialGasTarget)}
+                target=s.target,reason=s.reason,initialGasTarget=clone(gasInfo)}
             return
         end
-        if envelopeReady then
-            local maps=s.controlStartTargets
-            if type(maps)~="table" then self:stopSystems(io,"CONTROL START TARGETS UNAVAILABLE",now);return end
-            if balanced.phase=="UNAVAILABLE" or balanced.phase=="INFEASIBLE" then
-                local why=balancedReason or balanced.reason or "BALANCED LIFT CAPACITY UNAVAILABLE"
-                local canStartAtFloor=balanced.phase=="UNAVAILABLE" and
-                    (why:find("WAITING FOR BULK ENVELOPE CAPACITY",1,true) or
-                     why:find("BALLOON CAPACITY UNAVAILABLE",1,true)) and
-                    self:isFloorOnlyTargets(io,maps,true,false,true)
-                if canStartAtFloor then
-                    s.balancedReason=why
-                    if s.initialGasTarget and s.initialGasTarget.requestedM3PerChamber>0 then
-                        s.initialGasTarget.waitingForCapacity=true
-                        s.initialGasTarget.status="WAITING_FOR_VERIFIED_CAPACITY"
-                        s.initialGasTarget.reason=why
-                        s.initialGasTarget.bootstrapM3PerChamberByQuadrant=systemsProviderTargetTotals(io,maps)
-                    end
-                    s.phase="CONTROL_START"
-                    self:beginSystemsBatch(io,"control",maps,now);return
-                end
-                envelopeReady=false;envelopeReason=why
+        if gasInfo then
+            local actualTotals,actualReason=systemsProviderTargetTotals(io,s.currentTargets)
+            if actualTotals then gasInfo.appliedM3PerChamberByQuadrant=actualTotals end
+            gasInfo.controlMapPendingAck=false;gasInfo.waitingForCapacity=false
+            if gasInfo.requestedM3PerChamber>0 and s.seedBatchPendingAck then
+                gasInfo.seeded=true
+                gasInfo.status=gasInfo.limited and "APPLIED_LIMITED" or "APPLIED"
+            elseif gasInfo.requestedM3PerChamber>0 then
+                gasInfo.seeded=false;gasInfo.status="LIMITED_NOT_APPLIED"
+                gasInfo.reason=gasInfo.limitReason or actualReason or "INITIAL GAS TARGET WAS NOT APPLIED"
+                gasInfo.limited=true
             else
-                local capped,capReason,limited=self:capBalancedTargets(io,maps,balanced)
-                if not capped then
-                    envelopeReady=false;envelopeReason=capReason or "BALANCED PROVIDER FLOOR LIMIT UNAVAILABLE"
-                    s.balancedReason=envelopeReason
-                    balanced.phase="INFEASIBLE";balanced.reason=envelopeReason
-                else
-                    maps=capped
-                    local seedInfo
-                    local seedMaps,info,seedReason=self:systemsStartupGasSeedTargets(io,maps,balanced,s)
-                    seedInfo=info
-                    local seedWillApply=seedMaps~=nil and info.requestedM3PerChamber>0
-                    if not seedMaps then
-                        seedMaps=maps
-                        seedInfo=s.initialGasTarget or info
-                        seedInfo.waitingForCapacity=false
-                        if seedInfo.requestedM3PerChamber>0 then
-                            seedInfo.limited=true
-                            seedInfo.limitReason=seedReason or "INITIAL GAS TARGET COULD NOT BE SAFELY ALLOCATED"
-                        end
-                    end
-                    local seedCapped,seedCapReason,seedLimited=self:capBalancedTargets(io,seedMaps,balanced)
-                    if not seedCapped then
-                        envelopeReady=false;envelopeReason=seedCapReason or "INITIAL GAS TARGET CAPACITY UNAVAILABLE"
-                        s.balancedReason=envelopeReason
-                        return
-                    end
-                    local planned,plannedReason=systemsProviderTargetTotals(io,seedCapped)
-                    if not planned then
-                        self:stopSystems(io,plannedReason or "INITIAL GAS TARGET MAP INVALID",now);return
-                    end
-                    seedInfo.plannedM3PerChamberByQuadrant=planned
-                    seedInfo.waitingForCapacity=false
-                    seedInfo.controlMapPendingAck=true
-                    if seedLimited then
-                        seedInfo.limited=true
-                        seedInfo.limitReason=seedInfo.limitReason or seedCapReason or
-                            "WEAKEST BALANCED CAPACITY REDUCED THE INITIAL GAS TARGET"
-                        balanced.capApplied=true;balanced.demandLimited=true
-                    end
-                    seedInfo.status=seedInfo.requestedM3PerChamber>0 and "ACKNOWLEDGMENT_PENDING" or "DISABLED"
-                    s.initialGasTarget=seedInfo
-                    s.seedBatchPendingAck=seedWillApply
-                    seedCapped=retainActiveBulk(seedCapped,s.retainedBulk)
-                    maps=seedCapped
-                    s.controlStartTargets=copyMaps(seedCapped)
-                    s.phase="CONTROL_START"
-                    self:beginSystemsBatch(io,"control",maps,now);return
+                gasInfo.seeded=false;gasInfo.status="DISABLED"
+            end
+            s.seedBatchPendingAck=false
+        end
+        if s.airborneStart then
+            -- Already flying: no launch settle and no lift build. Hold
+            -- from the acknowledged current ceilings in READY.
+            s.launchComplete=true;s.launchDurationSeconds=0;s.airborne=true
+            self:captureSystemsBaseline(io,s,now)
+            s.reason="AIRBORNE START COMPLETE; HOLDING SELECTED ALTITUDE"
+            self.reason=s.reason
+            return
+        end
+        s.phase="MAIN_LIFT";s.phaseStartedAt=now
+        if not s.launchStartedAt and (s.launchDurationSeconds or 0)>0 then s.launchStartedAt=now end
+        s.lastLiftRatio=nil;s.lastLiftProgressAt=now;s.reason="BUILDING LIFT TO TARGET"
+        -- The acknowledged control-start map is the acquisition baseline.
+        -- Reset derivative history here so probe activation time cannot
+        -- enter either PID, and give trim symmetric authority immediately.
+        s.baseline=copyMaps(s.currentTargets);self.baseline=copyMaps(s.currentTargets)
+        self.outer:reset(io.vessel.altitude);self.inner:reset(io.vessel.verticalSpeed)
+        self:resetTrim();self:seedLevelBias();self.effort=0;self.verticalTarget=0
+        s.coarseTrimApplied={};s.batchCoarseTrimApplied={}
+        s.acquisitionPidActive=false;s.lastPidAt=now;s.lastTargetCommandAt=now;s.lastTargetAppliedAt=now
+    end
+    return
+end
+
+-- Summary: Check every steam vent's boiler reading against full startup efficiency.
+function Flight:systemsBoilersReady(io)
+    for _,q in ipairs(QUADS) do
+        for name,p in pairs(io.nodes[q] and io.nodes[q].providers or {}) do
+            if p.controlRole=="bulk" then
+                if p.boilerEfficiencyValid~=true or not finite(p.boilerEfficiency) or
+                    p.boilerEfficiency<0 or p.boilerEfficiency>1 then
+                    return false,q.."/"..name.." BOILER EFFICIENCY UNAVAILABLE; CHECK BOILER"
+                end
+                if p.boilerEfficiency<1 then
+                    return false,q.."/"..name.." LOW BOILER EFFICIENCY "..
+                        string.format("%.1f%%",p.boilerEfficiency*100).."; CHECK BOILER (REQUIRED 100%)"
                 end
             end
         end
-        s.reason=envelopeReason or "WAITING FOR PROBE BALLOON DATA"
-        if now-s.phaseStartedAt>SYSTEMS_ENVELOPE_TIMEOUT_SECONDS then
-            self:stopSystems(io,(envelopeReason or "BALLOON DATA UNAVAILABLE").."; PROBE TIMED OUT",now);return
+    end
+    return true
+end
+
+-- Summary: Find the bulk vent boiler that blocks a start: unreadable first, otherwise the lowest reading below the minimum.
+-- Returns nil when every bulk vent boiler reads at least SYSTEMS_BOILER_MINIMUM_EFFICIENCY.
+function Flight:systemsBoilerFault(io)
+    local unavailable,lowest
+    for _,q in ipairs(QUADS) do
+        for name,p in pairs(io.nodes[q] and io.nodes[q].providers or {}) do
+            if p.controlRole=="bulk" then
+                local label=q.."/"..tostring(name):sub(1,24)
+                if p.boilerEfficiencyValid~=true or not finite(p.boilerEfficiency) or
+                    p.boilerEfficiency<0 or p.boilerEfficiency>1 then
+                    unavailable=unavailable or label
+                elseif p.boilerEfficiency<SYSTEMS_BOILER_MINIMUM_EFFICIENCY and
+                    (not lowest or p.boilerEfficiency<lowest.efficiency) then
+                    lowest={label=label,efficiency=p.boilerEfficiency}
+                end
+            end
         end
-        if now>=s.renewAt then
-            s.renewing=true;s.phase="VERIFYING"
-            self:beginSystemsBatch(io,"probe",s.probeTargets,now);return
+    end
+    if unavailable then return unavailable.." BOILER EFFICIENCY UNAVAILABLE" end
+    if lowest then
+        return string.format("%s BOILER %.1f%% (MINIMUM %d%%)",lowest.label,lowest.efficiency*100,
+            SYSTEMS_BOILER_MINIMUM_EFFICIENCY*100)
+    end
+    return nil
+end
+
+-- Summary: Wait for boiler readiness, verify the startup envelope and send the initial control map.
+-- Boiler gate: every bulk vent boiler must read 100%. After SYSTEMS_BOILER_WAIT_SECONDS the start
+-- is refused if any boiler is below SYSTEMS_BOILER_MINIMUM_EFFICIENCY or unreadable, and otherwise
+-- continues with a warning naming the boiler that is still below 100%.
+local function systemsVerifyStartup(self,io,now,s,balanced,balancedReason)
+    local boilersReady,boilerReason=self:systemsBoilersReady(io)
+    local boilerAccepted=false
+    if boilersReady then
+        s.boilerWaitStartedAt=nil
+    else
+        s.boilerWaitStartedAt=s.boilerWaitStartedAt or now
+        local waited=now-s.boilerWaitStartedAt
+        if waited>=SYSTEMS_BOILER_WAIT_SECONDS then
+            local fault=self:systemsBoilerFault(io)
+            if fault then
+                self:stopSystems(io,"START REFUSED: "..fault,now,
+                    {phase=s.phase,boiler=fault,boilerWaitedSeconds=waited})
+                return
+            end
+            boilerAccepted=true
         end
+    end
+    if boilerAccepted then
+        s.boilerWaiting=nil;s.reason=nil
+        s.warning="BOILER BELOW 100% AFTER "..SYSTEMS_BOILER_WAIT_SECONDS.." S; STARTING: "..boilerReason
+    elseif not boilersReady then
+        s.boilerWaiting=true;s.reason=boilerReason;s.warning=boilerReason;self.reason=boilerReason
+        s.phaseStartedAt=now
+        if now>=(s.renewAt or now) then
+            s.renewing=true
+            self:beginSystemsBatch(io,"probe",s.probeTargets,now)
+        end
+        self.systemsSnapshot={active=true,available=false,phase=s.phase,pending=s.pending~=nil,
+            complete=false,target=s.target,reason=boilerReason,warning=boilerReason}
+        return
+    end
+    if s.boilerWaiting then
+        s.boilerWaiting=nil;s.reason=nil;s.warning=systemsWarning(io,s);s.phaseStartedAt=now
+    end
+    local envelopeReady,envelopeReason=self:systemsEnvelopeReady(io)
+    if s.initialGasTarget and s.initialGasTarget.waitingForCapacity and
+        (not envelopeReady or balanced.phase=="UNAVAILABLE" or balanced.phase=="INFEASIBLE") then
+        s.reason=not envelopeReady and (envelopeReason or "WAITING FOR VERIFIED STARTUP GAS CAPACITY") or
+            (balancedReason or balanced.reason or "WAITING FOR VERIFIED STARTUP GAS CAPACITY")
         self.systemsSnapshot={active=true,available=false,phase=s.phase,pending=false,complete=false,
             target=s.target,reason=s.reason,warning=s.warning,curve=s.curve,
-            demandProgress=s.demandProgress,capacityProgress=s.capacityProgress}
+            demandProgress=s.demandProgress,capacityProgress=s.capacityProgress,
+            initialGasTarget=clone(s.initialGasTarget)}
         return
     end
-    if s.phase=="CONTROL_START" then return end
-    if s.phase~="BUILDING_LIFT" and s.phase~="READY" then
-        self:stopSystems(io,"INVALID SYSTEMS PHASE",now);return
-    end
-    if s.phase=="BUILDING_LIFT" and s.launchStartedAt and not s.launchComplete then
-        local remaining=math.max(0,(s.launchDurationSeconds or 0)-(now-s.launchStartedAt))
-        if remaining>0 then
-            s.acquisitionPidActive=false;self.effort=0;self.verticalTarget=0
-            s.lastPidAt=now;s.lastLiftProgressAt=now
-            if now-s.lastControlAt>=io.config.network.sample_interval_seconds then
-                local launchDt=clamp(now-(s.lastControlAt or now),0.05,3)
-                s.lastControlAt=now
-                -- Keep leveling while the altitude PID is paused: an uneven
-                -- fill pitches the ship hardest during these first seconds.
-                local launchMaps,launchApplied=s.currentTargets,s.coarseTrimApplied
-                local trimmedOk=s.baseline and self:updateTrim(io,s.baseline,launchDt,launchDt,now)
-                if trimmedOk then
-                    local base={}
-                    for _,q in ipairs(QUADS) do
-                        base[q]={}
-                        for name,value in pairs(s.currentTargets[q] or {}) do
-                            local applied=s.coarseTrimApplied and s.coarseTrimApplied[q] and s.coarseTrimApplied[q][name]
-                            base[q][name]=finite(applied) and value-applied or value
-                        end
+    if envelopeReady then
+        local maps=s.controlStartTargets
+        if type(maps)~="table" then self:stopSystems(io,"VENT IGNITION TARGETS UNAVAILABLE",now);return end
+        if balanced.phase=="UNAVAILABLE" or balanced.phase=="INFEASIBLE" then
+            local why=balancedReason or balanced.reason or "BALANCED LIFT CAPACITY UNAVAILABLE"
+            local canStartAtFloor=balanced.phase=="UNAVAILABLE" and
+                (why:find("WAITING FOR BULK ENVELOPE CAPACITY",1,true) or
+                 why:find("BALLOON CAPACITY UNAVAILABLE",1,true)) and
+                self:isFloorOnlyTargets(io,maps,true,false,true)
+            if canStartAtFloor then
+                s.balancedReason=why
+                if s.initialGasTarget and s.initialGasTarget.requestedM3PerChamber>0 then
+                    s.initialGasTarget.waitingForCapacity=true
+                    s.initialGasTarget.status="WAITING_FOR_VERIFIED_CAPACITY"
+                    s.initialGasTarget.reason=why
+                    s.initialGasTarget.bootstrapM3PerChamberByQuadrant=systemsProviderTargetTotals(io,maps)
+                end
+                s.phase="VENT_IGNITION"
+                self:beginSystemsBatch(io,"control",maps,now);return
+            end
+            envelopeReady=false;envelopeReason=why
+        else
+            local capped,capReason,limited=self:capBalancedTargets(io,maps,balanced)
+            if not capped then
+                envelopeReady=false;envelopeReason=capReason or "BALANCED PROVIDER FLOOR LIMIT UNAVAILABLE"
+                s.balancedReason=envelopeReason
+                balanced.phase="INFEASIBLE";balanced.reason=envelopeReason
+            else
+                maps=capped
+                local seedInfo
+                local seedMaps,info,seedReason=self:systemsStartupGasSeedTargets(io,maps,balanced,s)
+                seedInfo=info
+                local seedWillApply=seedMaps~=nil and info.requestedM3PerChamber>0
+                if not seedMaps then
+                    seedMaps=maps
+                    seedInfo=s.initialGasTarget or info
+                    seedInfo.waitingForCapacity=false
+                    if seedInfo.requestedM3PerChamber>0 then
+                        seedInfo.limited=true
+                        seedInfo.limitReason=seedReason or "INITIAL GAS TARGET COULD NOT BE SAFELY ALLOCATED"
                     end
-                    local trimmed=self:applyCoarseSteamTrim(io,base,balanced,now)
-                    local capped=trimmed and self:capBalancedTargets(io,trimmed,balanced)
-                    if capped then
-                        launchMaps,launchApplied=capped,{}
-                        for _,q in ipairs(QUADS) do
-                            launchApplied[q]={}
-                            for name,p in pairs(io.nodes[q].providers or {}) do
-                                if p.controlRole=="bulk" and finite(capped[q][name]) and finite(base[q][name]) then
-                                    launchApplied[q][name]=capped[q][name]-base[q][name]
-                                end
+                end
+                local seedCapped,seedCapReason,seedLimited=self:capBalancedTargets(io,seedMaps,balanced)
+                if not seedCapped then
+                    envelopeReady=false;envelopeReason=seedCapReason or "INITIAL GAS TARGET CAPACITY UNAVAILABLE"
+                    s.balancedReason=envelopeReason
+                    return
+                end
+                local planned,plannedReason=systemsProviderTargetTotals(io,seedCapped)
+                if not planned then
+                    self:stopSystems(io,plannedReason or "INITIAL GAS TARGET MAP INVALID",now);return
+                end
+                seedInfo.plannedM3PerChamberByQuadrant=planned
+                seedInfo.waitingForCapacity=false
+                seedInfo.controlMapPendingAck=true
+                if seedLimited then
+                    seedInfo.limited=true
+                    seedInfo.limitReason=seedInfo.limitReason or seedCapReason or
+                        "WEAKEST BALANCED CAPACITY REDUCED THE INITIAL GAS TARGET"
+                    balanced.capApplied=true;balanced.demandLimited=true
+                end
+                seedInfo.status=seedInfo.requestedM3PerChamber>0 and "ACKNOWLEDGMENT_PENDING" or "DISABLED"
+                s.initialGasTarget=seedInfo
+                s.seedBatchPendingAck=seedWillApply
+                seedCapped=retainActiveBulk(seedCapped,s.retainedBulk)
+                maps=seedCapped
+                s.controlStartTargets=copyMaps(seedCapped)
+                s.phase="VENT_IGNITION"
+                self:beginSystemsBatch(io,"control",maps,now);return
+            end
+        end
+    end
+    s.reason=envelopeReason or "WAITING FOR PROBE BALLOON DATA"
+    if now-s.phaseStartedAt>SYSTEMS_ENVELOPE_TIMEOUT_SECONDS then
+        self:stopSystems(io,(envelopeReason or "BALLOON DATA UNAVAILABLE").."; PROBE TIMED OUT",now);return
+    end
+    if now>=s.renewAt then
+        s.renewing=true;s.phase="VERIFYING"
+        self:beginSystemsBatch(io,"probe",s.probeTargets,now);return
+    end
+    self.systemsSnapshot={active=true,available=false,phase=s.phase,pending=false,complete=false,
+        target=s.target,reason=s.reason,warning=s.warning,curve=s.curve,
+        demandProgress=s.demandProgress,capacityProgress=s.capacityProgress}
+    return
+end
+
+-- Summary: Maintain leveling and retained targets through the configured startup settling interval.
+local function systemsLaunchSettling(self,io,now,s,balanced)
+    local remaining=math.max(0,(s.launchDurationSeconds or 0)-(now-s.launchStartedAt))
+    if remaining>0 then
+        s.acquisitionPidActive=false;self.effort=0;self.verticalTarget=0
+        s.lastPidAt=now;s.lastLiftProgressAt=now
+        if now-s.lastControlAt>=io.config.network.sample_interval_seconds then
+            local launchDt=clamp(now-(s.lastControlAt or now),0.05,3)
+            s.lastControlAt=now
+            -- Keep leveling while the altitude PID is paused: an uneven
+            -- fill pitches the ship hardest during these first seconds.
+            local launchMaps,launchApplied=s.currentTargets,s.coarseTrimApplied
+            local trimmedOk=s.baseline and self:updateTrim(io,s.baseline,launchDt,launchDt,now)
+            if trimmedOk then
+                local base={}
+                for _,q in ipairs(QUADS) do
+                    base[q]={}
+                    for name,value in pairs(s.currentTargets[q] or {}) do
+                        local applied=s.coarseTrimApplied and s.coarseTrimApplied[q] and s.coarseTrimApplied[q][name]
+                        base[q][name]=finite(applied) and value-applied or value
+                    end
+                end
+                local trimmed=self:applyCoarseSteamTrim(io,base,balanced,now)
+                local capped=trimmed and self:capBalancedTargets(io,trimmed,balanced)
+                if capped then
+                    launchMaps,launchApplied=capped,{}
+                    for _,q in ipairs(QUADS) do
+                        launchApplied[q]={}
+                        for name,p in pairs(io.nodes[q].providers or {}) do
+                            if p.controlRole=="bulk" and finite(capped[q][name]) and finite(base[q][name]) then
+                                launchApplied[q][name]=capped[q][name]-base[q][name]
                             end
                         end
                     end
                 end
-                self:beginSystemsBatch(io,"control",launchMaps,now,launchApplied)
-                if not self.systemsRun or s.telemetryRecovery then return end
             end
-            s.reason="LAUNCH SETTLING / PID PAUSED: "..string.format("%.1f",remaining).."s"
-            self.reason=s.reason
-            self.systemsSnapshot={active=true,available=false,phase="LAUNCH",pending=s.pending~=nil,
-                complete=false,target=s.target,reason=s.reason,pidActive=false,launchRemainingSeconds=remaining}
-            return
+            self:beginSystemsBatch(io,"control",launchMaps,now,launchApplied)
+            if not self.systemsRun or s.telemetryRecovery then return end
         end
-        s.launchComplete=true
-        self.outer:reset(io.vessel.altitude);self.inner:reset(io.vessel.verticalSpeed)
-        s.dynamics=nil;s.acquisitionMotionSamples=0;s.acquisitionMotionReadyAt=nil
-        s.lastPidAt=now;s.lastControlAt=now;s.lastSystemsUpdateAt=now
-        s.reason="LAUNCH SETTLED; BUILDING LIFT TO TARGET"
+        s.reason="LAUNCH SETTLING / PID PAUSED: "..string.format("%.1f",remaining).."s"
+        self.reason=s.reason
+        self.systemsSnapshot={active=true,available=false,phase="LAUNCH",pending=s.pending~=nil,
+            complete=false,target=s.target,reason=s.reason,pidActive=false,launchRemainingSeconds=remaining}
         return
     end
-    if balanced.phase=="UNAVAILABLE" or balanced.phase=="INFEASIBLE" then
-        s.reason=s.balancedReason or balanced.reason or "BALANCED LIFT CAPACITY UNAVAILABLE"
-        if s.currentTargets and now-s.lastControlAt>=io.config.network.sample_interval_seconds then
-            s.lastControlAt=now
-            self:beginSystemsBatch(io,"control",s.currentTargets,now)
-        end
-        self.systemsSnapshot={active=true,available=false,phase=s.phase,pending=s.pending~=nil,
-            complete=s.phase=="READY",target=s.target,reason=s.reason,warning=s.warning,
-            liftRatio=s.dynamics and s.dynamics.actualRatio,balancedLift=balanced}
-        return
-    end
+    s.launchComplete=true
+    self.outer:reset(io.vessel.altitude);self.inner:reset(io.vessel.verticalSpeed)
+    s.dynamics=nil;s.acquisitionMotionSamples=0;s.acquisitionMotionReadyAt=nil
+    s.lastPidAt=now;s.lastControlAt=now;s.lastSystemsUpdateAt=now
+    s.reason="LAUNCH SETTLED; BUILDING LIFT TO TARGET"
+    return
+end
+
+-- Summary: Advance altitude guidance on fresh control intervals, cap provider targets and issue the next batch.
+local function systemsActiveControl(self,io,now,s,balanced)
     local c=self.config;local v=io.vessel
     local lift=0;for _,q in ipairs(QUADS) do lift=lift+io.nodes[q].balloon.lift end
     -- The raw getter excludes both gravity and the local pressure multiplier.
@@ -5371,7 +5637,7 @@ function Flight:updateSystems(io,now)
     local supportSettled=math.abs(actualRatio-supportTarget)<=supportTolerance and
         not (actualRatio<supportTarget and finite(measuredLiftRate) and
             measuredLiftRate< -supportTolerance/math.max(responseSeconds,1))
-    if s.phase=="BUILDING_LIFT" then
+    if s.phase=="MAIN_LIFT" then
         if self:systemsCaptureReady(s,v,now,supportSettled,actualRatio) then
             self:captureSystemsBaseline(io,s,now)
         end
@@ -5409,7 +5675,7 @@ function Flight:updateSystems(io,now)
     local outerIBefore,innerIBefore=self.outer.i,self.inner.i
     s.lastLiftCalculationAt=now
     local desiredRatio=1
-    if s.phase=="BUILDING_LIFT" then
+    if s.phase=="MAIN_LIFT" then
         desiredRatio=self:systemsAcquisitionControl(io,s,pidDt,actualRatio,now,slewDt)
         desiredVs=self.verticalTarget or 0
         if s.acquisitionPidActive then
@@ -5425,6 +5691,7 @@ function Flight:updateSystems(io,now)
         maps,mapReason=self:systemsHoldTargets(io,s,pidDt,actualRatio,now,slewDt)
         if not maps then self:stopSystems(io,mapReason or "SYSTEMS HOLD DATA UNAVAILABLE",now);return end
         pcall(self.rememberHoverOffset,self,io.vessel,s,actualRatio,now)
+        pcall(self.autoEnablePropulsion,self,io,s,now)
         desiredRatio=finite(s.lastDesiredRatio) and s.lastDesiredRatio or desiredRatio
     else
         maps,direction,allAtMaximum,curveTelemetry=self:systemsControlTargets(io,s,dt,desiredRatio,actualRatio,now,slewDt)
@@ -5438,7 +5705,7 @@ function Flight:updateSystems(io,now)
             self.outer.i=outerIBefore;self.inner.i=innerIBefore
         end
     end
-    if s.phase=="BUILDING_LIFT" and s.acquisitionPidActive and s.initialGasTarget and
+    if s.phase=="MAIN_LIFT" and s.acquisitionPidActive and s.initialGasTarget and
         s.initialGasTarget.seeded==true and finite(s.initialGasTarget.requestedM3PerChamber) and
         s.initialGasTarget.requestedM3PerChamber>0 then
         local demandCapped,capReason,capInfo=capSeededStartupSupportTargets(io,maps,desiredRatio,self.config)
@@ -5497,7 +5764,112 @@ function Flight:updateSystems(io,now)
         warning=s.warning,curve=s.curve,demandProgress=s.demandProgress,capacityProgress=s.capacityProgress,
         fastBoost=s.fastBoost,balancedLift=balanced}
 end
--- @ama-summary: Track vent-start acknowledgements and report the completed startup operation.
+
+-- Summary: Advance startup, acquisition, recovery and altitude-hold target batches.
+function Flight:updateSystems(io,now)
+    local s=self.systemsRun
+    if not s then
+        local prepared,reason=self:systemsPreflight(io,now)
+        self.systemsAvailable=prepared~=nil;self.systemsBlockedReason=reason
+        local previous=self.systemsLastOutcome
+        self.systemsSnapshot={active=false,available=self.systemsAvailable==true,
+            phase=previous and previous.phase or (self.systemsAvailable and "READY" or "IDLE"),pending=false,
+            complete=false,target=previous and previous.target or nil,
+            reason=reason or (previous and previous.reason or nil),
+            abortReason=previous and previous.phase=="ABORTED" and previous.reason or nil,
+            abortDetails=previous and previous.abortDetails or nil}
+        return
+    end
+    if s.telemetryRecovery then
+        self:updateSystemsRecovery(io,now,s)
+        return
+    end
+    local good,fault,abortDetails=self:systemsGuard(io,now,s)
+    if not good then
+        if TelemetryRecovery.isTransientGuardFault(io,s,now,fault,self) then
+            TelemetryRecovery.suspend(self,s,now,fault)
+            self:updateSystemsRecovery(io,now,s)
+        else self:stopSystems(io,fault,now,abortDetails) end
+        return
+    end
+    local previousUpdateAt=s.lastSystemsUpdateAt
+    if finite(previousUpdateAt) and now-previousUpdateAt>SYSTEMS_SAMPLE_GAP_SECONDS then
+        local pending=s.pending and s.pending[QUADS[1]]
+        local pendingAckSeconds=pending and finite(pending.sentAt) and now-pending.sentAt or nil
+        -- Scheduling gaps suspend integration and retain lift; recovery must
+        -- revalidate live identity, providers, targets and ACKs before resuming.
+        TelemetryRecovery.suspend(self,s,now,"SYSTEMS RUNTIME SAMPLE GAP")
+        s.telemetryRecovery.sampleGapDetails={phase=s.phase,lastUpdateAt=previousUpdateAt,
+            elapsedSeconds=now-previousUpdateAt,sampleGapLimitSeconds=SYSTEMS_SAMPLE_GAP_SECONDS,
+            pendingAckSeconds=pendingAckSeconds}
+        return
+    elseif finite(previousUpdateAt) and now<previousUpdateAt then
+        self:stopSystems(io,"SYSTEMS RUNTIME CLOCK MOVED BACKWARD",now,{phase=s.phase,
+            lastUpdateAt=previousUpdateAt,elapsedSeconds=now-previousUpdateAt,
+            sampleGapLimitSeconds=SYSTEMS_SAMPLE_GAP_SECONDS})
+        return
+    end
+    s.lastSystemsUpdateAt=now
+    -- A fresh node may have lost its renewable lease before the command's
+    -- rejection arrives. Re-probe using the retained run instead of waiting
+    -- for a matching rejected sequence or letting an ACK timeout abort it.
+    if s.batchStage=="control" or s.phase=="READY" or s.phase=="MAIN_LIFT" then
+        for _,q in ipairs(QUADS) do
+            local node=io.nodes[q]
+            if node.systemsStage==nil and node.systemsProbeReady~=true then
+                TelemetryRecovery.suspend(self,s,now,q.." LIFT CONTROL LEASE LOST")
+                self:updateSystemsRecovery(io,now,s);return
+            end
+        end
+    end
+    self:observeSystemsDynamics(io,s,now)
+    s.warning=systemsWarning(io,s)
+    self.reason=s.reason or self.reason
+    if (s.phase=="MAIN_LIFT" or s.phase=="READY") and self.controls and
+        finite(self.controls.targets.altitude) and self.controls.targets.altitude>=self.config.minimum_world_y and
+        self.controls.targets.altitude<=self.config.altitude_ceiling then
+        -- START SYSTEMS seeds this target from the selected cockpit value.
+        -- Later valid cockpit edits remain live even while an ACK is pending.
+        if s.target~=self.controls.targets.altitude then s.supportCorrectionRemainders={} end
+        s.target=self.controls.targets.altitude
+    end
+    local balanced,balancedReason=self:balancedLiftModel(io,s.target,now)
+    self.balancedLift=balanced;s.balancedLift=balanced
+    if balanced.phase=="UNAVAILABLE" or balanced.phase=="INFEASIBLE" then
+        s.balancedReason=balancedReason or balanced.reason or "BALANCED LIFT CAPACITY UNAVAILABLE"
+    elseif balanced.targetUnreachable then
+        s.balancedReason=balanced.reason
+    else
+        s.balancedReason=nil
+    end
+    if s.pending then
+        return systemsAcknowledgeBatch(self,io,now,s)
+    end
+    if s.phase=="PROBING" then return end
+    if s.phase=="VERIFYING" then
+        return systemsVerifyStartup(self,io,now,s,balanced,balancedReason)
+    end
+    if s.phase=="VENT_IGNITION" then return end
+    if s.phase~="MAIN_LIFT" and s.phase~="READY" then
+        self:stopSystems(io,"INVALID SYSTEMS PHASE",now);return
+    end
+    if s.phase=="MAIN_LIFT" and s.launchStartedAt and not s.launchComplete then
+        return systemsLaunchSettling(self,io,now,s,balanced)
+    end
+    if balanced.phase=="UNAVAILABLE" or balanced.phase=="INFEASIBLE" then
+        s.reason=s.balancedReason or balanced.reason or "BALANCED LIFT CAPACITY UNAVAILABLE"
+        if s.currentTargets and now-s.lastControlAt>=io.config.network.sample_interval_seconds then
+            s.lastControlAt=now
+            self:beginSystemsBatch(io,"control",s.currentTargets,now)
+        end
+        self.systemsSnapshot={active=true,available=false,phase=s.phase,pending=s.pending~=nil,
+            complete=s.phase=="READY",target=s.target,reason=s.reason,warning=s.warning,
+            liftRatio=s.dynamics and s.dynamics.actualRatio,balancedLift=balanced}
+        return
+    end
+    return systemsActiveControl(self,io,now,s,balanced)
+end
+-- Summary: Track vent-start acknowledgements and report the completed startup operation.
 function Flight:updateStartup(io,now)
     self.startupComplete=io.config.vent_startup_enabled==true
     for _,q in ipairs(QUADS) do
@@ -5533,8 +5905,8 @@ function Flight:updateStartup(io,now)
     self.startupBlockedReason=blocked
     self.startupAvailable=not self.startupComplete and self.startupPending==nil and maps~=nil
 end
--- @ama-section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
--- @ama-summary: Copy a permitted navigator action into a bounded core request.
+-- Section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
+-- Summary: Copy a permitted navigator action into a bounded core request.
 local function copyBridgeAction(value,depth,budget)
     local kind=type(value)
     if kind=="number" then if not finite(value) then error("nonfinite action",0) end;return value end
@@ -5557,7 +5929,7 @@ local function sameBridgeAction(a,b)
     for k in pairs(b) do if a[k]==nil then return false end end
     return true
 end
--- @ama-summary: Correlate navigator requests with the current core session and dispatch accepted actions.
+-- Summary: Correlate navigator requests with the current core session and dispatch accepted actions.
 function Flight:bridgeRequest(io,message,now)
     local boot,seq=message.boot,message.seq
     if type(boot)~="string" or #boot==0 or #boot>128 or not boot:match("^[%w_%.%-:]+$") or
@@ -5607,14 +5979,14 @@ function Flight:bridgeRequest(io,message,now)
     return record.accepted,record.reason
 end
 -- ===================== ASSEMBLY GATE =====================
--- A disassembled (or not yet confirmed) vessel has no meaningful CoM, balloon
--- lift or attitude, so every lift calculation stops here: START SYSTEMS,
--- altitude hold, trim and PID tuning are cancelled and their integrators are
--- discarded. Like other faults, this cancels authority and RETAINS the lift
--- ceilings already applied; it never writes lift outputs itself. Propulsion
--- is stopped separately by Thrust (nodes ramp to zero). Nothing resumes on
--- reassembly: START SYSTEMS must be requested again.
--- @ama-summary: Suspend assembly-gated flight operations and retain their last applied lift settings.
+-- A blocked assembly gate cancels active lift calculations and PID tuning.
+-- Applied provider ceilings are retained while command authority is released.
+-- Pending tuning reviews and vent startup state are cleared.
+-- An active systems run with uncertain assembly follows telemetry recovery.
+-- Confirmed disassembly enters this blocked path.
+-- Propulsion is stopped separately by Thrust; its endpoints ramp to zero.
+-- Retained systems intent is evaluated by autoResumeSystems on later updates.
+-- Summary: Suspend assembly-gated flight operations and retain their last applied lift settings.
 function Flight:assemblyBlocked(io,now,reason)
     reason=reason or "VESSEL DISASSEMBLED"
     if self.tuningRun then self:abortTuning(io,reason) end
@@ -5633,7 +6005,7 @@ function Flight:assemblyBlocked(io,now,reason)
     self.startupAvailable=false;self.startupBlockedReason=reason
     self.trimStatus=nil
 end
--- @ama-summary: Publish the validated altitude/input authority context to chamber controllers.
+-- Summary: Publish the validated altitude/input authority context to chamber controllers.
 function Flight:renewLiftControlContext(io,now)
     local controls=self.controls
     local assembled,_,assembly=Flight.assemblyGate(io,now)
@@ -5658,9 +6030,9 @@ function Flight:renewLiftControlContext(io,now)
     if telemetrySuspended or assemblySuppressed then inputsActive=false end
     local limits=self.config or {}
     local altitudeValid=not telemetrySuspended and not assemblySuppressed and finite(selected) and finite(limits.minimum_world_y) and
-        finite(limits.maximum_world_y) and selected>=limits.minimum_world_y and selected<=limits.maximum_world_y
+        finite(limits.altitude_ceiling) and selected>=limits.minimum_world_y and selected<=limits.altitude_ceiling
     local activeSystemsPhase=not self.systemsRun or self.systemsRun.phase=="READY" or
-        (self.systemsRun.phase=="BUILDING_LIFT" and self.systemsRun.acquisitionPidActive==true)
+        (self.systemsRun.phase=="MAIN_LIFT" and self.systemsRun.acquisitionPidActive==true)
     local pidCandidate=self.enabled==true and not self.shutdownJob and not self.emergencyLiftLatched and
         not self.tuningRun and not self.startupPending and not self.maintenanceJob and activeSystemsPhase and
         not telemetrySuspended and not assemblySuppressed
@@ -5668,7 +6040,7 @@ function Flight:renewLiftControlContext(io,now)
     if pidCandidate and altitudeValid and inputsActive then
         if self.systemsRun then
             local guarded=self:systemsGuard(io,now,self.systemsRun)==true
-            if self.systemsRun.phase=="BUILDING_LIFT" then
+            if self.systemsRun.phase=="MAIN_LIFT" then
                 local feedForward=self:systemsHoverFeedForward(io,self.systemsRun,now)
                 pidActive=guarded and feedForward~=nil
                 if not pidActive then self.systemsRun.acquisitionPidActive=false end
@@ -5691,7 +6063,7 @@ function Flight:renewLiftControlContext(io,now)
     return context
 end
 -- Rebind a fresh Sable association across retained control references.
--- @ama-summary: Adopt a fresh Sable UUID across retained control references and persistent selections.
+-- Summary: Adopt a fresh Sable UUID across retained control references and persistent selections.
 function Flight:adoptVesselIdentity(io,now)
     local v=io.vessel or {}
     local observed=(io.primaryReadings or {}).uuid
@@ -5706,7 +6078,7 @@ function Flight:adoptVesselIdentity(io,now)
         now-track.definiteAt>stale
     if not uncertain then return end
     self.vesselAdoptedAt=observed.at
-    -- @ama-summary: Update matching retained vessel UUID references through the operation's nested records.
+    -- Summary: Update matching retained vessel UUID references through the operation's nested records.
     local function rebind(value,depth,seen)
         if type(value)~="table" or depth>8 or seen[value] then return end
         seen[value]=true
@@ -5723,7 +6095,7 @@ function Flight:adoptVesselIdentity(io,now)
     if type(os.__amaryllisLog)=="function" then os.__amaryllisLog("Vessel association updated: "..old.." -> "..v.uuid,"core.identity") end
 end
 
--- @ama-summary: Update cockpit state, retained intent and the current altitude-control lifecycle.
+-- Summary: Update cockpit state, retained intent and the current altitude-control lifecycle.
 function Flight:update(io,now)
     self:adoptVesselIdentity(io,now)
     NavigationSettings.ensure(io.config)
@@ -5802,14 +6174,7 @@ function Flight:update(io,now)
     if dt<io.config.network.sample_interval_seconds then return end
     if dt>3 or dt<=0 then self:stop("CONTROL SAMPLE GAP"); return end
     self.lastUpdate=now
-    if self.controls then self.target=self.controls.targets.altitude
-    else
-        -- Legacy fixtures/configurations retain the original constant-rate input.
-        local raw=io.inputs.raw
-        local direction=((raw.altitude_up or 0)>0 and 1 or 0)-((raw.altitude_down or 0)>0 and 1 or 0)
-        self.target=clamp(self.target+direction*self.config.target_rate_blocks_per_second*dt,
-            self.config.minimum_world_y,self.config.maximum_world_y)
-    end
+    if self.controls then self.target=self.controls.targets.altitude end
     local oldOuterI,oldInnerI=self.outer.i,self.inner.i
     self.verticalTarget,self.speedLimited=self.outer:step(self.target,io.vessel.altitude,dt,
         -self.config.max_vertical_speed,self.config.max_vertical_speed)
@@ -5868,7 +6233,7 @@ function Flight:update(io,now)
         self.pending[q]={seq=seq,targets=allTargets[q]}
     end
 end
--- @ama-summary: Add flight, maintenance, recovery and systems information to a cached display snapshot.
+-- Summary: Add flight, maintenance, recovery and systems information to a cached display snapshot.
 function Flight:decorate(snapshot,io,now)
     io=io or {}
     if io.config and io.thrust and self.controls then
@@ -5906,7 +6271,7 @@ function Flight:decorate(snapshot,io,now)
         active=restart~=nil and (restart.job~=nil or restart.saved~=nil),reason=restart and restart.reason}
     snapshot.systemsStopReview=self.stopReview
     local trimPidActive=not self.systemsRun or
-        ((self.systemsRun.phase=="READY" or self.systemsRun.phase=="BUILDING_LIFT") and
+        ((self.systemsRun.phase=="READY" or self.systemsRun.phase=="MAIN_LIFT") and
             self.systemsRun.acquisitionPidActive==true)
     local trimControl=self.enabled and trimPidActive and
         self.trimStatus and clone(self.trimStatus) or {active=false}
@@ -5928,7 +6293,7 @@ function Flight:decorate(snapshot,io,now)
             heights[q]=altitude.sensorWorldY
         end
         if heights then
-            trimControl.foreAftHeightDifferenceBlocks=(heights.FL+heights.FR)/2-(heights.RL+heights.RR)/2
+            trimControl.foreAftHeightDifferenceBlocks=(heights.FL+heights.FR)/2-(heights.BL+heights.BR)/2
         end
     end
     snapshot.trimControl=trimControl
@@ -5945,15 +6310,20 @@ function Flight:decorate(snapshot,io,now)
         targetUnreachable=balanced.targetUnreachable==true,capApplied=balanced.capApplied==true,
         demandLimited=balanced.demandLimited==true}
     if self.controls then self.controls:decorate(snapshot) end
+    -- Mode selectors publish pilot intent; automatic controllers publish their
+    -- temporary operating modes separately for instruments and status checks.
+    snapshot.effectiveModes=clone(snapshot.modes or {})
     if io.autopilot and io.autopilot.active then
-        snapshot.modes=clone(snapshot.modes or {})
-        snapshot.modes.heading="SEL";snapshot.modes.throttle="SEL"
+        snapshot.effectiveModes.heading="SEL"
+        snapshot.effectiveModes.throttle=io.autopilot.primaryIdle and "DIRECT" or "SEL"
         snapshot.targets=clone(snapshot.targets or {})
-        snapshot.targets.speed=io.autopilot.arrivalAnchor and 0 or io.autopilot.speedTarget
+        snapshot.targets.speed=io.autopilot.speedTarget
         snapshot.targets.heading=io.autopilot.headingTarget or (io.vessel or {}).heading
     end
+    if io.positionAnchor and io.positionAnchor.active then snapshot.effectiveModes.throttle="DIRECT" end
     if restart and restart.saved then
         snapshot.modes=clone(restart.saved.controls.modes)
+        snapshot.effectiveModes=clone(snapshot.modes)
         snapshot.targets=clone(restart.saved.controls.targets)
     end
     snapshot.settings=snapshot.settings or {};snapshot.settings.entries=self.settingsEntries
@@ -5963,7 +6333,8 @@ function Flight:decorate(snapshot,io,now)
     snapshot.altitudeControl={enabled=self.enabled,available=self.available==true,reason=self.reason,
         target=self.systemsRun and self.systemsRun.target or self.target,
         effort=self.effort,verticalSpeedTarget=self.verticalTarget,saturated=self.saturated==true,
-        baselineGasMix=self.enabled and self.mixBaseline or nil}
+        baselineGasMix=self.enabled and self.mixBaseline or nil,
+        ceiling=Controls.altitudeCeiling(self.config)}
     snapshot.systemsStartup=clone(self.systemsSnapshot or {active=false,available=self.systemsAvailable==true,
         phase=self.systemsAvailable and "READY" or "IDLE",reason=self.systemsBlockedReason}
     )
@@ -5986,14 +6357,14 @@ function Flight:decorate(snapshot,io,now)
         if finite(selected) and selected~=presentationTarget then self.initialAcquisitionEnded=true end
         local displayPhase=s.phase
         if s.phase=="READY" then displayPhase="READY"
-        elseif s.phase=="CONTROL_START" then displayPhase="OPENING STEAM VENTS"
-        elseif s.phase=="BUILDING_LIFT" then
+        elseif s.phase=="VENT_IGNITION" then displayPhase="OPENING STEAM VENTS"
+        elseif s.phase=="MAIN_LIFT" then
             if self.initialAcquisitionEnded or s.airborneStart then displayPhase="READY"
             else displayPhase=s.launchMotionVerified and "ACQUIRING SEL ALT" or "STATIC INFLATION" end
         end
         snapshot.systemsStartup.displayPhase=displayPhase
         snapshot.systemsStartup.target=self.systemsRun.target
-        snapshot.systemsStartup.pidActive=(self.systemsRun.phase=="BUILDING_LIFT" or
+        snapshot.systemsStartup.pidActive=(self.systemsRun.phase=="MAIN_LIFT" or
             self.systemsRun.phase=="READY") and self.systemsRun.acquisitionPidActive==true
         snapshot.systemsStartup.initialGasTarget=clone(self.systemsRun.initialGasTarget)
         local s=self.systemsRun

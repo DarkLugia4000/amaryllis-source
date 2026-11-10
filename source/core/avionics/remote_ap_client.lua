@@ -1,4 +1,4 @@
--- @ama-section: Remote AP client | Reviewed destinations and correlated command progress.
+-- Section: Remote AP client | Reviewed destinations and correlated command progress.
 -- Paired remote AP: explicit review, queued acknowledgement and read-only progress.
 local function readJSON(path)
     local h=fs.open(path,"r");if not h then return nil end
@@ -14,8 +14,8 @@ local form={name="Remote CMD",cruiseSpeed=3}
 local releaseAnchor=false
 local nav={};local boot,pending,timer,refresh,command,review,editor
 local online=false;local notice="Connecting...";local sequence=0
--- @ama-section: Remote AP client | Reviewed destinations and correlated command progress.
--- @ama-summary: Find and open the network modems used by the current client.
+-- Section: Remote AP client | Reviewed destinations and correlated command progress.
+-- Summary: Find and open the network modems used by the current client.
 local function modems()
     local found=false
     for _,name in ipairs(peripheral.getNames()) do if peripheral.hasType(name,"modem") then
@@ -24,7 +24,7 @@ local function modems()
     end end
     return found
 end
--- @ama-summary: Send the current correlated packet to its configured peer.
+-- Summary: Send the current correlated packet to its configured peer.
 local function send(action,extra)
     if pending then return false end
     if not modems() then online=false;notice="Attach wireless modem";return false end
@@ -48,7 +48,7 @@ local function valid()
     if not finite(form.cruiseSpeed) or form.cruiseSpeed<.1 or form.cruiseSpeed>30 then return false,"Enter speed (0.1 to 30)" end
     return true
 end
--- @ama-summary: Capture the requested remote destination for operator review.
+-- Summary: Capture the requested remote destination for operator review.
 local function startReview(cancel)
     if command or pending then notice="Wait for current request";return end
     if not online or not boot or not nav.session then notice="Connect to core first";return end
@@ -64,7 +64,7 @@ local function startReview(cancel)
         destination={name=form.name,x=form.x,z=form.z,altitude=form.altitude,cruiseSpeed=form.cruiseSpeed},releaseAnchor=releaseAnchor}
     notice="G confirms / B goes back"
 end
--- @ama-summary: Submit the reviewed operation and track its request acknowledgement.
+-- Summary: Submit the reviewed operation and track its request acknowledgement.
 local function confirm()
     if not review or pending or command then return end
     if not online or nav.session~=review.session or nav.generation~=review.generation then review=nil;notice="Authority changed; review again";return end
@@ -75,14 +75,14 @@ local function confirm()
     local action=review.cancel and "ap_cancel" or "ap_send"
     if send(action,extra) then command={id=commandID,session=review.session};review=nil;notice="PENDING: core must validate" end
 end
--- @ama-summary: Render the current view into its configured terminal or monitor.
+-- Summary: Render the current view into its configured terminal or monitor.
 local function draw()
     local width,height=term.getSize();term.setBackgroundColor(colors.black);term.setTextColor(colors.white);term.clear()
     local function row(y,value,color)
         if y>=1 and y<=height then term.setCursorPos(1,y);term.setTextColor(color or colors.white);term.write(text(value):sub(1,width)) end
     end
     row(1,"AMARYLLIS / REMOTE AP",colors.cyan)
-    row(2,(online and "CONNECTED " or "OFFLINE ").."#"..cfg.coreID,online and colors.lime or colors.yellow)
+    row(2,online and ("CONNECTED #"..cfg.coreID) or "CORE UNREACHABLE",online and colors.lime or colors.yellow)
     row(3,"Access "..(nav.permitted and "ALLOW" or "DENY").." / "..(nav.enabled and "ENABLED" or "DISABLED"))
     row(4,"AP "..text(nav.state)..(nav.owned and " / YOUR ROUTE" or ""),colors.cyan)
     local d=nav.destination

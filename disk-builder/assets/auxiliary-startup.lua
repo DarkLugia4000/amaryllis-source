@@ -148,8 +148,8 @@ end,function()
     local roles={navigator="Bridge navigator",["heading-left"]="Left heading display",["heading-right"]="Right heading display",
         ["heading-main"]="Main heading display",chamber_fl="Front-left lift chamber",chamber_fr="Front-right lift chamber",
         chamber_bl="Rear-left lift chamber",chamber_br="Rear-right lift chamber",primary_l="Left primary controller",
-        primary_r="Right primary controller",["thrust-lb"]="Rear-left thrust",["thrust-rb"]="Rear-right thrust",
-        ["thrust-ls"]="Left-side thrust",["thrust-rs"]="Right-side thrust"}
+        primary_r="Right primary controller",["thrust-lb"]="Front-left thrust",["thrust-rb"]="Front-right thrust",
+        ["thrust-ls"]="Rear-left thrust",["thrust-rs"]="Rear-right thrust"}
     while true do
         term.clear();term.setCursorPos(1,1)
         print("AMARYLLIS INSTALLATION | #"..os.getComputerID())
@@ -160,8 +160,8 @@ end,function()
         print(labels[status.state] or tostring(status.state or "Starting"))
         if status.detail then print(tostring(status.detail)) end
         print("");print("This screen disappears after verification.")
-        print("Wrong role? Insert the setup disk and reboot.")
-        print("Open Assignments before importing on core.")
+        print("Wrong role? Hold Ctrl+T and run the loader")
+        print("again, or boot the setup disk, before core imports.")
         sleep(1)
     end
 end)
