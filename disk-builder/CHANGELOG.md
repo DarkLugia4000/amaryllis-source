@@ -5,6 +5,11 @@ Version entries describe the changes recorded for each release. See the
 
 ## Unreleased
 
+### Personal paths removed from the docs
+
+- `docs/history/STATE_MODULE_WORK.md` and `docs/architecture/Amaryllis-Core-File-Responsibilities.md` name the
+  world folders relative to the game instance instead of by full Windows user path.
+
 ### Pastebin loader published
 
 - The loader (`tools/pastebin/loader.lua`) is published as Pastebin `bn1RbWtb`. `disk-builder/README.md` names

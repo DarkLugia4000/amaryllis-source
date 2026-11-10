@@ -24,7 +24,7 @@ Installer approach planned to limit bootstrap complexity:
 - Add state to portable release.roles even when source fleet lacks ID, no hardcoded68 in installer. Build state payload from current core reader dependencies; source-world live install can be staged directly into68 after backup of its current files.
 - Required dependencies for helper sampling: io.lua (requires thrust,fleet,vessel_sources), thrust.lua (no requires), fleet.lua, vessel_sources.lua (requires storage), storage.lua (requires navigation_settings), navigation_settings.lua, sampling.lua, state_wire.lua, state_reader.lua. No Flight/main control loop.
 
-Source paths: core = C:/Users/user/AppData/Roaming/ATLauncher/instances/CreateAeronautics/saves/New World/computercraft/computer/35. Project Amaryllis-portable. Python = C:/Users/user/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe; Lupa in temp/amaryllis-thrust-live-runtime. Tests/check_vessel_sources.py copy core avionic Lua to validation-v45 tree. Existing regression scripts documented in conversation.
+Source paths: core = the test world's computer 35 (`saves/New World/computercraft/computer/35`). Project Amaryllis-portable. Python = the agent's bundled Python runtime; Lupa in temp/amaryllis-thrust-live-runtime. Tests/check_vessel_sources.py copy core avionic Lua to validation-v45 tree. Existing regression scripts documented in conversation.
 
 Files inspected in this turn, no production edits yet at note creation:
 

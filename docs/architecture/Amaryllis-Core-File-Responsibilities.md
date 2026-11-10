@@ -2,7 +2,7 @@
 
 Inspected 26 October 2026. Source: Amaryllis Trial Journeys, core computer #0.
 
-Source folder: `C:\Users\user\AppData\Roaming\ATLauncher\instances\CreateAeronautics\saves\Amaryllis Trial Journeys\computercraft\computer\0`
+Source folder: `saves/Amaryllis Trial Journeys/computercraft/computer/0` in the Create Aeronautics instance.
 
 **146 files: 96 Lua programs/modules and 50 configuration, record and backup files.**
 
