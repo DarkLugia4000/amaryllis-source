@@ -9,7 +9,7 @@
 --   note     cross-setting constraint or other context for the bound.
 --   fallbacks values the code uses when the setting is absent. Several values, or a value that
 --            differs from the shipped one, are contextual fallbacks kept for a separate decision.
--- tests/test_config_registry.py checks every field against config.json, Storage.validateConfig,
+-- tests/test_state.py checks every field against config.json, Storage.validateConfig,
 -- the cockpit settings editor and the inline fallbacks in flight.lua, thrust.lua and anchor.lua.
 local Registry = {}
 

@@ -1,6 +1,6 @@
 # Flight and thrust tuning reference
 
-Values below are shipped values from `source/core/avionics/config.json`. They are not universal flight-tested operating ranges. The tables below are generated from `source/core/avionics/config_registry.lua`, which records each setting's unit, accepted bound, the place that enforces it and the fallback used when the setting is absent. `tests/test_config_registry.py` checks the registry against `config.json`, `Storage.validateConfig`, the cockpit settings editor and the control code, and fails if these tables are not regenerated. Regenerate with `python tools/config_registry.py --write`. Explicit installed tuning is preserved.
+Values below are shipped values from `source/core/avionics/config.json`. They are not universal flight-tested operating ranges. The tables below are generated from `source/core/avionics/config_registry.lua`, which records each setting's unit, accepted bound, the place that enforces it and the fallback used when the setting is absent. `tests/test_state.py` checks the registry against `config.json`, `Storage.validateConfig`, the cockpit settings editor and the control code, and fails if these tables are not regenerated. Regenerate with `python tools/config_registry.py --write`. Explicit installed tuning is preserved.
 
 ## Units and controller scales
 

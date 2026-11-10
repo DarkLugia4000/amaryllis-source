@@ -19,7 +19,7 @@ Line counts include each function's body and declaration. They measure the entry
 
 ## Behavioral comparisons
 
-`tests/test_control_stages.py` exercises the maintained functions with explicit synthetic hardware and transport:
+`tests/test_flight.py` (the control stage cases) exercises the maintained functions with explicit synthetic hardware and transport:
 
 - Five vessel-sampling cases compare resolved values, cache behavior and getter order.
 - Fifty allocation steps compare provider maps, correction direction, capacity flags and fractional remainders.

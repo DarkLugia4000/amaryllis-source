@@ -11,14 +11,11 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent
 HOME = ROOT / "disk-builder"
-SUITES = ("tests.test_windows_builder", "tests.test_runtime_bundling", "tests.test_bundling_compatibility",
-          "tests.test_information", "tests.test_bridge_presentation", "tests.test_persistent_modes", "tests.test_altitude_ceiling", "tests.test_repository",
-          "tests.test_disk_setup", "tests.test_project_release", "tests.test_autopilot", "tests.test_persistence",
-          "tests.test_source_integrity", "tests.test_flight_model", "tests.test_recordings", "tests.test_recovery",
-          "tests.test_presentation", "tests.test_config_registry",
-          "tests.test_world_lock", "tests.test_live_update_status", "tests.test_auto_propulsion", "tests.test_python_bundle", "tests.test_vent_balloon_hint", "tests.test_stale_status_text", "tests.test_supervision_text", "tests.test_settings_navigation", "tests.test_lever_handover", "tests.test_bow_axis_lock", "tests.test_heading_glyphs", "tests.test_leveling_boost", "tests.test_speed_source", "tests.test_disk_download", "tests.test_thrust_readback", "tests.test_ap_request_labels", "tests.test_web_setup", "tests.test_gas_mix_fix", "tests.test_disk_launcher",
-          "tests.test_propulsion_rejections", "tests.test_control_stages",
-          "tests.test_ship_boiler_display", "tests.test_strafe_balance")
+SUITES = ("tests.test_builder", "tests.test_state", "tests.test_displays", "tests.test_flight",
+          "tests.test_installer", "tests.test_release")
+QUICK_SUITES = ("tests.test_displays.InformationTests", "tests.test_displays.InformationUiTests",
+                "tests.test_builder.QuotingTests", "tests.test_builder.ReadableSourceTests",
+                "tests.test_release.RepositoryTests")
 
 
 def digest(data):
@@ -114,7 +111,7 @@ class ProgressResult(unittest.TextTestResult):
 
 def tests(quick=False):
     """Run the maintained regression suites against isolated portable fixtures."""
-    suites = ("tests.test_information", "tests.test_bundling_compatibility", "tests.test_repository") if quick else SUITES
+    suites = QUICK_SUITES if quick else SUITES
     output = ROOT / "output/tests"
     output.mkdir(parents=True, exist_ok=True)
     suite = unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromName(name) for name in suites)
@@ -167,7 +164,7 @@ def cobalt(mod, java):
     """Run actual information scenarios using the engine extracted from a selected CC mod."""
     import ast
     import shutil
-    from tests import test_information as cases
+    from tests import test_displays as cases
     builder = builder_module()
     output = ROOT / "output/tests/cobalt"
     output.mkdir(parents=True, exist_ok=True)
@@ -201,7 +198,7 @@ def cobalt(mod, java):
     sources = {p: d.decode() for p, d in current["payload"].items() if p.endswith(".lua")}
     sources["/packages/navigation/ui.lua"] = ui
     config = json.loads((ROOT / "source/core/avionics/config.json").read_bytes())
-    tree = ast.parse((ROOT / "tests/test_information.py").read_text(encoding="utf-8"))
+    tree = ast.parse((ROOT / "tests/test_displays.py").read_text(encoding="utf-8"))
     fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "runtime")
     bootstrap = next(n.args[0].value for n in ast.walk(fn) if isinstance(n, ast.Call)
                      and isinstance(n.func, ast.Attribute) and n.func.attr == "execute"
@@ -242,7 +239,7 @@ def cobalt(mod, java):
         cases.runtime = original
     # Persistence fixtures run in the pinned engine with an in-memory filesystem.
     # Native JSON parsing is exercised separately by the Lua 5.2 persistence suite.
-    from tests import test_persistence as persistence
+    from tests import test_state as persistence
     persistence.PersistenceTests.setUpClass()
     persistence_sources = {p: d.decode() for p, d in persistence.PersistenceTests.sources.items()}
     for name, body in persistence.CASES.items():
@@ -276,7 +273,7 @@ end
         script.append(persistence.HARNESS + "\nModules=assert(load(" +
                       literal(persistence.PersistenceTests.entry.decode()) + "))()\n" + body)
         script.append("\ncompleted=completed+1\nend\n")
-    from tests import test_control_stages as stages
+    from tests import test_flight as stages
     import inspect
     maintained = {p: d.decode() for p, d in persistence.PersistenceTests.sources.items()}
     baseline = json.loads((ROOT / "tests/fixtures/control-stage-baseline.json").read_bytes())
@@ -325,7 +322,7 @@ completed=completed+1
 end
 ''')
     # Exercise the real worker entry points with the shared-context accessor.
-    tree = ast.parse((ROOT / "tests/test_source_integrity.py").read_text(encoding="utf-8"))
+    tree = ast.parse((ROOT / "tests/test_release.py").read_text(encoding="utf-8"))
     worker_test = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
                       and node.name == "test_worker_entry_points_keep_current_owner_checks_in_source_and_bundle")
     chunks = [node.args[0].value for node in ast.walk(worker_test) if isinstance(node, ast.Call)

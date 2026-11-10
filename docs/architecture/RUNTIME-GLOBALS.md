@@ -2,7 +2,7 @@
 
 ComputerCraft programs on one computer share the `os` table, so Amaryllis uses `os.__amaryllis*` fields to pass state between the console, its worker tabs, the installer and diagnostics. These values live in memory only. A reboot or shutdown clears all of them; none is written to disk.
 
-The test `tests/test_source_integrity.py` checks this table against the source: a new `os.__amaryllis*` name, or a name listed here that no longer exists, fails the check until this document is updated.
+The test `tests/test_release.py` checks this table against the source: a new `os.__amaryllis*` name, or a name listed here that no longer exists, fails the check until this document is updated.
 
 Core's propulsion, debug, sampling and failover worker contexts use `avionics/runtime_state.lua` to read and publish these same keys. The accessor reads the current `os` table and preserves table identity, owner comparisons and existing cleanup points. Programs using direct `os` access continue to share the values. Other ownership groups retain their existing access paths.
 

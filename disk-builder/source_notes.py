@@ -1,4 +1,5 @@
 """Lexical Lua documentation pass with byte-stable executable tokens."""
+import functools
 import re
 
 LONG=re.compile(r"\[(=*)\[")
@@ -68,6 +69,11 @@ def validate_package_families(files):
 
 def tokens(text, comments=False):
     """Scan Lua tokens while preserving source offsets and line numbers."""
+    return list(_tokens(text, comments))
+
+@functools.lru_cache(maxsize=1024)
+def _tokens(text, comments):
+    """Cached scan: one build tokenizes each file several times, and test runs build the same files repeatedly."""
     out=[];i=0;line=1;n=len(text)
     while i<n:
         start=i;at=line;c=text[i]
@@ -100,7 +106,7 @@ def tokens(text, comments=False):
             else:i+=1
             out.append((text[start:i],start,i,at))
         line+=text.count("\n",start,i)
-    return out
+    return tuple(out)
 
 def functions(text, min_lines=8):
     """Find named function spans using Lua block nesting."""

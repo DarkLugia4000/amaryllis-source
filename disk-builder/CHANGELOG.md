@@ -5,6 +5,38 @@ Version entries describe the changes recorded for each release. See the
 
 ## Unreleased
 
+### Pastebin loader published
+
+- The loader (`tools/pastebin/loader.lua`) is published as Pastebin `bn1RbWtb`. `disk-builder/README.md` names
+  the paste and uses `pastebin run bn1RbWtb` in the web install steps.
+
+### Faster builds; tests merged into six files
+
+- `source_notes.py`: `tokens` caches its scans (`_tokens`, `functools.lru_cache`, 1024 entries). One build scans
+  each Lua file several times, and a test run builds the same files repeatedly. A first build drops from about
+  3.6 s to 1.9 s, and a repeat build in the same process to about 1.2 s.
+- The 41 test files are merged into six, by subsystem:
+  - `test_builder.py`: runtime_bundling, bundling_compatibility, python_bundle, windows_builder
+  - `test_state.py`: persistence, persistent_modes, altitude_ceiling, lever_handover, config_registry,
+    settings_navigation
+  - `test_displays.py`: bridge_presentation, presentation, information, heading_glyphs, ship_boiler_display,
+    stale_status_text, supervision_text, vent_balloon_hint, ap_request_labels
+  - `test_flight.py`: autopilot, flight_model, recordings, control_stages, leveling_boost, recovery,
+    bow_axis_lock, speed_source, gas_mix_fix, strafe_balance, thrust_readback, propulsion_rejections,
+    auto_propulsion
+  - `test_installer.py`: disk_setup, disk_launcher, disk_download, web_setup, live_update_status
+  - `test_release.py`: project_release, world_lock, repository, source_integrity
+
+  Each original file is a headed section. Imports only run in that order (a file uses helpers from files above
+  it). Names that clashed got new names (`RuntimeBundlingTests`, `WindowsBuilderTests`, `AP_HARNESS`,
+  `LEVELING_HARNESS`, `DISK_KEYS`, `WEB_KEYS`, `DISK_MEDIA`, `WEB_MEDIA`, `MODE_TESTS`, `CEILING_TESTS`,
+  `AVIONICS`, `bundled_builder`, `compat_bundling`, `windows_builder`). All 359 tests remain; the full run takes
+  about 66 s here instead of about 210 s.
+- `project.py`: `SUITES` lists the six files; `--quick` runs the same 31 tests as before through
+  `QUICK_SUITES`; the Cobalt run reads `test_displays`, `test_state`, `test_flight` and `test_release`.
+- README, `TUNING-REFERENCE.md`, `CONTROL-REFACTOR-EVIDENCE.md`, `RUNTIME-GLOBALS.md` and the
+  `config_registry.lua` header name the new files.
+
 ### Altitude ceiling replaces Maximum target Y
 
 - `altitude_control.maximum_world_y` is removed (`config.json`, `config_registry.lua`, `storage.lua`,

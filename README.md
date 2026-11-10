@@ -116,7 +116,7 @@ to guarded helper sections may require corresponding builder/asset updates.
 
 Run an individual maintained suite from the repository root with:
 
-    .\.venv\Scripts\python.exe -m unittest tests.test_information
+    .\.venv\Scripts\python.exe -m unittest tests.test_displays
 
 The full suite covers builder failure paths, bundle installation and recovery,
 legacy source formats, navigator presentation, information/assembly behavior,

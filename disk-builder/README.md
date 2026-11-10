@@ -129,12 +129,14 @@ the media folder from the repository source and publishes it on the `release`
 branch. The Pastebin loader (`media/loader.lua`, with the repository filled in)
 looks up the newest release commit and runs `web-setup.lua` from it, so every
 computer of one installation uses the same build. Computers need HTTP (on by
-default) and a modem.
+default) and a modem. The loader is published at
+[pastebin.com/bn1RbWtb](https://pastebin.com/bn1RbWtb); its source is
+`tools/pastebin/loader.lua`.
 
-1. On core, run `pastebin run <code>` and choose **1 Install core**. Core
+1. On core, run `pastebin run bn1RbWtb` and choose **1 Install core**. Core
    downloads its programs, installs, and opens its registration screen. Until
    the assignments are imported, core boots back into this screen.
-2. On each other computer, run `pastebin run <code>` and choose **2 Register
+2. On each other computer, run `pastebin run bn1RbWtb` and choose **2 Register
    this computer**. It finds core over rednet, downloads core's release, and
    lists the roles with their holders. Pick a role: core records it, and the
    computer installs its wireless receiver (the state reader installs its own
