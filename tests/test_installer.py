@@ -1049,6 +1049,32 @@ return h.readAll()
         self.assertEqual(data, (WEB_MEDIA / ("objects/" + entry["object"])).read_bytes().decode("utf-8"))
         self.assertEqual(served, [BASE + "objects/" + entry["object"]])
 
+    def test_checked_web_package_is_cached_between_requests(self):
+        lua, files = native_runtime({
+            "/installer/library.json": (WEB_MEDIA / "library.json").read_bytes().decode("utf-8"),
+            "/installer/web/source.json": json.dumps({"base": BASE}),
+        })
+        entry = json.loads((WEB_MEDIA / "library.json").read_text())["files"][0]
+        lua.globals().HTTP = lua.table_from({"get": lambda request: None})
+        lua.globals().SOURCE = (ROOT / "disk-builder/assets/core-media.lua").read_text(encoding="utf-8")
+        lua.globals().CACHE = (ROOT / "source/core/installer/bundle_cache.lua").read_text(encoding="utf-8")
+        lua.globals().JSON = lua.table_from({"unserializeJSON": lambda raw: table(lua, json.loads(raw))})
+        loads = lua.execute(r'''
+local Media=assert(load(SOURCE))()
+local media=Media.new(fs,{getNames=function() return {} end},{},JSON,function() end,HTTP)
+assert(media:refresh(),"web media is available")
+local clock=0
+local cache=assert(load(CACHE))().new(media.fs,function() return clock end)
+local loads=0
+local function loader() loads=loads+1;return {totalBytes=10} end
+for request=1,3 do
+  clock=clock+10  -- past the cache's 5 s recheck window, so the fingerprint decides
+  assert(cache:get("role",{...},loader))
+end
+return loads
+''', entry["path"])
+        self.assertEqual(loads, 1, "a checked web package is reused while the release is unchanged")
+
 
 # ======================================================================
 # From test_live_update_status: After a live update the running old installer rewrites status.json with the old release; the new console repairs it.

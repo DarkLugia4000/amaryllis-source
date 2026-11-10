@@ -24,6 +24,13 @@ function Media.new(native,peripherals,disks,json,yield,web)
     local source=read(native,WEB_SOURCE,4096);source=source and json.unserializeJSON(source)
     if type(source)=="table" and type(source.base)=="string" and source.base:match("^https://[%w%.%-]+/[%w%.%-_/]+/$") then
         self.webBase=source.base;self.http=web;self.issue=web and "" or "HTTP is disabled; web packages unavailable"
+        -- A web release is fixed for the life of this catalog: its objects are
+        -- content-addressed and checked against the catalog on every download.
+        -- Generation 1 gives package files a positive modification time, which
+        -- the installer's bundle cache needs before it keeps a checked package.
+        -- At generation 0 the cache kept nothing, so every status request from
+        -- a computer downloaded and verified that computer's package again.
+        self.generation=1
     end
     for _,entry in ipairs(catalog.files) do
         assert(pathOK(entry.path) and not self.entries[entry.path] and type(entry.object)=="string" and

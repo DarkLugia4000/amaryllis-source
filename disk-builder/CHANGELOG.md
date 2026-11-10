@@ -5,6 +5,17 @@ Version entries describe the changes recorded for each release. See the
 
 ## Unreleased
 
+### Web installs cache checked packages
+
+- `core-media.lua`: a web release sets the media generation to 1. Package files report the generation as their
+  modification time, and the installer's bundle cache keeps a checked package only when that time is above 0.
+  At generation 0 the cache kept nothing, so every status request from a computer (sent every few seconds,
+  also after it is installed) made core download and verify that computer's whole package from GitHub again,
+  and the installation screen kept returning to computers that were already at 100%. Web objects are
+  content-addressed and checked against the catalog on every download, so one generation covers the release.
+  Asset hash updated.
+- `test_installer`: a checked web package is loaded once across three requests.
+
 ### Web setup reads typed letters
 
 - `web-setup.lua`: the menu (1, 2, 3, Q), the y/n confirmations, and the core screen's Q, R and U read "char"
