@@ -1,0 +1,322 @@
+{
+  "files": [
+    {
+      "adler32": "20DF7AFC",
+      "bytes": 2167,
+      "object": "a802dcc561d3adab6f8febbc4f9b9f4b668c3e402b354ee36682936df05b9846",
+      "path": "/packages/chamber/bl/config.json"
+    },
+    {
+      "adler32": "406AFFAF",
+      "bytes": 452852,
+      "object": "5d82b473213a184fcf6a2448fa44b52563e5a94b8a8e0bd36e626a8250a59b4f",
+      "path": "/packages/chamber/bl/main.lua"
+    },
+    {
+      "adler32": "6BC4C319",
+      "bytes": 655,
+      "object": "9c05cb22f409d466342059596f81df2de0dbdfac9702003abed51372349a26e3",
+      "path": "/packages/chamber/bl/manifest.json"
+    },
+    {
+      "adler32": "2F197D6E",
+      "bytes": 2172,
+      "object": "0c0702773124a4db7a303600cbd6f1b423199edcf5fbb7cf80c25aa059ab5fa5",
+      "path": "/packages/chamber/br/config.json"
+    },
+    {
+      "adler32": "406AFFAF",
+      "bytes": 452852,
+      "object": "5d82b473213a184fcf6a2448fa44b52563e5a94b8a8e0bd36e626a8250a59b4f",
+      "path": "/packages/chamber/br/main.lua"
+    },
+    {
+      "adler32": "86DCC331",
+      "bytes": 655,
+      "object": "24675ffe7bc530cc578a8df28353a332638965148a6c625244a0d7132f9318b2",
+      "path": "/packages/chamber/br/manifest.json"
+    },
+    {
+      "adler32": "47E00B55",
+      "bytes": 1837,
+      "object": "5ebd7fd34cce88c6c1325391857df1b04b9dd9983a66e80f5ad2fc4a06c8536f",
+      "path": "/packages/chamber/fl/config.json"
+    },
+    {
+      "adler32": "406AFFAF",
+      "bytes": 452852,
+      "object": "5d82b473213a184fcf6a2448fa44b52563e5a94b8a8e0bd36e626a8250a59b4f",
+      "path": "/packages/chamber/fl/main.lua"
+    },
+    {
+      "adler32": "7DC8C327",
+      "bytes": 655,
+      "object": "dc6a497d5933e2ceb05c9fc0342440e3b63c6f6f0877ec83a876a197b0ea72b8",
+      "path": "/packages/chamber/fl/manifest.json"
+    },
+    {
+      "adler32": "8A610B12",
+      "bytes": 1836,
+      "object": "b3e5695983fa216dbd1b5e148dbc43b950d7096cf56cb0234b32fdd470b0e47c",
+      "path": "/packages/chamber/fr/config.json"
+    },
+    {
+      "adler32": "406AFFAF",
+      "bytes": 452852,
+      "object": "5d82b473213a184fcf6a2448fa44b52563e5a94b8a8e0bd36e626a8250a59b4f",
+      "path": "/packages/chamber/fr/main.lua"
+    },
+    {
+      "adler32": "98E0C33F",
+      "bytes": 655,
+      "object": "fe35ae0a915a8e67b0d664aa09776576f2a386f1c5855d713aa2983fc247039f",
+      "path": "/packages/chamber/fr/manifest.json"
+    },
+    {
+      "adler32": "FA6D350A",
+      "bytes": 151,
+      "object": "d2b2dbbb6402afc5a518590b26cc25d2e03c6261cae12235528a1004be926cb8",
+      "path": "/packages/common/console.lua"
+    },
+    {
+      "adler32": "2BDD3938",
+      "bytes": 196,
+      "object": "13f82b10438202138f43294cd35ef9643b17d73a2db8ea0176d723043aab4c3b",
+      "path": "/packages/heading/left/config.json"
+    },
+    {
+      "adler32": "E1A1EE0B",
+      "bytes": 178282,
+      "object": "dd9824d2a0fa35951ca9f9fba1e264185e7fba975b0dec67fb4eace127e0ce6b",
+      "path": "/packages/heading/left/main.lua"
+    },
+    {
+      "adler32": "98739780",
+      "bytes": 508,
+      "object": "2fe8ed7e8e0d63352b0786a1752b738e4880f80744b7d0e615d23e451c609e37",
+      "path": "/packages/heading/left/manifest.json"
+    },
+    {
+      "adler32": "BB333A08",
+      "bytes": 198,
+      "object": "8ea6e1311cf309c50b3093e79583bc77939e93a19605d6bce9b648c3b39cd08a",
+      "path": "/packages/heading/main/config.json"
+    },
+    {
+      "adler32": "E1A1EE0B",
+      "bytes": 178282,
+      "object": "dd9824d2a0fa35951ca9f9fba1e264185e7fba975b0dec67fb4eace127e0ce6b",
+      "path": "/packages/heading/main/main.lua"
+    },
+    {
+      "adler32": "844F9768",
+      "bytes": 508,
+      "object": "a444b23493042d453a9089cd4286f8ab6c901b5d05a58ab150265369fa7d4d47",
+      "path": "/packages/heading/main/manifest.json"
+    },
+    {
+      "adler32": "CACC3A1E",
+      "bytes": 198,
+      "object": "4d3001276d034510e476203cca7834d9017b43c5830c926ac3078ff0b77e9a5b",
+      "path": "/packages/heading/right/config.json"
+    },
+    {
+      "adler32": "E1A1EE0B",
+      "bytes": 178282,
+      "object": "dd9824d2a0fa35951ca9f9fba1e264185e7fba975b0dec67fb4eace127e0ce6b",
+      "path": "/packages/heading/right/main.lua"
+    },
+    {
+      "adler32": "861C994C",
+      "bytes": 512,
+      "object": "d483c7cd35bd52717e7f96370263d6ae4f06a6949ef46aa4645943f78c8e83d9",
+      "path": "/packages/heading/right/manifest.json"
+    },
+    {
+      "adler32": "A2B72F6D",
+      "bytes": 163,
+      "object": "51a7c5ce4d5e2e1e09cb31fe6274647d47dd2b1ddf10b059d9abaaf7a59f7fd0",
+      "path": "/packages/navigation/config.json"
+    },
+    {
+      "adler32": "70A1BAD4",
+      "bytes": 304098,
+      "object": "8942c63027cd8b888baf7cf4b539b820d6aff0ed40cee22cdb9f384abc6731f6",
+      "path": "/packages/navigation/main.lua"
+    },
+    {
+      "adler32": "94A3A505",
+      "bytes": 555,
+      "object": "112d752e50974e32eebc59920b07b072caae454bc9008af5af3ebb888a72e223",
+      "path": "/packages/navigation/manifest.json"
+    },
+    {
+      "adler32": "01783BE7",
+      "bytes": 200,
+      "object": "4f34aa6f19b4b9add7ce8f0a5163f8bb61d3db00bf35e6d5dcd54be8acf7af1d",
+      "path": "/packages/primary/left/config.json"
+    },
+    {
+      "adler32": "751D461B",
+      "bytes": 202761,
+      "object": "23f6680619d0a2aaee51e447ccbf6b90eed13f6dca172149f58774ada6bc38e1",
+      "path": "/packages/primary/left/main.lua"
+    },
+    {
+      "adler32": "9E6F9D68",
+      "bytes": 528,
+      "object": "6105b4f8442861353eadcc58cc4250dbe014ac7e915e6c94b819c4f0da1dc136",
+      "path": "/packages/primary/left/manifest.json"
+    },
+    {
+      "adler32": "4F5B3C66",
+      "bytes": 201,
+      "object": "64912318e389d48b740d385cb372b3032e6cdbf95c44fd5cb7b46338602c4978",
+      "path": "/packages/primary/right/config.json"
+    },
+    {
+      "adler32": "751D461B",
+      "bytes": 202761,
+      "object": "23f6680619d0a2aaee51e447ccbf6b90eed13f6dca172149f58774ada6bc38e1",
+      "path": "/packages/primary/right/main.lua"
+    },
+    {
+      "adler32": "B39F9D80",
+      "bytes": 528,
+      "object": "2c3c7d4ccf6945fc902b37d33fcbd59e40ac0c3aff196d35f542ecee31f7a459",
+      "path": "/packages/primary/right/manifest.json"
+    },
+    {
+      "adler32": "DDEBFEF7",
+      "bytes": 900,
+      "object": "403cfafbc80de8e1f0a6219041279c35ad5d3d7b04565757defa24546a06eaaf",
+      "path": "/packages/thrust/lb/config.json"
+    },
+    {
+      "adler32": "14E45B66",
+      "bytes": 314106,
+      "object": "2e4c875b4f01fb08a89322b2e9fe7e94f02ac401a7bff14b480402fe76aa394e",
+      "path": "/packages/thrust/lb/main.lua"
+    },
+    {
+      "adler32": "5053B177",
+      "bytes": 594,
+      "object": "4c130723c517653ec81d2f4a0fcf589a68f92b2db76cc0a07585cd67172b21f3",
+      "path": "/packages/thrust/lb/manifest.json"
+    },
+    {
+      "adler32": "C3F5719A",
+      "bytes": 1272,
+      "object": "edceb4e6c5f877bed907862d88bfd76015dda7f6f778520f882752473d287457",
+      "path": "/packages/thrust/ls/config.json"
+    },
+    {
+      "adler32": "14E45B66",
+      "bytes": 314106,
+      "object": "2e4c875b4f01fb08a89322b2e9fe7e94f02ac401a7bff14b480402fe76aa394e",
+      "path": "/packages/thrust/ls/main.lua"
+    },
+    {
+      "adler32": "953BB1BD",
+      "bytes": 594,
+      "object": "d0deb845bd9fc21935a7985c2152f6817eb376146c5cfc86b1e6a735ec3aa163",
+      "path": "/packages/thrust/ls/manifest.json"
+    },
+    {
+      "adler32": "5F60FF33",
+      "bytes": 900,
+      "object": "99d3ac6ab4f1258947725ffba0f2ffbd641a94070d2dcc902743dfc3db88cc5a",
+      "path": "/packages/thrust/rb/config.json"
+    },
+    {
+      "adler32": "14E45B66",
+      "bytes": 314106,
+      "object": "2e4c875b4f01fb08a89322b2e9fe7e94f02ac401a7bff14b480402fe76aa394e",
+      "path": "/packages/thrust/rb/main.lua"
+    },
+    {
+      "adler32": "68B3B18F",
+      "bytes": 594,
+      "object": "7d29c373306136b2443ad2834bf26e566e8d466da389999f038852b0a96edff9",
+      "path": "/packages/thrust/rb/manifest.json"
+    },
+    {
+      "adler32": "BFB0732F",
+      "bytes": 1275,
+      "object": "b30163b2c60913133c1ea3fa8fd497a7a447d4232b1b7c9388df1ec986cd0636",
+      "path": "/packages/thrust/rs/config.json"
+    },
+    {
+      "adler32": "14E45B66",
+      "bytes": 314106,
+      "object": "2e4c875b4f01fb08a89322b2e9fe7e94f02ac401a7bff14b480402fe76aa394e",
+      "path": "/packages/thrust/rs/main.lua"
+    },
+    {
+      "adler32": "AD9BB1D5",
+      "bytes": 594,
+      "object": "b0f2ed871336e12b8b04c2545f63ee4df3e84c98db843a61f8b9328ceb56a4c2",
+      "path": "/packages/thrust/rs/manifest.json"
+    }
+  ],
+  "libraryId": "effe73f6661ff89603bdcae7c00d9e0cf6a06fa7b75d079539d8a27ff4b29376",
+  "roles": {
+    "chamber_bl": {
+      "packageId": "amaryllis.chamber.bl",
+      "version": 9
+    },
+    "chamber_br": {
+      "packageId": "amaryllis.chamber.br",
+      "version": 9
+    },
+    "chamber_fl": {
+      "packageId": "amaryllis.chamber.fl",
+      "version": 8
+    },
+    "chamber_fr": {
+      "packageId": "amaryllis.chamber.fr",
+      "version": 8
+    },
+    "heading-left": {
+      "packageId": "amaryllis.heading.left",
+      "version": 4
+    },
+    "heading-main": {
+      "packageId": "amaryllis.heading.main",
+      "version": 4
+    },
+    "heading-right": {
+      "packageId": "amaryllis.heading.right",
+      "version": 4
+    },
+    "navigator": {
+      "packageId": "amaryllis.navigator",
+      "version": 13
+    },
+    "primary_l": {
+      "packageId": "amaryllis.primary.l",
+      "version": 3
+    },
+    "primary_r": {
+      "packageId": "amaryllis.primary.r",
+      "version": 3
+    },
+    "thrust-lb": {
+      "packageId": "amaryllis.thrust.lb",
+      "version": 4
+    },
+    "thrust-ls": {
+      "packageId": "amaryllis.thrust.ls",
+      "version": 5
+    },
+    "thrust-rb": {
+      "packageId": "amaryllis.thrust.rb",
+      "version": 4
+    },
+    "thrust-rs": {
+      "packageId": "amaryllis.thrust.rs",
+      "version": 5
+    }
+  },
+  "schemaVersion": 1
+}

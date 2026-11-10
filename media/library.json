@@ -7,9 +7,9 @@
       "path": "/packages/chamber/bl/config.json"
     },
     {
-      "adler32": "F726AF9F",
-      "bytes": 452644,
-      "object": "a566fbb1f6314d504fbd965c873e6cab6db2616ea13537f8e74ca6e46f9626df",
+      "adler32": "406AFFAF",
+      "bytes": 452852,
+      "object": "5d82b473213a184fcf6a2448fa44b52563e5a94b8a8e0bd36e626a8250a59b4f",
       "path": "/packages/chamber/bl/main.lua"
     },
     {
@@ -25,9 +25,9 @@
       "path": "/packages/chamber/br/config.json"
     },
     {
-      "adler32": "F726AF9F",
-      "bytes": 452644,
-      "object": "a566fbb1f6314d504fbd965c873e6cab6db2616ea13537f8e74ca6e46f9626df",
+      "adler32": "406AFFAF",
+      "bytes": 452852,
+      "object": "5d82b473213a184fcf6a2448fa44b52563e5a94b8a8e0bd36e626a8250a59b4f",
       "path": "/packages/chamber/br/main.lua"
     },
     {
@@ -43,9 +43,9 @@
       "path": "/packages/chamber/fl/config.json"
     },
     {
-      "adler32": "F726AF9F",
-      "bytes": 452644,
-      "object": "a566fbb1f6314d504fbd965c873e6cab6db2616ea13537f8e74ca6e46f9626df",
+      "adler32": "406AFFAF",
+      "bytes": 452852,
+      "object": "5d82b473213a184fcf6a2448fa44b52563e5a94b8a8e0bd36e626a8250a59b4f",
       "path": "/packages/chamber/fl/main.lua"
     },
     {
@@ -61,9 +61,9 @@
       "path": "/packages/chamber/fr/config.json"
     },
     {
-      "adler32": "F726AF9F",
-      "bytes": 452644,
-      "object": "a566fbb1f6314d504fbd965c873e6cab6db2616ea13537f8e74ca6e46f9626df",
+      "adler32": "406AFFAF",
+      "bytes": 452852,
+      "object": "5d82b473213a184fcf6a2448fa44b52563e5a94b8a8e0bd36e626a8250a59b4f",
       "path": "/packages/chamber/fr/main.lua"
     },
     {
@@ -85,9 +85,9 @@
       "path": "/packages/heading/left/config.json"
     },
     {
-      "adler32": "1A6B1A4F",
-      "bytes": 177688,
-      "object": "075602e1a469784c5b1c763f122c6cd1fea36f72c0bd7cdc8d21d0c3d2604f3b",
+      "adler32": "E1A1EE0B",
+      "bytes": 178282,
+      "object": "dd9824d2a0fa35951ca9f9fba1e264185e7fba975b0dec67fb4eace127e0ce6b",
       "path": "/packages/heading/left/main.lua"
     },
     {
@@ -103,9 +103,9 @@
       "path": "/packages/heading/main/config.json"
     },
     {
-      "adler32": "1A6B1A4F",
-      "bytes": 177688,
-      "object": "075602e1a469784c5b1c763f122c6cd1fea36f72c0bd7cdc8d21d0c3d2604f3b",
+      "adler32": "E1A1EE0B",
+      "bytes": 178282,
+      "object": "dd9824d2a0fa35951ca9f9fba1e264185e7fba975b0dec67fb4eace127e0ce6b",
       "path": "/packages/heading/main/main.lua"
     },
     {
@@ -121,9 +121,9 @@
       "path": "/packages/heading/right/config.json"
     },
     {
-      "adler32": "1A6B1A4F",
-      "bytes": 177688,
-      "object": "075602e1a469784c5b1c763f122c6cd1fea36f72c0bd7cdc8d21d0c3d2604f3b",
+      "adler32": "E1A1EE0B",
+      "bytes": 178282,
+      "object": "dd9824d2a0fa35951ca9f9fba1e264185e7fba975b0dec67fb4eace127e0ce6b",
       "path": "/packages/heading/right/main.lua"
     },
     {
@@ -139,9 +139,9 @@
       "path": "/packages/navigation/config.json"
     },
     {
-      "adler32": "DCD6E959",
-      "bytes": 303510,
-      "object": "7c3d3d45ab14e7c621a945bd906448ab8522147bb0a4ce7ca56afda09c4add28",
+      "adler32": "70A1BAD4",
+      "bytes": 304098,
+      "object": "8942c63027cd8b888baf7cf4b539b820d6aff0ed40cee22cdb9f384abc6731f6",
       "path": "/packages/navigation/main.lua"
     },
     {
@@ -157,9 +157,9 @@
       "path": "/packages/primary/left/config.json"
     },
     {
-      "adler32": "2EFF7577",
-      "bytes": 202175,
-      "object": "48c79790156d468fd7e2b4ea561b15c88ee999765f925ed9ea6384c7a2606bca",
+      "adler32": "751D461B",
+      "bytes": 202761,
+      "object": "23f6680619d0a2aaee51e447ccbf6b90eed13f6dca172149f58774ada6bc38e1",
       "path": "/packages/primary/left/main.lua"
     },
     {
@@ -175,9 +175,9 @@
       "path": "/packages/primary/right/config.json"
     },
     {
-      "adler32": "2EFF7577",
-      "bytes": 202175,
-      "object": "48c79790156d468fd7e2b4ea561b15c88ee999765f925ed9ea6384c7a2606bca",
+      "adler32": "751D461B",
+      "bytes": 202761,
+      "object": "23f6680619d0a2aaee51e447ccbf6b90eed13f6dca172149f58774ada6bc38e1",
       "path": "/packages/primary/right/main.lua"
     },
     {
@@ -193,9 +193,9 @@
       "path": "/packages/thrust/lb/config.json"
     },
     {
-      "adler32": "6ADBD41E",
-      "bytes": 313732,
-      "object": "046cb827c38f5eff360b7623fb88473dd9360096012a330fbc33ed4753ae3bce",
+      "adler32": "14E45B66",
+      "bytes": 314106,
+      "object": "2e4c875b4f01fb08a89322b2e9fe7e94f02ac401a7bff14b480402fe76aa394e",
       "path": "/packages/thrust/lb/main.lua"
     },
     {
@@ -211,9 +211,9 @@
       "path": "/packages/thrust/ls/config.json"
     },
     {
-      "adler32": "6ADBD41E",
-      "bytes": 313732,
-      "object": "046cb827c38f5eff360b7623fb88473dd9360096012a330fbc33ed4753ae3bce",
+      "adler32": "14E45B66",
+      "bytes": 314106,
+      "object": "2e4c875b4f01fb08a89322b2e9fe7e94f02ac401a7bff14b480402fe76aa394e",
       "path": "/packages/thrust/ls/main.lua"
     },
     {
@@ -229,9 +229,9 @@
       "path": "/packages/thrust/rb/config.json"
     },
     {
-      "adler32": "6ADBD41E",
-      "bytes": 313732,
-      "object": "046cb827c38f5eff360b7623fb88473dd9360096012a330fbc33ed4753ae3bce",
+      "adler32": "14E45B66",
+      "bytes": 314106,
+      "object": "2e4c875b4f01fb08a89322b2e9fe7e94f02ac401a7bff14b480402fe76aa394e",
       "path": "/packages/thrust/rb/main.lua"
     },
     {
@@ -247,9 +247,9 @@
       "path": "/packages/thrust/rs/config.json"
     },
     {
-      "adler32": "6ADBD41E",
-      "bytes": 313732,
-      "object": "046cb827c38f5eff360b7623fb88473dd9360096012a330fbc33ed4753ae3bce",
+      "adler32": "14E45B66",
+      "bytes": 314106,
+      "object": "2e4c875b4f01fb08a89322b2e9fe7e94f02ac401a7bff14b480402fe76aa394e",
       "path": "/packages/thrust/rs/main.lua"
     },
     {
@@ -259,7 +259,7 @@
       "path": "/packages/thrust/rs/manifest.json"
     }
   ],
-  "libraryId": "d93bea367935240b0eb181adef3926255ed94abb8747cb3d13fc255aed703e4a",
+  "libraryId": "effe73f6661ff89603bdcae7c00d9e0cf6a06fa7b75d079539d8a27ff4b29376",
   "roles": {
     "chamber_bl": {
       "packageId": "amaryllis.chamber.bl",

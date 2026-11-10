@@ -98,11 +98,14 @@ local function screen(title)
     term.setBackgroundColor(colors.black);term.clear()
     line(1,title,CYAN)
 end
+-- Letter and digit commands read "char" events, which carry the typed character.
+-- "key" events carry the physical key position named after the US layout, so on
+-- a QWERTZ keyboard the key marked Y arrives as keys.z.
 local function confirm(prompt)
     local _,h=term.getSize();line(h,prompt.." (y/n)",YELLOW)
     while true do
-        local _,key=os.pullEvent("key")
-        if key==keys.y then return true elseif key==keys.n then return false end
+        local _,ch=os.pullEvent("char");ch=ch:lower()
+        if ch=="y" then return true elseif ch=="n" then return false end
     end
 end
 local function message(title,lines,color)
@@ -169,27 +172,27 @@ local function coreScreen(Setup,release,id,releaseBase)
                     notice="#"..a.." removed its registration as "..b.role
                 end
             end
+        elseif event=="char" and a:lower()=="q" then return
+        elseif event=="char" and a:lower()=="r" then
+            if confirm("Reset installation? Every role registers again") then
+                writeFile(RESET_MARKER,"{}");bootIntoRegistration()
+                message("Resetting installation",{"Core restarts into registration and clears","every assignment. Programs and settings stay."},YELLOW)
+                os.reboot()
+            end
+        elseif event=="char" and a:lower()=="u" then
+            if state.imported==true then notice="Reset installation (R) before uninstalling core"
+            elseif confirm("Uninstall core from #"..id.."? Its files are deleted") then
+                uninstallCore()
+                return message("Core uninstalled",{"Remove the registration on every computer that","registered with this core, then install core again."},YELLOW)
+            end
         elseif event=="key" then
             if a==keys.up then selected=math.max(1,selected-1)
             elseif a==keys.down then selected=math.min(#order,selected+1)
-            elseif a==keys.q then return
             elseif a==keys.backspace and order[selected]~="core" and state.computers[order[selected]] then
                 local role=order[selected]
                 if confirm("Clear "..role.." (#"..state.computers[role].id..")?") then
                     local ok,issue=pcall(Setup.clearRole,CORE_MEDIA,release,role)
                     notice=ok and (role.." cleared; register that computer again") or tostring(issue)
-                end
-            elseif a==keys.r then
-                if confirm("Reset installation? Every role registers again") then
-                    writeFile(RESET_MARKER,"{}");bootIntoRegistration()
-                    message("Resetting installation",{"Core restarts into registration and clears","every assignment. Programs and settings stay."},YELLOW)
-                    os.reboot()
-                end
-            elseif a==keys.u then
-                if state.imported==true then notice="Reset installation (R) before uninstalling core"
-                elseif confirm("Uninstall core from #"..id.."? Its files are deleted") then
-                    uninstallCore()
-                    return message("Core uninstalled",{"Remove the registration on every computer that","registered with this core, then install core again."},YELLOW)
                 end
             elseif a==keys.enter and complete then
                 if confirm("Import assignments and start core?") then
@@ -246,10 +249,11 @@ local function pickRole(Setup,release,core,id)
                 holder and (holder.id==id and YELLOW or GRAY) or WHITE)
         end
         line(h,"Up/Down  Enter: register  Q: cancel",GRAY)
-        local _,key=os.pullEvent("key")
-        if key==keys.up then selected=math.max(1,selected-1)
+        local event,key=os.pullEvent()
+        if event=="char" and key:lower()=="q" then return nil
+        elseif event~="key" then
+        elseif key==keys.up then selected=math.max(1,selected-1)
         elseif key==keys.down then selected=math.min(#order,selected+1)
-        elseif key==keys.q then return nil
         elseif key==keys.enter then
             local holder=core.computers[order[selected]]
             if holder and holder.id~=id then
@@ -350,12 +354,12 @@ local function main()
     if registered then line(5,"3  Remove this computer's registration ("..journal.role..")") end
     line(registered and 6 or 5,"Q  Cancel")
     while true do
-        local _,key=os.pullEvent("key")
-        if key==keys.one then
+        local _,ch=os.pullEvent("char");ch=ch:lower()
+        if ch=="1" then
             if confirm("Install core on computer #"..id.."?") then return installCore(id) end
-        elseif key==keys.two then return registerComputer(id)
-        elseif key==keys.three and registered then return removeRegistration(id,journal)
-        elseif key==keys.q then term.clear();term.setCursorPos(1,1);return end
+        elseif ch=="2" then return registerComputer(id)
+        elseif ch=="3" and registered then return removeRegistration(id,journal)
+        elseif ch=="q" then term.clear();term.setCursorPos(1,1);return end
     end
 end
 
