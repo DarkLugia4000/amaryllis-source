@@ -106,11 +106,6 @@
       "path": "objects/5ebd7fd34cce88c6c1325391857df1b04b9dd9983a66e80f5ad2fc4a06c8536f"
     },
     {
-      "adler32": "9256D1C8",
-      "bytes": 1519804,
-      "path": "objects/5fd48350e77d82a96c000750bb9a202458898665fcbe7034c60b70871e85a34f"
-    },
-    {
       "adler32": "9E6F9D68",
       "bytes": 528,
       "path": "objects/6105b4f8442861353eadcc58cc4250dbe014ac7e915e6c94b819c4f0da1dc136"
@@ -154,6 +149,11 @@
       "adler32": "5F60FF33",
       "bytes": 900,
       "path": "objects/99d3ac6ab4f1258947725ffba0f2ffbd641a94070d2dcc902743dfc3db88cc5a"
+    },
+    {
+      "adler32": "23FF78CE",
+      "bytes": 1520308,
+      "path": "objects/9c05a68495301f4ede939e2fc5b690a46e99a3e7e021bfa316fe32e0a3f44661"
     },
     {
       "adler32": "6BC4C319",
@@ -251,7 +251,7 @@
       "path": "web-setup.lua"
     },
     {
-      "adler32": "846BE264",
+      "adler32": "1436E48C",
       "bytes": 12866,
       "path": "release.json"
     },
@@ -261,6 +261,6 @@
       "path": "startup.lua"
     }
   ],
-  "releaseId": "amaryllis-1200d46d1468",
+  "releaseId": "amaryllis-f88ffd56f2b7",
   "schemaVersion": 1
 }
