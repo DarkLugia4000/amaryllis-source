@@ -12,6 +12,7 @@ local IO=require("avionics.io")
 local Sources=require("avionics.vessel_sources")
 local Sampling=require("avionics.sampling")
 local Wire=require("avionics.state_wire")
+local StateUpdate=require("avionics.state_update")
 local cfg=assert(Storage.readJson("/avionics/config.json"))
 assert(cfg.role=="state" and cfg.computerID==os.getComputerID() and type(cfg.coreID)=="number","STATE INSTALL IDENTITY INVALID")
 assert(os.getComputerLabel()==cfg.label,"STATE LABEL DOES NOT MATCH INSTALL")
@@ -218,7 +219,14 @@ local function network()
         local timer=os.startTimer(.2)
         local event,a,b,c,d=os.pullEventRaw()
         pcall(os.cancelTimer,timer)
-        if event=="modem_message" and a==side and b==Wire.STATE_CHANNEL then context(d)
+        if event=="modem_message" and a==side and b==Wire.STATE_CHANNEL and type(d)=="table" and d.kind=="state_update" then
+            -- Core's web update asks this state reader to update itself
+            -- (avionics/state_update.lua): acknowledge, then restart into the
+            -- staged update when staging succeeded.
+            local ack,restart=StateUpdate.handle(d,cfg,{fs=fs,http=http,textutils=textutils})
+            if ack and modem then pcall(modem.transmit,Wire.CORE_CHANNEL,Wire.STATE_CHANNEL,ack) end
+            if restart then os.reboot() end
+        elseif event=="modem_message" and a==side and b==Wire.STATE_CHANNEL then context(d)
         elseif event=="peripheral" or event=="peripheral_detach" then modem=nil;scanRequested=true end
     end
 end

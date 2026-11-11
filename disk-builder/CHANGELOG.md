@@ -5,6 +5,129 @@ Version entries describe the changes recorded for each release. See the
 
 ## Unreleased
 
+### Adjustable SEL throttle ceiling
+
+- `flight.lua` (`Flight:setting`): **Cockpit Inputs → SEL Throttle Settings** adds
+  **Max selected speed (b/s)**. It saves the forward selector ceiling in the existing
+  `cockpit.maximum_selected_speed` field (0.1–100 b/s, shipped default 30 b/s).
+  Lowering it clamps the current pilot target and is refused below an active AP cruise
+  target with **DISENGAGE AP BEFORE LOWERING SPEED LIMIT**. AP keeps its existing
+  30 b/s upper bound.
+- `control_presets.lua` (`Presets:valid`, `Presets:update`): restore a saved speed within
+  the current ceiling while retaining its selected mode. 51 autopilot and source
+  integrity tests passed, including live setting validation and preset restoration.
+
+### Coast-first MAN throttle
+
+- `thrust.lua` (`Thrust.manualDriveBounds`, `Thrust:manualAccelerationDriveRequest`): MAN first
+  removes drive when the vessel substantially exceeds the requested acceleration. Feedback-driven
+  counter-thrust is capped at 15% of available drive and requires a persistent error and two seconds
+  of fresh zero-drive readbacks on both sides. A deliberate signed lever command keeps the regular
+  drive range and gearshift sequence.
+- Neutral still captures forward speed. Speed corrections have a 0.5 b/s deadband, with coasting
+  above that band in the captured direction. Counter-thrust requires more than 2 b/s of overspeed
+  and deceleration below 0.1 b/s² in that direction. The existing turning pause remains in use.
+  Integral updates use fresh applied drive and pause when the correction would widen a tracking gap
+  larger than 3% of available drive. Stored effort is limited to the available drive directions.
+- `config.json`: shipped MAN acceleration gains change from `kp=1, ki=0.10` to
+  `kp=0.20, ki=0.08`. The existing updater preserves installed gain settings.
+- Verification: 55 autopilot, control-stage and source-integrity tests passed, including MAN
+  closed-loop simulation with a drive ramp, neutral capture and deliberate reverse. Replaying the
+  Ama Test 3 telemetry with both old and shipped gains yielded zero reverse requests in the full
+  forward and captured-neutral windows, down from 39 and 37 recorded left-side requests. Replay
+  uses the recorded vessel response. In-game flight verification is pending.
+
+### MAN throttle data in debug recordings
+
+- `debug_recorder.lua` (`Debug:capture`, `Debug:start`): schema 6 appends selected and effective
+  throttle modes, fresh forward and reverse redstone strengths, and the signed cockpit drive request
+  after input gates. It also records MAN's target and filtered measured acceleration, captured
+  neutral speed, controller state and reason, plus the propulsion request reason. These fields let
+  a recording distinguish pilot input, neutral speed hold, and propulsion overrides. Existing sample
+  columns retain their positions and the event CSV format stays the same.
+- `test_flight.py`: the recorder test checks neutral input and a captured speed, along with blank
+  stale signals and blank MAN fields during an override. Recording and source integrity suites run.
+
+### Navigator status and settings while disassembled
+
+- `navigation/ui.lua` (`drawMain`, `UI.tabRegions`, `UI:touch`): a fresh, confirmed disassembly opens
+  **STATUS** and replaces **FLIGHT / NAV / SHIP / SETTINGS** with **STATUS / SETTINGS**. The two-page
+  selection stays local to the display while disassembled. Reassembly restores the saved regular page and footer.
+- `navigation/ui.lua` (`drawAssemblyPanel`, `addHeader`): **ERROR: VESSEL NOT ASSEMBLED** becomes a
+  three-row inset red **VESSEL DISASSEMBLED** banner. The chamber grid replaces “Core module reports physics
+  assembler is not engaged.” and “Previous gas levels will be carried over.” Each chamber shows **ACTIVE**
+  in green for a confirmed trim probe or **CHECK** in yellow, with **GAS <value> m3** or **GAS N/A** below
+  it. The assembly instruction stays “Please assemble the vessel to enable controls.” The saved heading and
+  throttle modes are cyan text on the black background. The strafe row and flight readouts are absent.
+- `navigation/ui.lua` (`drawSettings`, `UI:touch`): **SETTINGS** opens the regular Settings tree.
+  **START SYSTEMS** and **RESTART SYSTEMS** on **FLIGHT SETTINGS 2/2** render grey and dispatch no command
+  while disassembled. Reassembly restores their usual availability checks.
+- `flight.lua` (`retainedAssemblyGas`, `decorate`) and `telemetry_recovery.lua` (`retainedTargetMap`,
+  `authoritativeTargetMaps`): publish per-chamber sums in m3 from the existing retained recovery maps.
+  Suspended recovery maps take priority over batch and pending commands. Missing and incomplete maps stay
+  absent, and stored zero remains numeric. This readout adds no actuator writes or new persistence.
+- Verification: 83 tests passed across the display and source-integrity suites, the bundled Navigator
+  transport test, and the control-stage and recovery suites. Coverage includes the banner margins, probe and
+  gas readings, saved-mode colors, footer transitions, both disabled actions, and recovery target precedence.
+  Verification used simulated ComputerCraft displays and controllers.
+
+### Web setup restarts on its own after registration and updates
+
+- `web-setup.lua`: `message` takes an optional restart time. The bottom row then reads "Restarting in N s (any
+  key: now)" and counts down; any key closes it at once. A registered computer restarts after 3 seconds, so its
+  receiver starts and core can send its package. Before, the "Rebooting." screen waited for a key, and a
+  computer left on it never started its receiver. A finished core update restarts after 5 seconds, a finished
+  state reader update after 3, and a state reader update that failed before any file changed after 5. The
+  "Rebooting." line is gone from those messages. A state reader update that failed partway still waits for a
+  key, since its next restart retries the download.
+- `test_installer`: registration, core update and state reader update restart on timer events alone.
+  Asset hashes updated.
+
+### Empty /avionics folder no longer blocks registration
+
+- `setup.lua`: the fresh-computer check counts `/avionics` only when it holds a file. The wireless installer
+  creates `/avionics` before the role package arrives, so a computer whose registration was removed before then
+  kept an empty `/avionics` folder, and registering it again failed with "Fresh computers only. Existing
+  installations are not overwritten." New `holdsFiles` checks a path for files at any depth.
+- `web-setup.lua`: removing a receiver's registration (menu option 3) also deletes `/avionics`. That option runs
+  only while `/avionics/main.lua` is absent, so the folder holds at most a partly copied package.
+- `test_installer`: an empty `/avionics` folder registers as fresh; removal clears a partly copied package.
+  Asset hashes updated.
+
+### Web update of an installed ship
+
+- `web-setup.lua`: when the Pastebin loader runs on an imported core and names a newer release, core's screen
+  shows "W: update to <release>". W is refused before import and while systems run (STOP SYSTEMS first). After
+  confirmation core downloads the release into `/installer/web-next`, records the update in
+  `/installer/web-update.json`, keeps its startup in `/installer/web-update-startup.lua` and restarts into the
+  new web setup. That run replaces core's programs, carries the assignments over, writes `source.json`, swaps
+  `/installer/web-next` into `/installer/web` through `/installer/web-old`, asks the state reader to update,
+  puts core's startup back and restarts. Each step can run again after an interruption, and an interrupted
+  folder swap is completed first. A failure shows "CORE UPDATE STOPPED": Enter retries; C cancels while no
+  program file has changed yet. The other computers take their new packages from core over wireless as before.
+- `web-setup.lua`: core asks the state reader over its wired modem (`state_update` on channel 45131, up to 3
+  times, 5 seconds each) and shows its answer. A state reader updates itself from `/amaryllis-web/update.json`
+  with its settings kept; a failure before any file changed restores its startup. Menu option 4 updates a state
+  reader by hand, for state readers whose programs predate this request.
+- `setup.lua`: new `Setup.updateInstalled` replaces an installed core or state reader's programs. It checks
+  every payload and the free space first, merges `/avionics/config.json` into the release defaults (stored
+  values kept, new settings added, arrays replaced whole), keeps existing `defaultsOnly` files such as learned
+  calibration, writes the startup last and updates the installation record. New `Setup.carryDeployment` writes
+  the new release's `deployment.json` with the same assignments, `imported=true` and `releaseHistory` (earlier
+  releases, newest first, at most 16).
+- `setup.lua`: registration, role repair checks and installed-computer checks accept an installation record
+  from a release in `releaseHistory`, so computers installed before the update keep their programs. A reset
+  keeps the release history.
+- New `avionics/state_update.lua` in the state reader: accepts `state_update` only from the configured core,
+  addressed to this computer, with a pinned raw.githubusercontent.com release address; downloads and checks the
+  release's `web-setup.lua`, stages it and acknowledges. `state_reader.lua` calls it from its network loop and
+  restarts after a staged update.
+- `test_installer`: a second built release; the web fixture's `fs.move` moves folders and `os.pullEvent` passes
+  all event values. New cases: update with settings, calibration and assignments kept; refused while systems
+  run; no offer on the same release; cancel and retry after a failed download; interrupted folder swap; wired
+  request and acknowledgement; state reader update and failure; registration after a reset; `state_update.lua`
+  acceptance, rejection and failed download. Asset hashes updated.
+
 ### Web installs cache checked packages
 
 - `core-media.lua`: a web release sets the media generation to 1. Package files report the generation as their

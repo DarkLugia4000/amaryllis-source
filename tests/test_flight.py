@@ -756,8 +756,105 @@ local recorder=Debug.new({clock=function() return 123 end});recorder.enabled=tru
 ap.routeHeading=90;ap.headingBias=.4;ap.crossDemand=.125;ap.primaryIdle=true;ap.captureSettledSeconds=1.5
 recorder:capture({},io,10,{})
 assert(#recorder.queue==1)
-assert(recorder.queue[1]:match(',90,0%.4,0%.125,1,1%.5\\n$'))
+assert(recorder.queue[1]:match(',90,0%.4,0%.125,1,1%.5'..string.rep(',',11)..'\\n$'))
+local snapshot={modes={throttle='MANUAL'},effectiveModes={throttle='MANUAL'},
+ inputs={valid=true,raw={prop_forward=0,prop_reverse=0}},cockpitControl={propulsionRequestPercent=0},
+ thrust={request={manualDriveOutput={left=.2,right=.2}},manualAcceleration={
+  targetAcceleration=0,measuredAcceleration=-.25,holdingSpeed=5,state='HOLDING'}}}
+recorder:capture(snapshot,io,10.5,{})
+assert(recorder.queue[2]:match(',MANUAL,MANUAL,0,0,0,0,%-0%.25,5,HOLDING,,\\n$'))
+snapshot.inputs.valid=false
+snapshot.effectiveModes.throttle='SEL'
+snapshot.thrust.request={throttleReason='PRIMARY ENGINES IDLE'}
+recorder:capture(snapshot,io,11,{})
+assert(recorder.queue[3]:match(',MANUAL,SEL,,,0'..string.rep(',',6)..'PRIMARY ENGINES IDLE\\n$'))
 """)
+
+    def test_manual_acceleration_coasts_and_qualifies_counter_thrust(self):
+        self.runtime().execute(r"""
+local loop={}
+local zero={left=0,right=0}
+local rolling={left=.1,right=.1}
+local low,high=Thrust.manualDriveBounds(loop,.1,4,.5,rolling,10)
+assert(low==0 and high==0,"excess acceleration unloads the drives")
+low,high=Thrust.manualDriveBounds(loop,.1,4,.5,zero,11)
+assert(low==0 and high==0)
+low=Thrust.manualDriveBounds(loop,.1,4,.5,zero,12.9)
+assert(low==0,"qualification needs two seconds of zero readback")
+low=Thrust.manualDriveBounds(loop,.1,4,.5,zero,13)
+assert(low==-.15,"persistent excess permits bounded counter-thrust")
+low,high=Thrust.manualDriveBounds(loop,-.1,4,0,rolling,13.1)
+assert(low==-1 and high==0,"deliberate reverse has normal signed authority")
+loop={zeroAccelerationSpeed=3}
+low,high=Thrust.manualDriveBounds(loop,0,6,-.4,zero,20)
+assert(low==0 and high==0,"drag is already closing the neutral overspeed")
+low,high=Thrust.manualDriveBounds(loop,0,2,0,zero,21)
+assert(low==0 and high==1,"underspeed can restore forward drive")
+""")
+
+    def test_selected_speed_ceiling_saves_and_clamps_pilot_target(self):
+        self.runtime().execute(r"""
+local Flight=require('avionics.flight')
+local Presets=require('avionics.control_presets')
+local io={config=clone(CONFIG)}
+local flight=Flight.new(io.config)
+local saved
+flight.storage={
+ validateConfig=require('avionics.storage').validateConfig,
+ saveConfigChanges=function(_,_,changes) saved=changes[1];return true end,
+}
+flight.controls.targets.speed=28
+assert(flight:setting(io,{key='maximum_selected_speed',value=45},10))
+assert(saved.path[2]=='maximum_selected_speed' and saved.value==45)
+assert(flight.controls.config.maximum_selected_speed==45 and flight.controls.targets.speed==28)
+io.autopilot={active=true,cruiseSpeed=25}
+assert(not flight:setting(io,{key='maximum_selected_speed',value=20},11))
+assert(io.config.cockpit.maximum_selected_speed==45)
+io.autopilot.active=false
+assert(flight:setting(io,{key='maximum_selected_speed',value=20},12))
+assert(flight.controls.targets.speed==20)
+assert(not flight:setting(io,{key='maximum_selected_speed',value=101},13))
+local document={schemaVersion=1,coreID=19,uuid='ship',
+ modes={heading='MANUAL',throttle='SEL'},targets={speed=28}}
+local presets=Presets.new(io.config,{readJson=function()return document end,writeJson=function()return true end})
+io.localID=19;io.identityReady=true;sample(io,14,0,0,90,10,0)
+flight.controls.update=function(self)self.available=true end
+presets:update(io,flight,14)
+assert(flight.controls.modes.throttle=='SEL' and flight.controls.targets.speed==20)
+""")
+
+    def test_manual_acceleration_closed_loop_with_drive_ramp(self):
+        lua=self.runtime()
+        lua.execute(r"""
+_,IO,C,T=fixture()
+C.modes.throttle='MANUAL'
+function manualStep(at,speed,applied,input)
+ C.request=input
+ sample(IO,at,0,0,90,speed,0)
+ T.speedApplied=function() return {left=applied,right=applied} end
+ local output=T:manualAccelerationDriveRequest(IO,at,C,0)
+ return output.left,T.manualAcceleration.holdingSpeed
+end
+""")
+        plant=Plant(constant_pressure=.55)
+        applied=0
+        speed_at_release=None
+        for tick in range(600):
+            pilot=1 if tick<250 else (0 if tick<475 else -1)
+            if tick==250:
+                speed_at_release=plant.speed
+            request,hold=lua.globals().manualStep(10+tick*.2,plant.speed,applied,pilot)
+            # Model the chamber's 25% drive per second ramp.
+            applied=max(applied-.05,min(applied+.05,request))
+            plant.step(plant.raw_lift,applied,.2)
+            if tick<475:
+                self.assertGreaterEqual(request,0)
+            if 300<=tick<475:
+                self.assertAlmostEqual(hold,speed_at_release)
+                self.assertLess(abs(plant.speed-hold),.85)
+            if tick==249:
+                self.assertGreater(plant.speed,3)
+        self.assertLess(applied,0)
 
     @classmethod
     def tearDownClass(cls):

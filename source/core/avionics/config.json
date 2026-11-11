@@ -273,8 +273,8 @@
       "derivative_filter_seconds": 1,
       "integral_limit": 5,
       "kd": 0,
-      "ki": 0.1,
-      "kp": 1
+      "ki": 0.08,
+      "kp": 0.2
     },
     "manual_acceleration_verified": false,
     "manual_speed_hold_gain": 0.5,

@@ -715,8 +715,22 @@ BASE = "https://raw.githubusercontent.com/ama/release/0123456789abcdef0123456789
 _TEMP = tempfile.TemporaryDirectory(prefix="web-setup-", dir=ROOT / ".cache")
 _RESULT, _ = project.builder_module().build(ROOT, Path(_TEMP.name))
 WEB_MEDIA = _RESULT / "media"
-WEB_KEYS = {"one": 2, "two": 3, "three": 4, "r": 19, "u": 22, "y": 21, "n": 49, "q": 16, "up": 200, "down": 208, "enter": 28, "backspace": 14}
-WEB_CHARS = {"one": "1", "two": "2", "three": "3", "r": "r", "u": "u", "y": "y", "n": "n", "q": "q"}
+# A second, newer release for web updates: the same source with one changed core
+# file and one changed state reader file, so core and the state reader get new
+# programs and a new release ID.
+BASE2 = "https://raw.githubusercontent.com/ama/release/89abcdef0123456789abcdef0123456789abcdef/media/"
+_SOURCE2 = Path(_TEMP.name) / "newer"
+import shutil as _shutil
+_shutil.copytree(ROOT / "source", _SOURCE2 / "source")
+for _name in ("mathx.lua", "state_update.lua"):
+    _path = _SOURCE2 / "source/core/avionics" / _name
+    _path.write_bytes(_path.read_bytes() + b"-- newer release\n")
+(Path(_TEMP.name) / "out2").mkdir()
+_RESULT2, _ = project.builder_module().build(_SOURCE2, Path(_TEMP.name) / "out2")
+WEB_MEDIA2 = _RESULT2 / "media"
+MEDIA_FOR = {BASE: WEB_MEDIA, BASE2: WEB_MEDIA2}
+WEB_KEYS = {"one": 2, "two": 3, "three": 4, "r": 19, "u": 22, "y": 21, "n": 49, "q": 16, "up": 200, "down": 208, "enter": 28, "backspace": 14, "w": 17}
+WEB_CHARS = {"one": "1", "two": "2", "three": "3", "w": "w", "r": "r", "u": "u", "y": "y", "n": "n", "q": "q"}
 KEY_Z = 44  # the key marked Y on a QWERTZ keyboard reports the US-layout position of Z
 
 ENVIRONMENT = r"""
@@ -727,12 +741,14 @@ os.queueEvent=function() end
 local pull=os.pullEvent
 os.pullEvent=function(filter)
     while true do
-        local e,a,b,c=coroutine.yield("INPUT")
-        if e=="terminate" then error("Terminated") end
-        if not filter or e==filter then return e,a,b,c end
+        local event=table.pack(coroutine.yield("INPUT"))
+        if event[1]=="terminate" then error("Terminated") end
+        if not filter or event[1]==filter then return table.unpack(event,1,event.n) end
     end
 end
 os.reboot=function() REBOOTED=true;while true do coroutine.yield("REBOOT") end end
+os.startTimer=function() return 1 end
+os.cancelTimer=function() end
 keys={one=2,two=3,three=4,r=19,u=22,y=21,n=49,q=16,up=200,down=208,enter=28,backspace=14,left=203,right=205,escape=1,numPadEnter=156}
 colors={white=1,gray=128,cyan=512,yellow=16,red=16384,lime=32,black=32768}
 peripheral={getNames=function() return {"top"} end,getType=function() return "modem" end}
@@ -753,8 +769,14 @@ end}
 
 
 class Computer:
-    def __init__(self, network, identity, files=None):
+    """One computer running web-setup.lua. By default it runs the loader's copy for
+    `base`; with boot=True it runs whatever its /startup.lua would run, with no
+    arguments, as after a restart. With wired set to a list, peripheral.wrap
+    returns a wired modem whose transmissions are appended to that list as
+    (channel, reply channel, packet)."""
+    def __init__(self, network, identity, files=None, base=BASE, boot=False, missing=(), wired=None):
         self.network, self.id = network, identity
+        self.missing = set(missing)  # URLs answered with HTTP 404
         self.lua, self.files = native_runtime(files or {})
         self.inbox, self.requests = [], []
         network[identity] = self
@@ -779,10 +801,33 @@ class Computer:
             for name in [n for n in self.files if n == path or n.startswith(path.rstrip("/") + "/")]:
                 self.files.pop(name)
         g.fs.delete = delete
-        source = (WEB_MEDIA / "web-setup.lua").read_bytes().decode("utf-8")
+        def move(source, target):
+            # As in ComputerCraft: a file or a whole folder moves, and the target must not exist.
+            prefix = source.rstrip("/")
+            names = [n for n in self.files if n == prefix or n.startswith(prefix + "/")]
+            if not names:
+                raise RuntimeError(source + ": No such file")
+            if any(n == target.rstrip("/") or n.startswith(target.rstrip("/") + "/") for n in self.files):
+                raise RuntimeError(target + ": File exists")
+            for name in names:
+                self.files[target.rstrip("/") + name[len(prefix):]] = self.files.pop(name)
+        g.fs.move = move
+        if wired is not None:
+            g.SENT = lambda channel, reply, packet: wired.append((channel, reply, python_value(packet)))
+            self.lua.execute("""peripheral.wrap=function(name)
+ return {isWireless=function() return false end,open=function() end,
+  transmit=function(channel,reply,packet) SENT(channel,reply,packet) end}
+end""")
+        if boot:
+            startup = self.files["/startup.lua"]
+            path = next(p for p in ("/installer/web-next/web-setup.lua", "/installer/web/web-setup.lua",
+                                    "/amaryllis-web/web-setup.lua") if p in startup and p in self.files)
+            source = self.files[path]
+        else:
+            source = (MEDIA_FOR[base] / "web-setup.lua").read_bytes().decode("utf-8")
         g.SOURCE = source
         self.lua.execute('co=coroutine.create(function(...) assert(load(SOURCE,"=web-setup.lua",nil,_ENV))(...) end)')
-        self.state = self.resume(BASE)
+        self.state = self.resume(None) if boot else self.resume(base)
 
     def decode(self, raw):
         try:
@@ -792,10 +837,13 @@ class Computer:
 
     def serve(self, url):
         self.requests.append(url)
-        if not url.startswith(BASE):
+        if url in getattr(self, "missing", ()):
             return 404, ""
-        path = WEB_MEDIA / url[len(BASE):]
-        return (200, path.read_bytes().decode("utf-8")) if path.is_file() else (404, "")
+        for base, media in MEDIA_FOR.items():
+            if url.startswith(base):
+                path = media / url[len(base):]
+                return (200, path.read_bytes().decode("utf-8")) if path.is_file() else (404, "")
+        return 404, ""
 
     def send(self, sender, to, message, protocol):
         value = python_value(message)
@@ -1010,6 +1058,48 @@ class WebUndoTests(unittest.TestCase):
         self.assertFalse(any(p in rerun.files for p in ("/startup.lua", "/config.json", "/amaryllis-install.json", "/installer.lua")))
         self.assertNotIn(first, core.json("/installer/web/deployment.json")["computers"])
 
+    def test_registered_computer_restarts_without_a_key(self):
+        network = {}
+        Computer(network, 0).key("one", "y")
+        node = Computer(network, 5).key("two").key("enter", "y")
+        self.assertIn("Restarting in 3 s", node.text())
+        for _ in range(3):
+            self.assertFalse(node.lua.globals().REBOOTED)
+            node.state = node.resume("timer", 1)
+        self.assertTrue(node.lua.globals().REBOOTED)
+
+    def test_removal_before_the_package_arrives_clears_the_avionics_folder(self):
+        network = {}
+        Computer(network, 0).key("one", "y")
+        node = Computer(network, 5).key("two").key("enter", "y", "enter")
+        files = dict(node.files)
+        files["/avionics/common/console.lua"] = "-- partly copied package"
+        network.pop(5)
+        rerun = Computer(network, 5, files).key("three", "y")
+        self.assertFalse(any(p.startswith("/avionics") for p in rerun.files))
+
+    def test_empty_avionics_folder_counts_as_a_fresh_computer(self):
+        # The wireless installer creates /avionics before the package arrives; a
+        # registration removed before then can leave the folder with nothing in it.
+        network = {}
+        core = Computer(network, 0).key("one", "y")
+        node = Computer(network, 5)
+        node.lua.execute("""
+local exists,isDir,list=fs.exists,fs.isDir,fs.list
+local function empty(p) return p=="/avionics" or p=="/avionics/data" end
+fs.exists=function(p) return empty(p) or exists(p) end
+fs.isDir=function(p) return empty(p) or isDir(p) end
+fs.list=function(p)
+ if p=="/avionics" and not exists(p) then return {"data"} end
+ if p=="/avionics/data" and not exists(p) then return {} end
+ return list(p)
+end""")
+        node.key("two").key("enter", "y", "enter")
+        self.assertIn("Registered as", node.text())
+        first = RELEASE1["roleOrder"][0]
+        self.assertEqual(core.json("/installer/web/deployment.json")["computers"][first]["id"], 5)
+        self.assertFalse(json.loads(node.files["/amaryllis-install.json"])["pending"])
+
     def test_state_reader_registration_can_be_removed(self):
         network = {}
         core = Computer(network, 0).key("one", "y")
@@ -1020,6 +1110,283 @@ class WebUndoTests(unittest.TestCase):
         rerun = Computer(network, 7, dict(state.files)).key("three", "y")
         self.assertFalse(any(p.startswith("/avionics") for p in rerun.files))
         self.assertNotIn("state", core.json("/installer/web/deployment.json")["computers"])
+
+
+RELEASE1 = json.loads((WEB_MEDIA / "release.json").read_text())
+RELEASE2 = json.loads((WEB_MEDIA2 / "release.json").read_text())
+INTENT_RUNNING = json.dumps({"schemaVersion": 1, "previous": {},
+                             "sections": {"systemsIntent": {"schemaVersion": 1, "active": True}}})
+
+
+class WebUpdateTests(unittest.TestCase):
+    """Core updates an installed ship from a newer web release, keeping its assignments."""
+
+    def imported(self):
+        """Install core and all 15 other computers from release 1, import, and give
+        core a changed setting, an older config (one setting missing) and learned
+        calibration, so the update has something to keep and something to add."""
+        network = {}
+        core = Computer(network, 0).key("one", "y")
+        order = RELEASE1["roleOrder"]
+        nodes = {}
+        for n, role in enumerate(order):
+            node = Computer(network, 10 + n).key("two").key(*(["down"] * n), "enter", "y", "enter")
+            nodes[role] = node
+        core.key("enter", "y", "enter")
+        config = core.json("/avionics/config.json")
+        config["cockpit"]["fine_heading_degrees"] = 3
+        config["thrust"]["enabled"] = True
+        del config["altitude_control"]["altitude_ceiling"]
+        core.files["/avionics/config.json"] = json.dumps(config)
+        core.files["/avionics/data/hover-offset.json"] = json.dumps({"schemaVersion": 1, "bandBlocks": 20,
+                                                                     "bands": {"200": {"offset": 0.01, "samples": 9}}})
+        network.pop(0)
+        return network, core, nodes, order
+
+    def start_update(self, network, files, missing=()):
+        rerun = Computer(network, 0, dict(files), base=BASE2, missing=missing)
+        self.assertIn("W: update to " + RELEASE2["releaseId"], rerun.text())
+        rerun.key("w", "y")
+        self.assertIn("Updating core", rerun.text())
+        rerun.key("enter")
+        self.assertTrue(rerun.lua.globals().REBOOTED)
+        network.pop(0)
+        return rerun
+
+    def test_releases_differ(self):
+        self.assertNotEqual(RELEASE1["releaseId"], RELEASE2["releaseId"])
+
+    def test_core_updates_and_keeps_settings_calibration_and_assignments(self):
+        network, core, nodes, order = self.imported()
+        before = core.json("/installer/web/deployment.json")
+        started = self.start_update(network, core.files)
+        self.assertIn("web-next/web-setup.lua", started.files["/startup.lua"])
+        self.assertIn("/installer/web-update.json", started.files)
+        self.assertEqual(started.files["/installer/web-next/web-setup.lua"],
+                         (WEB_MEDIA2 / "web-setup.lua").read_bytes().decode("utf-8"))
+        booted = Computer(network, 0, dict(started.files), boot=True)
+        self.assertIn("Core updated to " + RELEASE2["releaseId"], booted.text())
+        self.assertIn("core has no wired modem.", booted.text())
+        files = booted.files
+        journal = booted.json("/amaryllis-install.json")
+        self.assertEqual((journal["role"], journal["releaseId"], journal["pending"]), ("core", RELEASE2["releaseId"], False))
+        self.assertEqual(booted.json("/installer/web/source.json"), {"base": BASE2, "releaseId": RELEASE2["releaseId"]})
+        state = booted.json("/installer/web/deployment.json")
+        self.assertEqual(state["releaseId"], RELEASE2["releaseId"])
+        self.assertEqual(state["computers"], before["computers"])
+        self.assertTrue(state["imported"])
+        self.assertEqual(state["releaseHistory"], [RELEASE1["releaseId"]])
+        self.assertEqual(files["/installer/library.json"], (WEB_MEDIA2 / "library.json").read_bytes().decode("utf-8"))
+        config = booted.json("/avionics/config.json")
+        self.assertEqual(config["cockpit"]["fine_heading_degrees"], 3, "a stored setting is kept")
+        self.assertTrue(config["thrust"]["enabled"], "the propulsion state is kept")
+        self.assertEqual(config["altitude_control"]["altitude_ceiling"], 280, "a missing setting gets its default")
+        self.assertEqual(config["computer_id"], 0)
+        self.assertEqual(booted.json("/avionics/data/hover-offset.json")["bands"]["200"]["samples"], 9,
+                         "learned calibration is kept")
+        core_main = next(e for e in RELEASE2["core"] if e["path"] == "/avionics/main.lua")
+        self.assertEqual(len(files["/avionics/main.lua"]), core_main["bytes"])
+        self.assertNotIn("web-setup", files["/startup.lua"], "core's own startup is back")
+        for path in ("/installer/web-update.json", "/installer/web-update-startup.lua"):
+            self.assertNotIn(path, files)
+        self.assertFalse(any(p.startswith(("/installer/web-next", "/installer/web-old")) for p in files))
+        self.assertTrue(all(r.startswith(BASE2) for r in booted.requests))
+        for _ in range(5):
+            booted.state = booted.resume("timer", 1)
+        self.assertTrue(booted.lua.globals().REBOOTED, "core restarts into its programs without a key")
+
+    def test_update_is_refused_while_systems_run(self):
+        network, core, _, _ = self.imported()
+        core.files["/avionics/data/vessel-state.json"] = INTENT_RUNNING
+        rerun = Computer(network, 0, dict(core.files), base=BASE2).key("w")
+        self.assertIn("STOP SYSTEMS before updating core", rerun.text())
+        self.assertNotIn("/installer/web-update.json", rerun.files)
+        self.assertNotIn("web-next", rerun.files["/startup.lua"])
+
+    def test_no_update_is_offered_on_core_s_own_release(self):
+        network, core, _, _ = self.imported()
+        rerun = Computer(network, 0, dict(core.files))
+        self.assertNotIn("W: update", rerun.text())
+
+    def test_failed_download_can_be_cancelled_and_core_keeps_its_programs(self):
+        network, core, _, _ = self.imported()
+        programs = core.files["/avionics/main.lua"]
+        started = self.start_update(network, core.files)
+        main = next(e for e in RELEASE2["core"] if e["path"] == "/avionics/main.lua")
+        broken = Computer(network, 0, dict(started.files), boot=True, missing={BASE2 + "objects/" + main["object"]})
+        self.assertIn("CORE UPDATE STOPPED", broken.text())
+        self.assertIn("C: cancel", broken.text())
+        broken.press(46, "c")
+        self.assertIn("Update cancelled", broken.text())
+        self.assertEqual(broken.files["/avionics/main.lua"], programs)
+        self.assertEqual(broken.json("/amaryllis-install.json")["releaseId"], RELEASE1["releaseId"])
+        self.assertNotIn("web-setup", broken.files["/startup.lua"])
+        self.assertNotIn("/installer/web-update.json", broken.files)
+        self.assertFalse(any(p.startswith("/installer/web-next") for p in broken.files))
+
+    def test_failed_download_retries_at_the_next_restart(self):
+        network, core, _, _ = self.imported()
+        started = self.start_update(network, core.files)
+        main = next(e for e in RELEASE2["core"] if e["path"] == "/avionics/main.lua")
+        broken = Computer(network, 0, dict(started.files), boot=True, missing={BASE2 + "objects/" + main["object"]})
+        broken.key("enter")
+        self.assertTrue(broken.lua.globals().REBOOTED)
+        network.pop(0)
+        retried = Computer(network, 0, dict(broken.files), boot=True)
+        self.assertIn("Core updated to " + RELEASE2["releaseId"], retried.text())
+
+    def test_interrupted_folder_swap_is_completed(self):
+        network, core, _, _ = self.imported()
+        done = Computer(network, 0, dict(self.start_update(network, core.files).files), boot=True)
+        # Recreate the moment between the two folder moves: the new release sits in
+        # web-next, the old folder is gone and the update record is still there.
+        files = dict(done.files)
+        for path in [p for p in files if p.startswith("/installer/web/")]:
+            files["/installer/web-next/" + path[len("/installer/web/"):]] = files.pop(path)
+        files["/installer/web-update.json"] = json.dumps({"base": BASE2, "releaseId": RELEASE2["releaseId"]})
+        files["/installer/web-update-startup.lua"] = files["/startup.lua"]
+        files["/startup.lua"] = 'local p="/installer/web-next/web-setup.lua"\nassert(loadfile(p,nil,_ENV))()\n'
+        network.pop(0)
+        resumed = Computer(network, 0, files, boot=True)
+        self.assertIn("Core updated to " + RELEASE2["releaseId"], resumed.text())
+        self.assertEqual(resumed.json("/installer/web/source.json")["releaseId"], RELEASE2["releaseId"])
+        self.assertFalse(any(p.startswith("/installer/web-next") for p in resumed.files))
+        self.assertFalse(any(r.startswith(BASE2 + "objects/") for r in resumed.requests), "no second download")
+
+    def test_state_reader_is_asked_over_the_wired_modem(self):
+        network, core, nodes, _ = self.imported()
+        started = self.start_update(network, core.files)
+        sent = []
+        booted = Computer(network, 0, dict(started.files), boot=True, wired=sent)
+        self.assertEqual(booted.state, "INPUT")
+        state_id = booted.json("/installer/web/deployment.json")["computers"]["state"]["id"]
+        channel, reply, packet = sent[0]
+        self.assertEqual((channel, reply), (45131, 45130))
+        self.assertEqual(packet, {"protocol": "amaryllis.state.v1", "kind": "state_update", "sender": 0,
+                                  "target": state_id, "base": BASE2, "releaseId": RELEASE2["releaseId"]})
+        ack = table(booted.lua, {"protocol": "amaryllis.state.v1", "kind": "state_update_ack", "sender": state_id,
+                                 "target": 0, "releaseId": RELEASE2["releaseId"], "ok": True})
+        booted.state = booted.resume("modem_message", "back", 45130, 45131, ack)
+        self.assertIn("is updating itself", booted.text())
+
+    def test_state_reader_updates_itself_and_keeps_its_settings(self):
+        network, core, nodes, _ = self.imported()
+        reader = nodes["state"]
+        files = dict(reader.files)
+        before = json.loads(files["/avionics/config.json"])
+        # What avionics/state_update.lua stages before it restarts.
+        files["/amaryllis-web/web-setup.lua"] = (WEB_MEDIA2 / "web-setup.lua").read_bytes().decode("utf-8")
+        files["/amaryllis-web/update.json"] = json.dumps({"base": BASE2, "releaseId": RELEASE2["releaseId"], "coreID": 0})
+        files["/amaryllis-web/state-startup.lua"] = files["/startup.lua"]
+        files["/startup.lua"] = 'assert(loadfile("/amaryllis-web/web-setup.lua",nil,_ENV))()\n'
+        network.pop(reader.id)
+        updated = Computer(network, reader.id, files, boot=True)
+        self.assertIn("State reader updated", updated.text())
+        for _ in range(3):
+            updated.state = updated.resume("timer", 1)
+        self.assertTrue(updated.lua.globals().REBOOTED, "the state reader restarts without a key")
+        self.assertEqual(updated.json("/amaryllis-install.json")["releaseId"], RELEASE2["releaseId"])
+        config = updated.json("/avionics/config.json")
+        self.assertEqual((config["computerID"], config["coreID"]), (before["computerID"], before["coreID"]))
+        entry = next(e for e in RELEASE2["state"] if e["path"] == "/avionics/main.lua")
+        self.assertEqual(len(updated.files["/avionics/main.lua"]), entry["bytes"])
+        self.assertNotIn("web-setup", updated.files["/startup.lua"])
+        self.assertFalse(any(p.startswith("/amaryllis-web") for p in updated.files))
+
+    def test_failed_state_update_returns_to_its_programs(self):
+        network, core, nodes, _ = self.imported()
+        reader = nodes["state"]
+        files = dict(reader.files)
+        own_startup = files["/startup.lua"]
+        files["/amaryllis-web/web-setup.lua"] = (WEB_MEDIA2 / "web-setup.lua").read_bytes().decode("utf-8")
+        files["/amaryllis-web/update.json"] = json.dumps({"base": BASE2, "releaseId": RELEASE2["releaseId"], "coreID": 0})
+        files["/amaryllis-web/state-startup.lua"] = own_startup
+        files["/startup.lua"] = 'assert(loadfile("/amaryllis-web/web-setup.lua",nil,_ENV))()\n'
+        network.pop(reader.id)
+        failed = Computer(network, reader.id, files, boot=True, missing={BASE2 + "release.json"})
+        self.assertIn("keeps its current programs", failed.text())
+        self.assertEqual(failed.files["/startup.lua"], own_startup)
+        self.assertFalse(any(p.startswith("/amaryllis-web") for p in failed.files))
+
+    def test_computer_from_the_earlier_release_keeps_its_programs_after_a_reset(self):
+        network, core, nodes, order = self.imported()
+        done = Computer(network, 0, dict(self.start_update(network, core.files).files), boot=True)
+        done.key("enter")
+        network.pop(0)
+        rerun = Computer(network, 0, dict(done.files), base=BASE2).key("r", "y", "enter")
+        network.pop(0)
+        Computer(network, 0, dict(rerun.files), boot=True)
+        first = nodes[order[0]]
+        network.pop(first.id)
+        again = Computer(network, first.id, dict(first.files), base=BASE2)
+        again.key("two", "enter", "y")
+        self.assertIn("Existing programs and settings kept", again.text())
+
+
+class StateUpdateModuleTests(unittest.TestCase):
+    """avionics/state_update.lua checks core's request and stages the state reader's update."""
+
+    def run_stage(self, packet, missing=()):
+        lua, files = native_runtime({"/startup.lua": "own startup"})
+        def get(request):
+            url = request["url"]
+            for base, media in MEDIA_FOR.items():
+                if url.startswith(base) and url not in missing:
+                    path = media / url[len(base):]
+                    if path.is_file():
+                        data = path.read_bytes().decode("utf-8")
+                        return lua.table_from({"getResponseCode": lambda: 200, "readAll": lambda: data, "close": lambda: None})
+            return lua.table_from({"getResponseCode": lambda: 404, "readAll": lambda: "", "close": lambda: None})
+        g = lua.globals()
+        g.HTTP = lua.table_from({"get": get})
+        g.JSON = lua.table_from({"unserializeJSON": lambda raw: table(lua, json.loads(raw)),
+                                 "serializeJSON": lambda value: json.dumps(python_value(value))})
+        g.SOURCE = (ROOT / "source/core/avionics/state_update.lua").read_text(encoding="utf-8")
+        g.PACKET = table(lua, packet)
+        ack, restart = lua.execute(r"""
+local StateUpdate=assert(load(SOURCE))()
+local ack,restart=StateUpdate.handle(PACKET,{coreID=0,computerID=7},{fs=fs,http=HTTP,textutils=JSON})
+return ack,restart""")
+        return (python_value(ack) if ack is not None else None), restart, files
+
+    def packet(self, **changes):
+        value = {"protocol": "amaryllis.state.v1", "kind": "state_update", "sender": 0, "target": 7,
+                 "base": BASE2, "releaseId": RELEASE2["releaseId"]}
+        value.update(changes)
+        return value
+
+    def test_request_from_core_stages_the_update(self):
+        ack, restart, files = self.run_stage(self.packet())
+        self.assertTrue(restart)
+        self.assertEqual(ack, {"protocol": "amaryllis.state.v1", "kind": "state_update_ack", "sender": 7,
+                               "target": 0, "releaseId": RELEASE2["releaseId"], "ok": True})
+        self.assertEqual(files["/amaryllis-web/web-setup.lua"], (WEB_MEDIA2 / "web-setup.lua").read_bytes().decode("utf-8"))
+        self.assertEqual(json.loads(files["/amaryllis-web/update.json"]),
+                         {"base": BASE2, "releaseId": RELEASE2["releaseId"], "coreID": 0})
+        self.assertEqual(files["/amaryllis-web/state-startup.lua"], "own startup")
+        self.assertIn("/amaryllis-web/web-setup.lua", files["/startup.lua"])
+
+    def test_requests_not_from_core_are_ignored(self):
+        for changes in ({"sender": 3}, {"target": 8}, {"kind": "state_context"},
+                        {"base": "https://example.com/release/media/"},
+                        {"base": "https://raw.githubusercontent.com/ama/release/main/media/"}):
+            ack, restart, files = self.run_stage(self.packet(**changes))
+            self.assertIsNone(ack, changes)
+            self.assertFalse(restart)
+            self.assertEqual(files["/startup.lua"], "own startup")
+
+    def test_failed_download_is_reported_and_changes_nothing(self):
+        ack, restart, files = self.run_stage(self.packet(), missing={BASE2 + "web-setup.lua"})
+        self.assertFalse(restart)
+        self.assertFalse(ack["ok"])
+        self.assertIn("HTTP 404", ack["error"])
+        self.assertEqual(files["/startup.lua"], "own startup")
+        self.assertFalse(any(p.startswith("/amaryllis-web") for p in files))
+
+    def test_wrong_release_is_refused(self):
+        ack, restart, _ = self.run_stage(self.packet(releaseId="amaryllis-other"))
+        self.assertFalse(restart)
+        self.assertIn("release index names", ack["error"])
 
 
 class CoreWebMediaTests(unittest.TestCase):

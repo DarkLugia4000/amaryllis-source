@@ -250,6 +250,17 @@ function Recovery.mapsEqual(left,right)
     return count==otherCount
 end
 
+-- Resolve a chamber's saved targets in m3, with suspended recovery targets
+-- taking precedence over in-flight commands and the last settled map.
+function Recovery.retainedTargetMap(s,q)
+    local recovery=s.telemetryRecovery or {}
+    local retained=recovery.targetMaps or s.currentTargets or s.probeTargets or s.controlStartTargets
+    if type(retained)~="table" then return nil end
+    local pending=not recovery.targetMaps and s.pending and s.pending[q]
+    local batch=not recovery.targetMaps and s.batchTargets and s.batchTargets[q]
+    return batch or (pending and pending.targets) or retained[q],pending,batch
+end
+
 -- Core retains command authority across lost ACKs and partial application.
 -- Validate the live provider identities and return core's last intended absolute target map.
 -- Summary: Resolve physical target maps suitable for retained-run reconciliation.
@@ -261,9 +272,7 @@ function Recovery.authoritativeTargetMaps(s,nodes)
     local mismatch=false
     local mismatchReason
     for _,q in ipairs(QUADS) do
-        local pending=not recovery.targetMaps and s.pending and s.pending[q]
-        local intendedBatch=not recovery.targetMaps and s.batchTargets and s.batchTargets[q]
-        local expected=intendedBatch or (pending and pending.targets) or retained[q]
+        local expected,pending,intendedBatch=Recovery.retainedTargetMap(s,q)
         if type(expected)~="table" then return nil,q.." CORE TARGET MAP UNAVAILABLE" end
         local actual,reason=Recovery.readTargetMap(nodes[q],expected,s.providerRoles and s.providerRoles[q])
         if not actual then return nil,q.." "..tostring(reason) end

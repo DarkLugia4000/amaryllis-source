@@ -21,7 +21,9 @@ function Presets:valid(v)
  if v.modes.throttle~="MANUAL" and v.modes.throttle~="SEL" and v.modes.throttle~="DIRECT" then return false end
  local t=v.targets;local c=self.config.cockpit;local a=self.config.altitude_control
  if t.heading~=nil and (not finite(t.heading) or t.heading<0 or t.heading>=360) then return false end
- if t.speed~=nil and (not finite(t.speed) or t.speed<c.minimum_selected_speed or t.speed>c.maximum_selected_speed) then return false end
+ -- Stored speed can exceed the current selector ceiling after a limit edit.
+ -- Validate against the config schema ceiling and clamp at restoration.
+ if t.speed~=nil and (not finite(t.speed) or t.speed<c.minimum_selected_speed or t.speed>100) then return false end
  if t.altitude~=nil and (not finite(t.altitude) or t.altitude<a.minimum_world_y or t.altitude>2048) then return false end
  return (v.modes.heading~="SEL" or t.heading~=nil) and (v.modes.throttle~="SEL" or t.speed~=nil)
 end
@@ -62,6 +64,9 @@ function Presets:update(io,flight,now)
    if saved.modes.heading=="SEL" and controls.targets.heading==nil then controls.modes.heading="MANUAL" end
   else
    controls.targets={heading=saved.targets.heading,speed=saved.targets.speed,altitude=saved.targets.altitude}
+   if finite(controls.targets.speed) then
+    controls.targets.speed=math.min(self.config.cockpit.maximum_selected_speed,controls.targets.speed)
+   end
   end
   controls.uuid=v.uuid;controls.headingTargetUuid=v.uuid;controls.speedTargetUuid=v.uuid
   controls.holds={};controls.lastSample=io.inputs and io.inputs.at

@@ -584,6 +584,10 @@ check(found,"focused issue remains in list")
 local ui,s,draw=fixture();healthy(s)
 local message="VESSEL DISASSEMBLED: physics_assembler_1.isAssembled() = false"
 s.assembly={state="DISASSEMBLED",assembled=false,message=message,reason="physics_assembler_1.isAssembled() = false"}
+s.assembly.retainedGasM3={FL=12400,BL=0}
+s.nodes.FL.providers.probe={controlRole="fine",present=true,attachedValid=true,attached=true}
+s.modes={heading="SEL",throttle="DIRECT",lateral="SEL"}
+s.systemsRestart.available=true
 s.faults={message,"VESSEL DISASSEMBLED","CHAMBER FL SILENT 12 S; CHECK POWER AND LINK"}
 draw()
 check(#ui.currentIssues==1,"one issue, found "..#ui.currentIssues)
@@ -593,18 +597,63 @@ check(ui.previous.rows[21].text:find("ASSEMBLE VESSEL TO ENABLE CONTROLS",1,true
 local page={}
 for y=5,20 do page[#page+1]=ui.previous.rows[y].text end
 page=table.concat(page," ")
-check(page:find("Core module reports physics assembler is not engaged.",1,true),"panel explains the cause")
-check(page:find("Please assemble the vessel",1,true) and page:find("Previous gas levels will be carried over.",1,true),"panel instruction")
-check(ui.previous.rows[9].text:find("Core module reports",1,true),"cause on row 9")
-check(ui.previous.rows[13].text:find("Please assemble the vessel to enable controls.",1,true),"instruction on row 13")
-check(ui.previous.rows[14].text:find("Previous gas levels will be carried over.",1,true),"gas levels on row 14")
+check(ui.page=="STATUS" and #ui.tabs==2,"disassembly opens Status with two tabs")
+for y=5,7 do
+ local bg=ui.previous.rows[y].background
+ check(bg:sub(4,5)=="fe" and bg:sub(53,54)=="ef","banner is three rows with side margins")
+end
+check(ui.previous.rows[11].text:find("ACTIVE") and ui.previous.rows[11].text:find("CHECK"),"probe states")
+check(ui.previous.rows[12].text:find("GAS 12400 m3") and ui.previous.rows[12].text:find("GAS N/A"),"stored and missing gas")
+check(ui.previous.rows[15].text:find("GAS 0 m3"),"zero is a stored value")
+check(ui.previous.rows[18].text:find("Please assemble the vessel to enable controls.",1,true),"assembly instruction")
+local modes=ui.previous.rows[3]
+local sel=assert(modes.text:find("SEL"))
+local direct=assert(modes.text:find("DIRECT"))
+check(modes.foreground:sub(sel,sel)=="9" and modes.foreground:sub(direct,direct)=="9","saved modes are cyan text")
+check(modes.background:sub(sel,sel)=="f" and ui:touch(sel,3,s)==nil,"saved modes are read only")
+check(not ui.previous.rows[4].text:find("STRAFE"),"strafe hidden")
 for _,old in ipairs({"Source: physics","Blocked:","Applied lift ceilings","Nothing resumes","isAssembled() = false","Lift maintenance"}) do
  check(not page:find(old,1,true),"removed: "..old)
 end
-s.assembly={state="ASSEMBLED",assembled=true};draw()
+check(ui:touch(45,23,s)==nil,"Settings tab stays local");draw()
+check(ui.page=="SETTINGS","Settings opens")
+ui:touch(40,18,s);draw()
+check(ui.settingsView=="SYSTEMS","normal Settings page navigation")
+local disabled=0
+for _,region in ipairs(ui.settingsRegions) do
+ if region.action.type=="start_systems" or region.action.type=="restart_systems" then
+  check(not region.enabled and ui:touch(region.x1,region.y1,s)==nil,"systems action is disabled")
+  disabled=disabled+1
+ end
+end
+check(disabled==2,"both systems actions rendered")
+check(ui:touch(10,23,s)==nil,"Status tab stays local");draw()
+check(ui.page=="STATUS","Status returns")
+s.assembly={state="ASSEMBLED",assembled=true};ui.page="FLIGHT";draw()
+check(#ui.tabs==4 and ui.page=="FLIGHT","reassembly restores normal tabs")
 local listed=false
 for _,item in ipairs(ui.currentIssues)do if item.text:find("CHAMBER FL SILENT",1,true)then listed=true end end
 check(listed,"other faults return once assembled")
+s.page="SETTINGS";ui.settingsView="SYSTEMS";assert(ui:draw(s))
+check(ui:touch(2,16,s).type=="start_systems" and ui:touch(29,16,s).type=="restart_systems","normal action eligibility returns")
+""")
+
+    def test_disassembly_gas_uses_retained_recovery_targets(self):
+        self.run_lua("""
+local Flight=require("avionics.flight")
+local f=setmetatable({systemsIntentActive=true,systemsRetainedRun={
+ phase="READY",currentTargets={FL={vent=10},FR={vent=0},BL={vent=2}},
+ pending={FL={targets={vent=12,probe=5}}},
+ batchTargets={FL={vent=14,probe=5}},
+ providerRoles={FL={vent="bulk",probe="fine"},BL={vent="bulk",probe="fine"}},
+}},{__index=Flight})
+local gas=f:retainedAssemblyGas()
+check(gas.FL==19 and gas.FR==0 and gas.BL==nil and gas.BR==nil,"batch, zero and incomplete maps")
+f.systemsRetainedRun.telemetryRecovery={targetMaps={FL={vent=25,probe=5}}}
+gas=f:retainedAssemblyGas()
+check(gas.FL==30 and gas.FR==nil,"recovery map supersedes the batch")
+f.systemsIntentActive=false
+check(f:retainedAssemblyGas()==nil,"stopped systems omit old gas targets")
 """)
 
 

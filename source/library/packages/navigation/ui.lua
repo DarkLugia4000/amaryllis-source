@@ -551,14 +551,12 @@ local function modeRegions(width,field)
     return result
 end
 -- ===================== ASSEMBLY GATE DISPLAY =====================
--- Core reports `assembly` in every snapshot. Anything but ASSEMBLED means
--- core has cancelled lift/propulsion/cockpit authority. FLIGHT, NAV and SHIP
--- replace their body with this panel inside the fixed body area (rows 5-21);
--- SETTINGS stays usable for lift-computer maintenance, and every page shows
--- the state in the header slot. Only fresh core data can show the panel;
--- stale data keeps the existing STALE handling.
+-- Fresh core snapshots select the assembly display. Confirmed disassembly
+-- gives the Navigator a local Status and Settings view. Other reported
+-- assembly problems use the body panel on Flight, Nav and Ship. Settings
+-- remains accessible for maintenance, and stale snapshots use the stale view.
 UI.ASSEMBLY_TITLES = {
-    DISASSEMBLED = "VESSEL NOT ASSEMBLED", ASSEMBLING = "VESSEL ASSEMBLING", UNKNOWN = "ASSEMBLY UNKNOWN",
+    DISASSEMBLED = "VESSEL DISASSEMBLED", ASSEMBLING = "VESSEL ASSEMBLING", UNKNOWN = "ASSEMBLY UNKNOWN",
 }
 local wrapErrorText -- defined with the page rendering helpers below
 local function assemblyProblem(snapshot, live)
@@ -679,18 +677,32 @@ end
 local function drawAssemblyPanel(surface, snapshot, assembly)
     local width = surface.width
     fillRect(surface, 1, 5, width, 17, "black", "white")
+    if assembly.state == "DISASSEMBLED" then
+        fillRect(surface,5,5,width-8,3,"red","white")
+        centered(surface,6,"VESSEL DISASSEMBLED","white")
+        centered(surface,9,"CHAMBER PROBES","lightGray")
+        for index,q in ipairs({"FL","FR","BL","BR"}) do
+            local x=index%2==1 and 5 or math.floor(width/2)+3
+            local y=index<=2 and 11 or 14
+            local node=(snapshot.nodes or {})[q] or {}
+            local active=false
+            for _,provider in pairs(node.providers or {}) do
+                if node.online==true and provider.controlRole=="fine" and provider.present==true and
+                    provider.attachedValid==true and provider.attached==true then active=true end
+            end
+            put(surface,x,y,q,"white")
+            put(surface,x+4,y,active and "ACTIVE" or "CHECK",active and "green" or "yellow")
+            local gas=(assembly.retainedGasM3 or {})[q]
+            put(surface,x,y+1,"GAS "..(finite(gas) and string.format("%.0f m3",gas) or "N/A"),"white")
+        end
+        centered(surface,18,"Please assemble the vessel to enable controls.","yellow")
+        return
+    end
     local tone = assembly.state == "ASSEMBLING" and "yellow" or "red"
     centered(surface, 6, "ERROR: " .. (UI.ASSEMBLY_TITLES[assembly.state] or "ASSEMBLY UNKNOWN"), tone)
-    -- The cause starts on row 9; the instruction and the gas-levels line follow on rows 13 and 14.
-    local groups = assembly.state == "DISASSEMBLED" and {
-        { 9, "Core module reports physics assembler is not engaged.", "white", 2 },
-        { 13, "Please assemble the vessel to enable controls.", "yellow", 1 },
-        { 14, "Previous gas levels will be carried over.", "lightGray", 1 },
-    } or { { 9, clampText(assembly.reason or "No detail reported", 300), "white", 2 } }
-    for _, group in ipairs(groups) do
-        for n, line in ipairs(wrapErrorText(group[2], width - 4)) do
-            if n <= group[4] then centered(surface, group[1] + n - 1, line, group[3]) end
-        end
+    for n,line in ipairs(wrapErrorText(clampText(assembly.reason or "No detail reported",300),width-4)) do
+        if n>2 then break end
+        centered(surface,8+n,line,"white")
     end
 end
 -- Summary: Render the fleet operation phase, current role and progress.
@@ -734,7 +746,8 @@ local function addHeader(surface, snapshot, page, live)
     -- The assembly state takes over the same header slot on every page.
     local assembly = assemblyProblem(snapshot, live)
     local fleet = fleetBootProblem(snapshot,live)
-    if assembly then
+    local disassembled=page=="STATUS" or vesselDefinitelyDisassembled(snapshot,live)
+    if assembly and page~="STATUS" then
         headerState = UI.ASSEMBLY_TITLES[assembly.state] or "ASSEMBLY UNKNOWN"
         headerTone = assembly.state == "ASSEMBLING" and "yellow" or "red"
     elseif fleet then
@@ -746,7 +759,7 @@ local function addHeader(surface, snapshot, page, live)
         headerState=clampText(progress,width)
         headerTone=failed and "red" or (fleet.phase=="COMPLETE" and "green" or "yellow")
     end
-    put(surface, math.max(1, width - #headerState + 1), 1, headerState, headerTone)
+    if page~="STATUS" then put(surface, math.max(1, width - #headerState + 1), 1, headerState, headerTone) end
 
     -- These three status groups occupy the same rows on every main-display
     -- page. Only a known active mode is cyan; unavailable mode controls stay
@@ -767,9 +780,17 @@ local function addHeader(surface, snapshot, page, live)
             local cockpitReady=live and not fleetBootBlocked(snapshot) and (snapshot.cockpitControl or {}).available==true
             local mode=(controlsReady or cockpitReady) and live and not fleetBootBlocked(snapshot) and modeText(snapshot.modes,group.field) or nil
             for _,region in ipairs(modeRegions(width,group.field)) do
-                drawButton(surface,region.x1,3,region.x2-region.x1+1,region.label,
-                    mode==region.mode and "selected" or (cockpitReady and "enabled" or "disabled"))
+                local regionWidth=region.x2-region.x1+1
+                if disassembled then
+                    centeredColumn(surface,region.x1,regionWidth,3,region.label,
+                        modeText(snapshot.modes,group.field)==region.mode and "cyan" or "gray")
+                else
+                    drawButton(surface,region.x1,3,regionWidth,region.label,
+                        mode==region.mode and "selected" or (cockpitReady and "enabled" or "disabled"))
+                end
             end
+        elseif page=="STATUS" then
+            centeredColumn(surface,group.x1,groupWidth,3,"LOCKED","gray")
         else
             local label,style="Options [v]","enabled"
             drawButton(surface, group.x1, 3, groupWidth, label, style)
@@ -795,8 +816,9 @@ local function addHeader(surface, snapshot, page, live)
 end
 
 -- Summary: Calculate the current page-tab touch rectangles.
-local function tabRegions(width, height)
-    local count = #UI.PAGES
+function UI.tabRegions(width, height, disassembled)
+    local pages=disassembled and {"STATUS","SETTINGS"} or UI.PAGES
+    local count = #pages
     local regions = {}
     local top = math.max(1, height - 2)
     for i = 1, count do
@@ -804,15 +826,15 @@ local function tabRegions(width, height)
         -- touch regions. The caption sits on the middle row.
         local left = math.floor((i - 1) * width / count) + 1
         local right = math.floor(i * width / count)
-        regions[i] = { x1 = left, x2 = right, y1 = top, y2 = height, page = UI.PAGES[i] }
+        regions[i] = { x1 = left, x2 = right, y1 = top, y2 = height, page = pages[i] }
     end
     return regions
 end
 
 -- Section: Page rendering | Cached character-cell views and action regions.
 -- Summary: Render the page tabs and return their current touch regions.
-local function drawTabs(surface, selected)
-    local regions = tabRegions(surface.width, surface.height)
+local function drawTabs(surface, selected, disassembled)
+    local regions = UI.tabRegions(surface.width, surface.height, disassembled)
     for _, region in ipairs(regions) do
         local label = " " .. region.page .. " "
         local start = math.floor((region.x1 + region.x2 - #label + 1) / 2)
@@ -1909,12 +1931,13 @@ local function drawSettings(surface,snapshot,renderer)
         centered(surface,6,"FLIGHT SETTINGS 2/2","cyan")
         local systems=snapshot.systemsStartup or {}
         button(2,8,54,"RESET LEVELING",view("LEVEL RESET"))
-        local stopSystems=systemsStopAvailable(snapshot)
+        local disassembled=vesselDefinitelyDisassembled(snapshot,live)
+        local stopSystems=not disassembled and systemsStopAvailable(snapshot)
         button(2,16,26,stopSystems and "STOP SYSTEMS" or "START SYSTEMS",
             {type=stopSystems and "systems_stop" or "start_systems"},
-            live and (stopSystems or (systems.available==true and not ((snapshot.emergencyLift or {}).latched))))
+            live and not disassembled and (stopSystems or (systems.available==true and not ((snapshot.emergencyLift or {}).latched))))
         button(29,16,27,"RESTART SYSTEMS",{type="restart_systems"},
-            live and (snapshot.systemsRestart or {}).available==true)
+            live and not disassembled and (snapshot.systemsRestart or {}).available==true)
     elseif sub=="LEVEL RESET" then
         centered(surface,6,"RESET LEVELING","cyan")
         local systems=snapshot.systemsStartup or {}
@@ -2105,6 +2128,17 @@ local function drawMain(renderer, snapshot, width, height, now)
     local live = isLive(snapshot)
     local page = string.upper(tostring(snapshot.page or renderer.page or "FLIGHT"))
     if page ~= "NAV" and page ~= "SHIP" and page ~= "SETTINGS" then page = "FLIGHT" end
+    local disassembled = vesselDefinitelyDisassembled(snapshot, live)
+    if disassembled then
+        if not renderer.disassembledPage then
+            renderer.issuesOpen=false
+            renderer.editor=nil
+        end
+        renderer.disassembledPage=renderer.disassembledPage or "STATUS"
+        page=renderer.disassembledPage
+    else
+        renderer.disassembledPage=nil
+    end
     renderer.page = page
     if page=="FLIGHT" and live and renderer.actionNotice=="WAITING FOR FRESH CORE STATUS" then
         renderer.actionNotice=nil
@@ -2117,13 +2151,12 @@ local function drawMain(renderer, snapshot, width, height, now)
         drawNavigation(surface, snapshot, live, renderer)
     elseif page == "SHIP" then
         drawShip(surface, snapshot, live, renderer)
-    else
+    elseif page=="SETTINGS" then
         drawSettings(surface, snapshot, renderer)
     end
     -- The three-row footer keeps the full-width page tabs easy to touch.
     local assembly = assemblyProblem(snapshot, live)
     local fleet = fleetBootProblem(snapshot,live)
-    local disassembled = vesselDefinitelyDisassembled(snapshot, live)
     if assembly and page ~= "SETTINGS" then drawAssemblyPanel(surface, snapshot, assembly)
     elseif fleet and page ~= "SETTINGS" then drawFleetBootPanel(surface,fleet) end
     local kill=page=="FLIGHT" and emergencyLift(snapshot,live) or nil
@@ -2168,7 +2201,7 @@ local function drawMain(renderer, snapshot, width, height, now)
             end
         end
     end
-    renderer.tabs = drawTabs(surface, selected)
+    renderer.tabs = drawTabs(surface, selected, disassembled)
     renderer.stopRegions={}
     local stopReview=snapshot.systemsStopReview
     if stopReview then
@@ -2651,6 +2684,7 @@ function UI:draw(snapshot)
     else
         local now = os.clock and os.clock() or 0
         surface = drawMain(self, snapshot, width, height, now)
+        if self.page=="STATUS" then self.systemsMenu=nil end
         surface = drawSystemsMenu(surface,self,actionSnapshot)
         if not self.killReview and not actionSnapshot.systemsStopReview and not self.systemsMenu then
             surface=Info.warning(surface,self,snapshot,now)
@@ -2665,16 +2699,22 @@ function UI:draw(snapshot)
     return true
 end
 
--- Page selection is local. Mode and altitude buttons send requests to core;
--- core must accept them before a snapshot changes. AP remains unavailable.
 -- Section: Operator navigation | Local selection, editing and returned actions.
--- Summary: Page selection is local. Mode and altitude buttons send requests to core; core must accept them before a snapshot changes. AP remains unavailable.
+-- Summary: Route monitor coordinates to local views and return enabled cockpit actions for dispatch.
 function UI:touch(x, y, snapshot)
     if type(x) ~= "number" or type(y) ~= "number" then return nil end
     snapshot = type(snapshot) == "table" and snapshot or {}
     local width, height = monitorSize(self.monitor)
     if not width or width < UI.MIN_MAIN_WIDTH or height < UI.MIN_MAIN_HEIGHT then return nil end
     if x<1 or x>width or y<1 or y>height or x%1~=0 or y%1~=0 then return nil end
+    local disassembled=vesselDefinitelyDisassembled(snapshot,isLive(snapshot))
+    if disassembled and y>=height-2 and not self.killReview and not snapshot.systemsStopReview then
+        for _,region in ipairs(UI.tabRegions(width,height,true)) do
+            if x>=region.x1 and x<=region.x2 then self.disassembledPage=region.page;break end
+        end
+        self.editor=nil;self.issuesOpen=false;self.systemsMenu=nil;self.settingsNotice=nil
+        return nil
+    end
     if Info.touch(self,x,y,snapshot,width) then return nil end
     if self.killReview then
         local now=os.clock and os.clock() or 0
@@ -2694,6 +2734,9 @@ function UI:touch(x, y, snapshot)
             return nil
         end
     end
+    if disassembled and not snapshot.systemsStopReview and
+        (self.disassembledPage~="SETTINGS" or self.page~="SETTINGS" or
+        (y==3 and x<=math.floor(width*2/3))) then return nil end
     local menuHandled,menuAction=touchSystemsMenu(self,x,y,snapshot,width)
     if menuHandled then return menuAction end
     local lateralWidth=math.floor((width-3)/3)
@@ -2721,7 +2764,8 @@ function UI:touch(x, y, snapshot)
     end
     -- A monitor can resize/rebind before its next draw. Never use footer
     -- regions cached at the old width to interpret a new touch coordinate.
-    self.tabs = tabRegions(width, height)
+    if y>=height-2 and self.disassembledPage then return nil end
+    self.tabs = UI.tabRegions(width, height, disassembled)
     for _, region in ipairs(self.tabs) do
         if x >= region.x1 and x <= region.x2 and y >= region.y1 and y <= region.y2 then
             self.editor=nil;self.settingsNotice=nil;self.actionNotice=nil
@@ -2778,6 +2822,7 @@ function UI:touch(x, y, snapshot)
         for _,region in ipairs(self.settingsRegions or {}) do
             if x>=region.x1 and x<=region.x2 and y>=region.y1 and y<=region.y2 and region.enabled then
                 local action=region.action
+                if disassembled and (action.type=="start_systems" or action.type=="restart_systems") then return nil end
                 if not fleetActionAllowed(snapshot,action) then return nil end
                 if action.type=="settings_view" then self.settingsView=action.view;self.settingsOffset=0;self.settingsNotice=nil;return nil end
                 if not isLive(snapshot) then return nil end

@@ -995,6 +995,7 @@ PURPOSES.update({
  "/avionics/vessel_sources.lua":"Vessel observations | Timestamped Sable fields and calibrated peripheral fallback.",
  "/avionics/state_reader.lua":"State service | Independent sensor workers and wired telemetry publication.",
  "/avionics/state_wire.lua":"State transport | Correlated wired frames, source ages and core configuration.",
+ "/avionics/state_update.lua":"State reader web update | Stage the state reader's own update when core asks for it.",
  "/avionics/telemetry_recovery.lua":"Lift recovery | Retained target reconciliation and authority renewal.",
  "/avionics/controls.lua":"Cockpit interpretation | Selected targets, pilot modes and lever handover.",
  "/avionics/autopilot.lua":"Route guidance | Destination acquisition, cruise and arrival control.",
@@ -1512,6 +1513,7 @@ SHORT_SUMMARIES.update({
 })
 SUMMARIES.update({
     '/packages/navigation/ui.lua#systemsMenuItems': 'Build Systems menu actions and availability from the current core snapshot.',
+    '/packages/navigation/ui.lua#UI:touch': 'Route monitor coordinates to local views and return enabled cockpit actions for dispatch.',
 })
 
 # Web installer-disk downloader (download.lua on the media folder and the disk).
@@ -1540,6 +1542,23 @@ SUMMARIES.update({
 })
 
 # Fix gas mix lag: restart each chamber's trim probe link.
+SUMMARIES.update({
+ 'StateUpdate.stage': 'Download and check the new web setup, then point the state reader\'s boot at it.',
+ 'StateUpdate.handle': 'Validate a state_update request and return core\'s acknowledgement after staging.',
+ 'Setup.updateInstalled': 'Replace an installed core or state reader\'s programs from a web release, keeping settings and calibration.',
+ 'Setup.carryDeployment': 'Write core\'s assignments under the new release and add the previous release to the history.',
+ 'mergeSettings': 'Merge stored settings over a release\'s defaults, keeping every stored value.',
+ 'knownRelease': 'Accept this release or an earlier release of the same deployment.',
+ 'systemsRunning': 'Read core\'s saved systems intent: true while lift control should be running.',
+ 'startCoreUpdate': 'Download the new release, record the update and boot core into the new web setup.',
+ 'message': 'Show a titled message and wait for a key, or count down and close on its own before a restart.',
+ 'removeRegistration': 'Remove this computer\'s registration payload and ask core to clear its role, so it can register again.',
+ 'holdsFiles': 'Report whether a path is a file or a folder holding at least one file at any depth.',
+ 'pushStateUpdate': 'Ask the state reader over core\'s wired modem to update itself, and report its answer.',
+ 'resumeCoreUpdate': 'Finish core\'s web update after its restart, resuming any step that was interrupted.',
+ 'coreUpdateFailed': 'Show a failed core update, with retry and, before any file changed, cancel.',
+ 'updateStateReader': 'Update the state reader from a web release, keeping its settings, and restart.',
+})
 SUMMARIES.update({
     "/packages/chamber/*/hardware.lua#Hardware.cycleProbeLink": "Turn the trim probe link off and back on, then verify its readback.",
 })

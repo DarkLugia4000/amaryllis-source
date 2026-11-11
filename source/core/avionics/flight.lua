@@ -840,6 +840,7 @@ field("SEL HEADING","coarse_heading_degrees","Heading tap degrees",{"cockpit","c
 field("SEL HEADING","fine_heading_degrees","Fine heading tap degrees",{"cockpit","fine_heading_degrees"},.1,10,.1)
 field("SEL HEADING","repeat_delay_seconds","Shared repeat delay s",{"cockpit","repeat_delay_seconds"},.1,2,.1)
 field("SEL THROTTLE","speed_target_rate","Speed start (b/s)/s",{"cockpit","speed_selection_blocks_per_second_per_second"},.01,10,.1)
+field("SEL THROTTLE","maximum_selected_speed","Max selected speed (b/s)",{"cockpit","maximum_selected_speed"},.1,100,1)
 local targets={
  {"altitude_rate_slow","Altitude slow",0.1,10,0.5},{"altitude_rate_medium","Altitude medium",0.1,20,1},
  {"altitude_rate_fast","Altitude fast",0.1,50,1},{"altitude_medium_after_seconds","Medium after",1,10,0.5},
@@ -915,6 +916,9 @@ function Flight:setting(io,action,now)
  local definition
  for _,f in ipairs(FIELDS) do if f.key==action.key then definition=f;break end end
  if not definition or not finite(action.value) or action.value<definition.min or action.value>definition.max then return false,"SETTING OUT OF RANGE" end
+ local speedLimitEdit=action.key=="maximum_selected_speed"
+ if speedLimitEdit and io.autopilot and io.autopilot.active and finite(io.autopilot.cruiseSpeed) and
+    io.autopilot.cruiseSpeed>action.value then return false,"DISENGAGE AP BEFORE LOWERING SPEED LIMIT" end
  if definition.group:match("^NAV") and ((io.autopilot and io.autopilot.active) or
     (io.positionAnchor and io.positionAnchor.active)) then return false,"DISENGAGE AP / RELEASE ANCHOR BEFORE TUNING" end
  local navOk,navReason=NavigationSettings.ensure(io.config)
@@ -953,6 +957,9 @@ function Flight:setting(io,action,now)
    local inputSetting=Flight.COCKPIT_INPUT_GROUPS[definition.group]==true
    if self.controls and inputSetting then
     self.controls.holds={};self.controls.headingKind=nil
+    if speedLimitEdit and finite(self.controls.targets.speed) then
+     self.controls.targets.speed=math.min(self.controls.targets.speed,action.value)
+    end
    end
    if io.thrust and definition.group:match("^PROP") and action.key~="speed_target_rate" then
        io.thrust:resetSpeedLoop();io.thrust:resetManualAccelerationLoop();io.thrust:resetHeadingLoop()
@@ -6002,6 +6009,30 @@ function Flight:assemblyBlocked(io,now,reason)
     self.startupAvailable=false;self.startupBlockedReason=reason
     self.trimStatus=nil
 end
+-- Report each retained chamber total in m3 from the same target maps used by
+-- airborne recovery. Empty or incomplete maps leave the chamber total absent.
+function Flight:retainedAssemblyGas()
+    local run=self.systemsRetainedRun
+    if not run or (run.phase~="READY" and run.phase~="MAIN_LIFT") or
+        not self.systemsIntentActive or self.emergencyLiftLatched then return nil end
+    local totals={}
+    for _,q in ipairs(QUADS) do
+        local map=TelemetryRecovery.retainedTargetMap(run,q)
+        if type(map)=="table" and next(map) then
+            local total=0
+            local complete=true
+            for name in pairs((run.providerRoles or {})[q] or {}) do
+                if map[name]==nil then complete=false;break end
+            end
+            for _,amount in pairs(map) do
+                if not finite(amount) or amount<0 then complete=false;break end
+                total=total+amount
+            end
+            if complete and finite(total) then totals[q]=total end
+        end
+    end
+    return totals
+end
 -- Summary: Publish the validated altitude/input authority context to chamber controllers.
 function Flight:renewLiftControlContext(io,now)
     local controls=self.controls
@@ -6247,6 +6278,9 @@ function Flight:decorate(snapshot,io,now)
     snapshot.anchorControl=io.positionAnchor and io.positionAnchor:snapshot() or {active=false,state="OFF"}
     if type(io.assemblyGate)=="function" then
         local _,_,assembly=io:assemblyGate(now);snapshot.assembly=assembly
+        if assembly and assembly.state=="DISASSEMBLED" then
+            assembly.retainedGasM3=self:retainedAssemblyGas()
+        end
     end
 
     snapshot.anchor=snapshot.anchorControl.state

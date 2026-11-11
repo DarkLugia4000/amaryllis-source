@@ -41,6 +41,10 @@ for _,key in ipairs(liftColumns) do columns[#columns+1]=key end
 for _,q in ipairs(quadrants) do for _,key in ipairs(chamberColumns) do columns[#columns+1]=q[2].."_"..key end end
 local autopilotColumns={"ap_route_heading","ap_heading_bias","ap_lateral_demand","ap_primary_idle","ap_capture_settled_s"}
 for _,key in ipairs(autopilotColumns) do columns[#columns+1]=key end
+local throttleColumns={"throttle_mode","effective_throttle_mode","prop_forward_signal","prop_reverse_signal",
+ "pilot_drive_request_pct","manual_target_acceleration","manual_measured_acceleration",
+ "manual_hold_speed","manual_acceleration_state","manual_acceleration_reason","throttle_request_reason"}
+for _,key in ipairs(throttleColumns) do columns[#columns+1]=key end
 local eventColumns={"epoch_ms","core_clock_s","event","quadrant","node_boot","command_seq","stage","status_seq",
  "received_seq","applied_seq","node_received_epoch_ms","node_applied_epoch_ms","status_sent_epoch_ms","send_succeeded",
  "core_receiver_epoch_ms","core_handler_epoch_ms","core_queue_wait_s","radio_priority",
@@ -122,7 +126,7 @@ function Debug:start(io)
  end
  self.path=self.fs.combine(folder,run..".csv");self.runID=run
  self.eventPath=self.fs.combine(folder,run..".events.csv")
- local metadata={schemaVersion=5,build=BUILD,runID=run,startedEpochMs=self.clock(),coreID=io.localID,
+ local metadata={schemaVersion=6,build=BUILD,runID=run,startedEpochMs=self.clock(),coreID=io.localID,
   motionWarningThresholds=io.motionWarnings and io.motionWarnings:settings() or nil,
   coreSession=io.session,config=io.config,columns=columns,sampleIntervalSeconds=.5,
   eventColumns=eventColumns,eventFile=run..".events.csv",
@@ -140,6 +144,9 @@ function Debug:start(io)
    lift_samples="Existing cached readings only; chamber status_age_s and validity determine freshness; totals are blank for incomplete maps",
    support_ratio="Total pressure-adjusted envelope support divided by vessel weight",
    trim_units="Roll/pitch errors and rates are height differences in blocks; vessel_pitch_deg/vessel_roll_deg are degrees",
+   prop_signals="Fresh forward and reverse cockpit redstone inputs, each 0 through 15",
+   pilot_drive_request_pct="Signed cockpit request after input gates, from -100 to 100 percent",
+   manual_acceleration="Lever acceleration target and filtered controller measurement in blocks/s^2; manual_hold_speed is the captured neutral speed in blocks/s",
    maximumRunBytes="Combined sample CSV and event CSV cap; recording stops earlier if disk reserve cannot be maintained"}}
  self:write(self.fs.combine(folder,run..".json"),"w",self.json.serializeJSON(metadata))
  local header=table.concat(columns,",").."\n"
@@ -286,6 +293,22 @@ function Debug:capture(snapshot,io,now,flight)
   ap_lateral_demand=ap.crossDemand,ap_primary_idle=ap.primaryIdle==true,
   ap_capture_settled_s=ap.captureSettledSeconds}
  for _,key in ipairs(autopilotColumns) do nextColumn=nextColumn+1;row[nextColumn]=apData[key] end
+ -- Record pilot intent beside the controller decision, using the fresh input
+ -- snapshot and the MAN controller fields for the current propulsion request.
+ local inputs=snapshot.inputs or {}
+ local raw=inputs.valid==true and inputs.raw or {}
+ local request=propulsion.request or {}
+ local manual=request.manualDriveOutput and propulsion.manualAcceleration or {}
+ local throttleData={
+  throttle_mode=(snapshot.modes or {}).throttle,
+  effective_throttle_mode=(snapshot.effectiveModes or {}).throttle,
+  prop_forward_signal=raw.prop_forward,prop_reverse_signal=raw.prop_reverse,
+  pilot_drive_request_pct=(snapshot.cockpitControl or {}).propulsionRequestPercent,
+  manual_target_acceleration=manual.targetAcceleration,manual_measured_acceleration=manual.measuredAcceleration,
+  manual_hold_speed=manual.holdingSpeed,manual_acceleration_state=manual.state,
+  manual_acceleration_reason=manual.reason,throttle_request_reason=request.throttleReason,
+ }
+ for _,key in ipairs(throttleColumns) do nextColumn=nextColumn+1;row[nextColumn]=throttleData[key] end
  local out={};for i=1,#columns do out[i]=cell(row[i]) end
  self.lastAt=now;self.lastSpeed=v.forwardSpeed
  if #self.queue>=self.maxQueue then self.dropped=self.dropped+1;return end

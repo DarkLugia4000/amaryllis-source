@@ -1348,6 +1348,42 @@ local function manualAccelerationWaiting(self,reason,target,measured)
         saturated=false}
 end
 
+-- Choose the signed drive range for MAN. A neutral hold coasts above its
+-- captured speed. Counter-thrust needs both fresh zero readbacks for two
+-- seconds and a persistent error large enough to justify a gear change.
+function Thrust.manualDriveBounds(loop,target,speed,measured,applied,sampleAt)
+    local held=loop.zeroAccelerationSpeed
+    local direction=target~=0 and (target>0 and 1 or -1) or
+        (held and held~=0 and (held>0 and 1 or -1) or (speed>=0 and 1 or -1))
+    local excess=held and (speed-held)*direction or 0
+    local coasting=held~=nil and (held==0 or excess>.5)
+    local needsBrake
+    if held~=nil then
+        needsBrake=excess>2 and measured*direction>=-.1
+    else
+        needsBrake=speed*direction>2 and (measured-target)*direction>.15
+    end
+    coasting=coasting or needsBrake
+    if loop.manualBrakeDirection~=direction or loop.manualBrakeTarget~=target then
+        loop.manualBrakeSince=nil;loop.manualBrakeAllowed=false
+    end
+    loop.manualBrakeDirection,loop.manualBrakeTarget=direction,target
+    if not needsBrake or not finite(applied.left) or not finite(applied.right) then
+        loop.manualBrakeSince=nil;loop.manualBrakeAllowed=false
+    elseif not loop.manualBrakeAllowed then
+        if applied.left==0 and applied.right==0 then
+            loop.manualBrakeSince=loop.manualBrakeSince or sampleAt
+            loop.manualBrakeAllowed=sampleAt-loop.manualBrakeSince>=2
+        else
+            loop.manualBrakeSince=nil
+        end
+    end
+    local withDrive=coasting and 0 or 1
+    local counter=loop.manualBrakeAllowed and .15 or 0
+    if direction>0 then return -counter,withDrive,coasting end
+    return -withDrive,counter,coasting
+end
+
 -- Summary: Compute bounded primary-drive demand for the selected manual acceleration.
 function Thrust:manualAccelerationDriveRequest(io,now,controls,yawDemand)
     local c=self.config.thrust or {}
@@ -1440,7 +1476,7 @@ function Thrust:manualAccelerationDriveRequest(io,now,controls,yawDemand)
             local moved={}
             for _,side in ipairs({"left","right"}) do
                 local current=output[side] or 0
-                local goal=finite(loop.goal[side]) and loop.goal[side] or current
+                local goal=loop.lastPilotAcceleration==target and loop.goal[side] or 0
                 moved[side]=clamp(goal,current-step,current+step)
             end
             output=moved;loop.driveOutput=moved
@@ -1491,22 +1527,24 @@ function Thrust:manualAccelerationDriveRequest(io,now,controls,yawDemand)
     local outputNext={}
     local saturated=false
     local applied=self:speedApplied(now)
+    local low,high,coasting=Thrust.manualDriveBounds(loop,target,vessel.forwardSpeed,measured,applied,sampleAt)
+    local controlAcceleration=target
+    if finite(loop.zeroAccelerationSpeed) then
+        local error=loop.zeroAccelerationSpeed-vessel.forwardSpeed
+        local outsideBand=math.max(0,math.abs(error)-.5)
+        local holdGain=finite(c.manual_speed_hold_gain) and c.manual_speed_hold_gain or .5
+        controlAcceleration=clamp((error<0 and -outsideBand or outsideBand)*holdGain,limits.minimum,limits.maximum)
+    end
+    local accelerationError=controlAcceleration-measured
     local slew=finite(c.speed_output_slew_per_second) and c.speed_output_slew_per_second or 0.25
     local elapsed=finite(loop.outputAt) and now>loop.outputAt and math.min(1,now-loop.outputAt) or dt
     local maxStep=slew*elapsed
     local goals={}
     for _,side in ipairs({"left","right"}) do
-        local controlAcceleration=target
-        if finite(loop.zeroAccelerationSpeed) then
-            local holdGain=finite(c.manual_speed_hold_gain) and c.manual_speed_hold_gain or .5
-            controlAcceleration=clamp((loop.zeroAccelerationSpeed-vessel.forwardSpeed)*holdGain,
-                limits.minimum,limits.maximum)
-        end
-        local accelerationError=controlAcceleration-measured
         local filteredDerivative=(derivative[side] or 0)+derivativeAlpha*(derivativeRaw-(derivative[side] or 0))
         derivativeNext[side]=filteredDerivative
         local oldIntegral=(loop.integral and loop.integral[side]) or 0
-        local candidate=clamp(oldIntegral+accelerationError*dt,-gains.integral_limit,gains.integral_limit)
+        local candidate=oldIntegral
         local previous
         if loop.initialized then previous=loop.driveOutput[side] or 0
         elseif finite(applied[side]) then previous=clamp(applied[side]/c.direct_max_request,-1,1)
@@ -1518,35 +1556,26 @@ function Thrust:manualAccelerationDriveRequest(io,now,controls,yawDemand)
             candidate=clamp((previous-gains.kp*accelerationError-gains.kd*filteredDerivative)/gains.ki,
                 -gains.integral_limit,gains.integral_limit)
         end
-        local raw=gains.kp*accelerationError+gains.ki*candidate+gains.kd*filteredDerivative
-        -- A learned braking offset must not keep commanding the opposite
-        -- direction after feedback again calls for the pilot's acceleration.
-        -- Re-anchor at zero effort, then integrate forward on later samples.
-        -- Neutral speed hold and genuine opposing braking error retain their
-        -- signed authority; the existing output slew still governs release.
-        if target*accelerationError>0 and target*raw<0 then
-            if gains.ki>0 then
-                candidate=clamp((-gains.kp*accelerationError-gains.kd*filteredDerivative)/gains.ki,
-                    -gains.integral_limit,gains.integral_limit)
-                raw=gains.kp*accelerationError+gains.ki*candidate+gains.kd*filteredDerivative
+        -- Integrate once the fresh transmission readback tracks the previous
+        -- goal within 3% drive, or when the correction closes that gap.
+        local priorGoal=(loop.goal or {})[side] or previous
+        if finite(applied[side]) and math.abs(accelerationError)>.02 then
+            local trackingError=priorGoal-applied[side]/c.direct_max_request
+            if math.abs(trackingError)<=.03 or trackingError*accelerationError<0 then
+                candidate=clamp(candidate+accelerationError*dt,-gains.integral_limit,gains.integral_limit)
             end
-            raw=target>0 and math.max(0,raw) or math.min(0,raw)
         end
-        local bounded=clamp(raw,-1,1)
+        local raw=gains.kp*accelerationError+gains.ki*candidate+gains.kd*filteredDerivative
+        local bounded=clamp(raw,low,high)
+        if (raw-bounded)*accelerationError>0 then
+            candidate=oldIntegral
+        end
+        -- Release stored effort when coasting or changing drive direction.
+        candidate=clamp(candidate,low<0 and -gains.integral_limit or 0,high>0 and gains.integral_limit or 0)
+        raw=gains.kp*accelerationError+gains.ki*candidate+gains.kd*filteredDerivative
+        bounded=clamp(raw,low,high)
         local output=clamp(bounded,previous-maxStep,previous+maxStep)
         local driveSaturated=raw<=-1 or raw>=1
-        local pushesSaturation=(raw>=1 and accelerationError>0) or (raw<=-1 and accelerationError<0)
-        if pushesSaturation then
-            if gains.ki>0 then
-                local edge=raw>=1 and 1 or -1
-                candidate=clamp((edge-gains.kp*accelerationError-
-                    gains.kd*filteredDerivative)/gains.ki,-gains.integral_limit,gains.integral_limit)
-            else candidate=oldIntegral end
-            raw=gains.kp*accelerationError+gains.ki*candidate+gains.kd*filteredDerivative
-            bounded=clamp(raw,-1,1)
-            output=clamp(bounded,previous-maxStep,previous+maxStep)
-            driveSaturated=raw<=-1 or raw>=1
-        end
         goals[side]=bounded
         loop.integral=loop.integral or {left=0,right=0}
         loop.integral[side]=candidate
@@ -1557,11 +1586,12 @@ function Thrust:manualAccelerationDriveRequest(io,now,controls,yawDemand)
     loop.lastSampleAt,loop.lastMeasurement,loop.measuredAcceleration=sampleAt,vessel.forwardSpeed,measured
     loop.driveOutput=outputNext
     loop.goal=goals;loop.outputAt=now
+    loop.lastPilotAcceleration=target
     loop.initialized=true
     local tolerance=math.max(0.02,(limits.maximum-limits.minimum)*0.02)
-    local withinTolerance=math.abs(target-measured)<=tolerance
-    local coasting=target==0 and math.abs(outputNext.left)<=0.000001 and math.abs(outputNext.right)<=0.000001
-    local state=coasting and "COASTING" or (saturated and "SATURATED" or
+    local withinTolerance=math.abs(accelerationError)<=tolerance
+    local coastState=coasting and math.abs(goals.left)<=0.000001 and math.abs(goals.right)<=0.000001
+    local state=coastState and "COASTING" or (saturated and "SATURATED" or
         (withinTolerance and "HOLDING" or "ACCELERATING"))
     local controlReason=nil
     loop.state,loop.saturated,loop.reason=state,saturated,controlReason
