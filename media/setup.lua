@@ -132,6 +132,19 @@ local function coreEntries(media,release)
     end
     return entries
 end
+-- True when path is a file, or a folder that holds at least one file at any
+-- depth. A folder holding only empty folders counts as absent: the wireless
+-- installer creates /avionics before its package arrives, and removing a
+-- registration before then can leave that empty folder behind.
+-- Summary: Report whether a path is a file or a folder holding at least one file at any depth.
+local function holdsFiles(path)
+    if not fs.exists(path) then return false end
+    if not fs.isDir(path) then return true end
+    for _,name in ipairs(fs.list(path)) do
+        if holdsFiles(fs.combine(path,name)) then return true end
+    end
+    return false
+end
 local function recordExists(path)
     return fs.exists(path) or fs.exists(path..".amaryllis-tmp") or fs.exists(path..".amaryllis-backup")
 end
@@ -143,6 +156,12 @@ local function deployment(media,release)
     assert(state.schemaVersion==1 and state.releaseId==release.releaseId and type(state.computers)=="table","Wrong deployment disk")
     assert(state.assignmentRevision==nil or integer(state.assignmentRevision),"Invalid assignment revision")
     assert(state.imported==nil or type(state.imported)=="boolean","Invalid core import marker")
+    -- releaseHistory lists the releases this deployment ran before a web update,
+    -- newest first. Computers installed under one of them still count as installed.
+    if state.releaseHistory~=nil then
+        assert(type(state.releaseHistory)=="table" and #state.releaseHistory<=16,"Invalid release history")
+        for _,earlier in ipairs(state.releaseHistory) do assert(type(earlier)=="string","Invalid release history") end
+    end
     local ids={}
     for role,entry in pairs(state.computers) do
         assert(release.roles[role] and integer(entry.id) and entry.label==release.roles[role].label,"Invalid deployment role")
@@ -161,6 +180,16 @@ local function deployment(media,release)
         end
     end
     return state
+end
+-- True when releaseId is this release, or one this deployment ran before a web
+-- update (deployment.releaseHistory). A computer's installation record keeps the
+-- release it was installed with; a web update changes its programs through core,
+-- so the record can name an earlier release of the same deployment.
+local function knownRelease(state,release,releaseId)
+    if releaseId==release.releaseId then return true end
+    local history=type(state)=="table" and type(state.releaseHistory)=="table" and state.releaseHistory or {}
+    for _,earlier in ipairs(history) do if earlier==releaseId then return true end end
+    return false
 end
 local function repair(media)
     local path=fs.combine(media,"role-repair.json")
@@ -190,13 +219,15 @@ local function preflight(media,release,entries,role,id)
     local state=deployment(media,release)
     assert(not state.reset or not state.reset.pending,"Finish resetting installation on core #"..tostring(state.reset and state.reset.coreID).." first")
     local previous=state.reset and state.reset.previous[role]
-    local retained=previous and previous.id==id and journal and journal.releaseId==release.releaseId
+    local retained=previous and previous.id==id and journal and knownRelease(state,release,journal.releaseId)
         and journal.role==role and journal.id==id
     if retained and role~="core" then
         assert(state.computers.core and state.computers.core.id==state.reset.coreID,
             "Register the original core #"..state.reset.coreID.." to retain this computer's installation")
     end
-    if fs.exists("/startup.lua") or fs.exists("/avionics") or fs.exists("/fleet.json") or fs.exists("/config.json") then
+    -- Any existing program, settings or fleet file makes this an existing
+    -- installation. An /avionics folder holding no files does not.
+    if fs.exists("/startup.lua") or holdsFiles("/avionics") or fs.exists("/fleet.json") or fs.exists("/config.json") then
         assert(retained or journal and journal.pending and journal.releaseId==release.releaseId and journal.role==role and journal.id==id,
             "Fresh computers only. Existing installations are not overwritten.")
     end
@@ -345,7 +376,7 @@ local function roleFor(state,id)
 end
 local function repairable(role) return role and role~="core" and role~="state" end
 -- Summary: Check the selected core and role metadata for the supported assignment operation.
-local function localRepairCheck(release,id,oldRole,newRole)
+local function localRepairCheck(release,id,oldRole,newRole,state)
     assert(not os.__amaryllisFleetRegistry,"Restart from the setup disk with runtimes stopped before correcting assignments")
     assert(not fs.exists("/avionics/config.json") and not fs.exists("/avionics/main.lua"),
         "A role package is already present. This correction mode handles registration only; it will not relabel installed hardware.")
@@ -359,7 +390,7 @@ local function localRepairCheck(release,id,oldRole,newRole)
     end
     assert(recordExists("/amaryllis-install.json"),"This computer has no registration record")
     local journal=readJSON("/amaryllis-install.json")
-    assert(journal.releaseId==release.releaseId and journal.id==id and journal.pending==false and
+    assert(knownRelease(state,release,journal.releaseId) and journal.id==id and journal.pending==false and
         (journal.role==oldRole or journal.role==newRole),"Local registration does not match this correction")
     return journal
 end
@@ -501,8 +532,11 @@ function Setup.unassignCore(media,release,id)
     end
     if not pending then
         local previous=clone(state.computers)
+        -- The release history stays, so a computer installed from an earlier
+        -- release that a web update replaced still keeps its programs when it
+        -- registers again after this reset.
         state={schemaVersion=1,releaseId=release.releaseId,computers={},assignmentRevision=0,imported=false,
-            reset={coreID=id,previous=previous,pending=true}}
+            reset={coreID=id,previous=previous,pending=true},releaseHistory=state.releaseHistory}
         json(fs.combine(media,"deployment.json"),state)
     end
     for _,path in ipairs({"/fleet.json",fs.combine(media,"role-repair.json")}) do
@@ -907,9 +941,10 @@ function Setup.installRegistered(media,release,role,id,coreID)
     assert(role~="core" and release.roles[role] and integer(coreID) and coreID~=id,"Invalid registration")
     local journalPath="/amaryllis-install.json"
     local journal=recordExists(journalPath) and readJSON(journalPath) or nil
-    if journal and journal.pending==false and journal.releaseId==release.releaseId and journal.role~=role
+    local state=deployment(media,release)
+    if journal and journal.pending==false and knownRelease(state,release,journal.releaseId) and journal.role~=role
         and role~="state" and journal.role~="state" then
-        localRepairCheck(release,id,journal.role,role)
+        localRepairCheck(release,id,journal.role,role,state)
         journal.role=role;json(journalPath,journal)
         os.setComputerLabel(release.roles[role].label)
         return "changed"
@@ -926,9 +961,98 @@ function Setup.installRegistered(media,release,role,id,coreID)
     finish(media,entries,journalPath,release,role,id,retained)
     return retained and "retained" or "installed"
 end
-function Setup.checkRoleChange(release,id,oldRole,newRole)
+function Setup.checkRoleChange(release,id,oldRole,newRole,releaseHistory)
     assert(repairable(oldRole) and repairable(newRole),"Core and state reader assignments cannot be moved")
-    localRepairCheck(release,id,oldRole,newRole)
+    localRepairCheck(release,id,oldRole,newRole,{releaseHistory=releaseHistory})
+end
+-- Merge stored settings over a release's defaults: every stored value stays,
+-- and a setting the release adds gets its default. Objects merge key by key;
+-- arrays and plain values are taken from the stored copy whole. This is the
+-- rule the Builder's updater applies to config.json.
+-- Summary: Merge stored settings over a release's defaults, keeping every stored value.
+local function mergeSettings(defaults,stored)
+    if type(defaults)~="table" or type(stored)~="table" or defaults[1]~=nil or stored[1]~=nil then return stored end
+    local result=clone(defaults)
+    for key,value in pairs(stored) do
+        if type(result[key])=="table" and type(value)=="table" then result[key]=mergeSettings(result[key],value)
+        else result[key]=value end
+    end
+    return result
+end
+Setup.mergeSettings=mergeSettings
+-- Web update of an installed core or state reader, run with core's runtime
+-- stopped. Every payload of the new release is downloaded and checked against
+-- release.json before any file changes. Then the programs are replaced,
+-- /avionics/config.json is merged (stored settings kept, new settings get their
+-- defaults), learned calibration files that already exist are kept, and the
+-- startup program is written last, to options.startup when given (core's
+-- update writes it beside the update's boot program). options.beforeWrite runs
+-- once, after every check and before the first file changes, so the caller can
+-- record that the old programs are no longer intact. Finally the installation
+-- record names the new release. Running it again on the same release rewrites
+-- the same files, so an interrupted update can simply be repeated.
+-- Summary: Replace an installed core or state reader's programs from a web release, keeping settings and calibration.
+function Setup.updateInstalled(media,release,role,id,options)
+    options=options or {}
+    assert(role=="core" or role=="state","Only core and the state reader update their own programs")
+    assert(not os.__amaryllisFleetRegistry,"Close core's runtime before updating")
+    local journalPath="/amaryllis-install.json"
+    assert(recordExists(journalPath),"This computer has no installation record")
+    local journal=readJSON(journalPath)
+    assert(journal.role==role and journal.id==id and journal.pending==false,
+        "This computer's installation record does not match an installed "..title(role))
+    local entries=role=="core" and coreEntries(media,release) or release.state
+    assert(type(entries)=="table","Role payload missing from release")
+    local data,total,largest={},16384,0
+    for _,entry in ipairs(entries) do
+        assert(validPath(entry.path),"Unsafe installation path")
+        if not (entry.defaultsOnly==true and fs.exists(entry.path)) then
+            data[entry.path]=payload(media,entry)
+            local oldBytes=fs.exists(entry.path) and fs.getSize(entry.path) or 0
+            total=total+math.max(0,entry.bytes-oldBytes)+512
+            largest=math.max(largest,entry.bytes+512)
+        end
+    end
+    local free=fs.getFreeSpace("/")
+    assert(free=="unlimited" or (type(free)=="number" and free>=total+largest),"Not enough computer space for the update")
+    local configPath="/avionics/config.json"
+    if data[configPath] and fs.exists(configPath) then
+        local defaults=assert(textutils.unserializeJSON(data[configPath]),"Invalid configuration in release")
+        data[configPath]=textutils.serializeJSON(mergeSettings(defaults,readJSON(configPath)))
+    end
+    if options.beforeWrite then options.beforeWrite() end
+    for _,entry in ipairs(entries) do
+        if data[entry.path] and entry.path~="/startup.lua" then write(entry.path,data[entry.path]) end
+    end
+    if data["/startup.lua"] then write(options.startup or "/startup.lua",data["/startup.lua"]) end
+    journal.releaseId=release.releaseId;journal.source=release.source
+    json(journalPath,journal)
+end
+-- Write core's deployment record for a web update: the same assignments and
+-- import state, under the new release, with the previous release added to
+-- releaseHistory (newest first, at most 16). The new release must define the
+-- same roles with the same labels as the ship's assignments.
+-- Summary: Write core's assignments under the new release and add the previous release to the history.
+function Setup.carryDeployment(media,release,previous)
+    assert(type(previous)=="table" and previous.schemaVersion==1 and previous.imported==true and
+        type(previous.computers)=="table","Import core's assignments before updating from the web")
+    for role,entry in pairs(release.roles) do
+        local assigned=previous.computers[role]
+        assert(assigned and integer(assigned.id) and assigned.label==entry.label,
+            "The new release's roles differ from this ship's assignments: "..title(role))
+    end
+    for role in pairs(previous.computers) do
+        assert(release.roles[role],"The new release has no role for "..tostring(role))
+    end
+    local history={}
+    if type(previous.releaseId)=="string" and previous.releaseId~=release.releaseId then history[1]=previous.releaseId end
+    for _,earlier in ipairs(type(previous.releaseHistory)=="table" and previous.releaseHistory or {}) do
+        if #history<16 and earlier~=release.releaseId and earlier~=history[1] then history[#history+1]=earlier end
+    end
+    local state={schemaVersion=1,releaseId=release.releaseId,computers=clone(previous.computers),
+        assignmentRevision=previous.assignmentRevision or 0,imported=true,releaseHistory=history}
+    json(fs.combine(media,"deployment.json"),state)
+    return state
 end
 Setup.deployment=deployment
 Setup.title=title
