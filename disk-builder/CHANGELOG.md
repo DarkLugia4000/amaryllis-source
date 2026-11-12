@@ -5,6 +5,55 @@ Version entries describe the changes recorded for each release. See the
 
 ## Unreleased
 
+### Windows regression checks
+
+- `builder.py` (`project_inputs`): resolve the selected checkout root before
+  collecting source paths. Windows short directory names now use the same
+  canonical root as the source snapshot.
+- Regenerated the tuning reference from the current configuration, including
+  the MAN acceleration PID defaults. All 19 configuration registry and source
+  integrity tests passed locally.
+
+### Shared Navigator top bar follows assembly state
+
+- `navigation/ui.lua` (`addHeader`, `drawSystemsMenu`, `touchSystemsMenu`, `UI:touch`):
+  Status and Settings share the read-only mode display and **SYSTEMS LOCKED** label while
+  disassembled. Any open Options dropdown closes on disassembly. Reassembly restores the
+  normal mode controls and **Options [v]**. The display regression covers both locked
+  pages and reopening Options after reassembly.
+
+### Disassembled chamber probe labels
+
+- `navigation/ui.lua` (`drawAssemblyPanel`): **CHAMBER PROBES** becomes **CHAMBER STATUS**.
+  Each chamber's **ACTIVE** or **CHECK** label becomes a green **FL PROBE** or a red
+  **FL NO PROBE**, using the corresponding chamber name. The display regression
+  checks the heading, labels, and colors.
+
+### Saved gas on the disassembled Status page
+
+- `flight.lua` (`retainedAssemblyGas`, `chamberStoredGas`, `decorate`): the
+  **GAS** line previously depended on a retained airborne run, so a stopped or
+  freshly rebooted core could show **GAS N/A** for every chamber. Core now uses
+  pending restart targets or retained recovery targets when available, and otherwise
+  sums each chamber's stored vent and trim probe ceilings from fresh readbacks.
+  **GAS N/A** remains for chambers without a complete saved or readable total.
+- `test_displays.py`: covers stored hardware values, stale and incomplete readbacks,
+  and restart targets. All 24 targeted display, source-integrity, and control-stage
+  tests passed. In-game verification is pending.
+
+### MAN neutral hold through small heading corrections
+
+- `thrust.lua` (`Thrust:manualTurnState`, `Thrust:manualAccelerationDriveRequest`):
+  neutral hold pauses above 0.5°/s of measured yaw and captures forward speed again
+  after a full second below 0.25°/s. The controller measures yaw from successive
+  heading samples. Steering demand no longer triggers the pause. Duplicate samples
+  leave the settling interval unchanged and stale data clears its progress.
+- `debug_recorder.lua` (`Debug:start`, `Debug:capture`): recording schema 7 appends
+  `manual_turn_yaw_rate_deg_s`, the absolute measured rate used by the pause.
+- Verification: 57 tests passed across the autopilot, control-stage, and source-integrity
+  suites. The MAN regression covers heading wrap, small corrections, entry, interrupted
+  settling, and one-time speed recapture. In-game verification is pending.
+
 ### Adjustable SEL throttle ceiling
 
 - `flight.lua` (`Flight:setting`): **Cockpit Inputs → SEL Throttle Settings** adds

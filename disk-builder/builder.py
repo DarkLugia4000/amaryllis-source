@@ -110,6 +110,9 @@ def project_inputs(root):
     """List maintained source and builder inputs that determine a project release."""
     root = Path(root).expanduser().absolute()
     require(root.is_dir() and not linked(root), "Choose an unlinked Amaryllis project folder.")
+    # Collect paths under the same canonical root that Snapshot uses, including
+    # when Windows supplies a short name for a parent of the checkout.
+    root = root.resolve()
     paths = {"source/baseline.json": root / "source/baseline.json"}
     for group in ("core", "library", "calibration"):
         directory = root / "source" / group
@@ -129,7 +132,7 @@ def project_inputs(root):
     for name in assets:
         require(Path(name).name == name, "Invalid builder asset name.")
         paths["builder/assets/" + name] = HOME / "assets" / name
-    return root.resolve(), paths
+    return root, paths
 
 
 class ProjectSnapshot:

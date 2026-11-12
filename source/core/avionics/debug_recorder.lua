@@ -43,7 +43,7 @@ local autopilotColumns={"ap_route_heading","ap_heading_bias","ap_lateral_demand"
 for _,key in ipairs(autopilotColumns) do columns[#columns+1]=key end
 local throttleColumns={"throttle_mode","effective_throttle_mode","prop_forward_signal","prop_reverse_signal",
  "pilot_drive_request_pct","manual_target_acceleration","manual_measured_acceleration",
- "manual_hold_speed","manual_acceleration_state","manual_acceleration_reason","throttle_request_reason"}
+ "manual_hold_speed","manual_acceleration_state","manual_acceleration_reason","throttle_request_reason","manual_turn_yaw_rate_deg_s"}
 for _,key in ipairs(throttleColumns) do columns[#columns+1]=key end
 local eventColumns={"epoch_ms","core_clock_s","event","quadrant","node_boot","command_seq","stage","status_seq",
  "received_seq","applied_seq","node_received_epoch_ms","node_applied_epoch_ms","status_sent_epoch_ms","send_succeeded",
@@ -126,7 +126,7 @@ function Debug:start(io)
  end
  self.path=self.fs.combine(folder,run..".csv");self.runID=run
  self.eventPath=self.fs.combine(folder,run..".events.csv")
- local metadata={schemaVersion=6,build=BUILD,runID=run,startedEpochMs=self.clock(),coreID=io.localID,
+ local metadata={schemaVersion=7,build=BUILD,runID=run,startedEpochMs=self.clock(),coreID=io.localID,
   motionWarningThresholds=io.motionWarnings and io.motionWarnings:settings() or nil,
   coreSession=io.session,config=io.config,columns=columns,sampleIntervalSeconds=.5,
   eventColumns=eventColumns,eventFile=run..".events.csv",
@@ -146,6 +146,7 @@ function Debug:start(io)
    trim_units="Roll/pitch errors and rates are height differences in blocks; vessel_pitch_deg/vessel_roll_deg are degrees",
    prop_signals="Fresh forward and reverse cockpit redstone inputs, each 0 through 15",
    pilot_drive_request_pct="Signed cockpit request after input gates, from -100 to 100 percent",
+   manual_turn_yaw_rate_deg_s="Absolute heading rate used by the MAN neutral turn pause, in degrees per second",
    manual_acceleration="Lever acceleration target and filtered controller measurement in blocks/s^2; manual_hold_speed is the captured neutral speed in blocks/s",
    maximumRunBytes="Combined sample CSV and event CSV cap; recording stops earlier if disk reserve cannot be maintained"}}
  self:write(self.fs.combine(folder,run..".json"),"w",self.json.serializeJSON(metadata))
@@ -307,6 +308,7 @@ function Debug:capture(snapshot,io,now,flight)
   manual_target_acceleration=manual.targetAcceleration,manual_measured_acceleration=manual.measuredAcceleration,
   manual_hold_speed=manual.holdingSpeed,manual_acceleration_state=manual.state,
   manual_acceleration_reason=manual.reason,throttle_request_reason=request.throttleReason,
+  manual_turn_yaw_rate_deg_s=manual.turnYawRate,
  }
  for _,key in ipairs(throttleColumns) do nextColumn=nextColumn+1;row[nextColumn]=throttleData[key] end
  local out={};for i=1,#columns do out[i]=cell(row[i]) end

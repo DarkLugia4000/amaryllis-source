@@ -6009,15 +6009,21 @@ function Flight:assemblyBlocked(io,now,reason)
     self.startupAvailable=false;self.startupBlockedReason=reason
     self.trimStatus=nil
 end
--- Report each retained chamber total in m3 from the same target maps used by
--- airborne recovery. Empty or incomplete maps leave the chamber total absent.
-function Flight:retainedAssemblyGas()
-    local run=self.systemsRetainedRun
-    if not run or (run.phase~="READY" and run.phase~="MAIN_LIFT") or
-        not self.systemsIntentActive or self.emergencyLiftLatched then return nil end
+-- Sum saved provider ceilings in m3 per chamber. A pending restart or active
+-- recovery supplies its intended map. Fresh chamber readbacks supply the
+-- stored hardware settings after a cold boot or operator stop.
+function Flight:retainedAssemblyGas(io,now)
+    local checkpoint=self.restart and self.restart.saved
+    local run
+    if not self.emergencyLiftLatched then
+        run=checkpoint and checkpoint.run
+        local retained=self.systemsRetainedRun
+        if not run and self.systemsIntentActive and retained and
+            (retained.phase=="READY" or retained.phase=="MAIN_LIFT") then run=retained end
+    end
     local totals={}
     for _,q in ipairs(QUADS) do
-        local map=TelemetryRecovery.retainedTargetMap(run,q)
+        local map=run and TelemetryRecovery.retainedTargetMap(run,q)
         if type(map)=="table" and next(map) then
             local total=0
             local complete=true
@@ -6030,8 +6036,28 @@ function Flight:retainedAssemblyGas()
             end
             if complete and finite(total) then totals[q]=total end
         end
+        if totals[q]==nil and io and io.nodes and io.nodeFresh and io:nodeFresh(q,now) then
+            totals[q]=Flight.chamberStoredGas(io.nodes[q])
+        end
     end
-    return totals
+    return next(totals) and totals or nil
+end
+
+-- Read the stored m3 ceiling of each configured steam vent and the trim
+-- probe. Return a total once the complete chamber reports valid targets.
+function Flight.chamberStoredGas(node)
+    if not node then return nil end
+    local total,bulk,fine=0,0,0
+    for _,provider in pairs(node.providers or {}) do
+        if provider.present~=true or provider.targetValid~=true or
+            not finite(provider.targetAmount) or provider.targetAmount<0 then return nil end
+        if provider.controlRole=="bulk" then bulk=bulk+1
+        elseif provider.controlRole=="fine" then fine=fine+1
+        else return nil end
+        total=total+provider.targetAmount
+    end
+    local expected=node.steamCount or 8
+    if expected>0 and bulk==expected and fine==1 and finite(total) then return total end
 end
 -- Summary: Publish the validated altitude/input authority context to chamber controllers.
 function Flight:renewLiftControlContext(io,now)
@@ -6279,7 +6305,7 @@ function Flight:decorate(snapshot,io,now)
     if type(io.assemblyGate)=="function" then
         local _,_,assembly=io:assemblyGate(now);snapshot.assembly=assembly
         if assembly and assembly.state=="DISASSEMBLED" then
-            assembly.retainedGasM3=self:retainedAssemblyGas()
+            assembly.retainedGasM3=self:retainedAssemblyGas(io,now)
         end
     end
 

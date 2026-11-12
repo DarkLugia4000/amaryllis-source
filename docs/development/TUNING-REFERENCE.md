@@ -92,8 +92,8 @@ altitude_ceiling must be above minimum_world_y. Startup speed and hard guard are
 | `manual_acceleration_pid.derivative_filter_seconds` | 1 | required | seconds | (0, 100] (config validation) | manual acceleration pid derivative filter seconds | configured value |
 | `manual_acceleration_pid.integral_limit` | 5 | required | input-seconds | [0, 100] (config validation) | manual acceleration pid integral limit | configured value |
 | `manual_acceleration_pid.kd` | 0 | required | output-seconds per input | [0, 100] (config validation) | manual acceleration pid kd | configured value |
-| `manual_acceleration_pid.ki` | 0.1 | required | output per input-second | [0, 100] (config validation) | manual acceleration pid ki | configured value |
-| `manual_acceleration_pid.kp` | 1 | required | output per input | [0, 100] (config validation) | manual acceleration pid kp | configured value |
+| `manual_acceleration_pid.ki` | 0.08 | required | output per input-second | [0, 100] (config validation) | manual acceleration pid ki | configured value |
+| `manual_acceleration_pid.kp` | 0.2 | required | output per input | [0, 100] (config validation) | manual acceleration pid kp | configured value |
 | `manual_acceleration_verified` | false | required |  | boolean (config validation) | Owner verification gate for manual acceleration | configured value |
 | `manual_speed_hold_gain` | 0.5 | 0.5 | drive per b/s | [0.01, 10] (config validation) | Manual speed-hold gain | configured value |
 | `mapping_verified` | true | required |  | boolean (config validation) | Owner verification gate for mapping | configured value |

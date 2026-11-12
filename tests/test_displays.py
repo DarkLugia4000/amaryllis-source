@@ -602,7 +602,12 @@ for y=5,7 do
  local bg=ui.previous.rows[y].background
  check(bg:sub(4,5)=="fe" and bg:sub(53,54)=="ef","banner is three rows with side margins")
 end
-check(ui.previous.rows[11].text:find("ACTIVE") and ui.previous.rows[11].text:find("CHECK"),"probe states")
+check(ui.previous.rows[9].text:find("CHAMBER STATUS",1,true),"chamber heading")
+local probes=ui.previous.rows[11]
+local fl=assert(probes.text:find("FL PROBE",1,true))
+local fr=assert(probes.text:find("FR NO PROBE",1,true))
+check(probes.foreground:sub(fl,fl+7)==string.rep("d",8),"confirmed probe is green")
+check(probes.foreground:sub(fr,fr+10)==string.rep("e",11),"unconfirmed probe is red")
 check(ui.previous.rows[12].text:find("GAS 12400 m3") and ui.previous.rows[12].text:find("GAS N/A"),"stored and missing gas")
 check(ui.previous.rows[15].text:find("GAS 0 m3"),"zero is a stored value")
 check(ui.previous.rows[18].text:find("Please assemble the vessel to enable controls.",1,true),"assembly instruction")
@@ -611,12 +616,16 @@ local sel=assert(modes.text:find("SEL"))
 local direct=assert(modes.text:find("DIRECT"))
 check(modes.foreground:sub(sel,sel)=="9" and modes.foreground:sub(direct,direct)=="9","saved modes are cyan text")
 check(modes.background:sub(sel,sel)=="f" and ui:touch(sel,3,s)==nil,"saved modes are read only")
+check(modes.text:find("SYSTEMS LOCKED",1,true),"Status has the locked global bar")
 check(not ui.previous.rows[4].text:find("STRAFE"),"strafe hidden")
 for _,old in ipairs({"Source: physics","Blocked:","Applied lift ceilings","Nothing resumes","isAssembled() = false","Lift maintenance"}) do
  check(not page:find(old,1,true),"removed: "..old)
 end
 check(ui:touch(45,23,s)==nil,"Settings tab stays local");draw()
 check(ui.page=="SETTINGS","Settings opens")
+ui.systemsMenu=true;draw()
+check(ui.previous.rows[3].text==modes.text,"Settings shares the same locked bar")
+check(not ui.systemsMenu and ui:touch(50,3,s)==nil and not ui.systemsMenu,"locked bar closes and blocks Options")
 ui:touch(40,18,s);draw()
 check(ui.settingsView=="SYSTEMS","normal Settings page navigation")
 local disabled=0
@@ -631,6 +640,9 @@ check(ui:touch(10,23,s)==nil,"Status tab stays local");draw()
 check(ui.page=="STATUS","Status returns")
 s.assembly={state="ASSEMBLED",assembled=true};ui.page="FLIGHT";draw()
 check(#ui.tabs==4 and ui.page=="FLIGHT","reassembly restores normal tabs")
+check(ui.previous.rows[3].text:find("Options [v]",1,true),"active bar returns after reassembly")
+check(ui:touch(50,3,s)==nil and ui.systemsMenu,"Options opens after reassembly")
+ui.systemsMenu=nil
 local listed=false
 for _,item in ipairs(ui.currentIssues)do if item.text:find("CHAMBER FL SILENT",1,true)then listed=true end end
 check(listed,"other faults return once assembled")
@@ -654,6 +666,21 @@ gas=f:retainedAssemblyGas()
 check(gas.FL==30 and gas.FR==nil,"recovery map supersedes the batch")
 f.systemsIntentActive=false
 check(f:retainedAssemblyGas()==nil,"stopped systems omit old gas targets")
+local function provider(role,amount)
+ return {controlRole=role,targetAmount=amount,targetValid=true,present=true}
+end
+local chamber={steamCount=2,providers={
+ a=provider("bulk",4200),b=provider("bulk",4100),probe=provider("fine",5),
+}}
+local io={nodes={FL=chamber,FR=chamber,BL={steamCount=2,providers=chamber.providers}},
+ nodeFresh=function(_,q)return q~="FR" end}
+gas=f:retainedAssemblyGas(io,1)
+check(gas.FL==8305 and gas.FR==nil and gas.BR==nil,"read persisted ceilings after stop")
+chamber.providers.b.targetValid=false
+check(f:retainedAssemblyGas(io,1)==nil,"incomplete readback stays unavailable")
+f.restart={saved={run={currentTargets={FL={a=4400,b=4300,probe=5}}}}}
+gas=f:retainedAssemblyGas(io,1)
+check(gas.FL==8705 and gas.BL==nil,"pending restart uses its saved targets")
 """)
 
 

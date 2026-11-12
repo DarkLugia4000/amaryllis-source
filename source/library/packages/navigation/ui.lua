@@ -680,7 +680,7 @@ local function drawAssemblyPanel(surface, snapshot, assembly)
     if assembly.state == "DISASSEMBLED" then
         fillRect(surface,5,5,width-8,3,"red","white")
         centered(surface,6,"VESSEL DISASSEMBLED","white")
-        centered(surface,9,"CHAMBER PROBES","lightGray")
+        centered(surface,9,"CHAMBER STATUS","lightGray")
         for index,q in ipairs({"FL","FR","BL","BR"}) do
             local x=index%2==1 and 5 or math.floor(width/2)+3
             local y=index<=2 and 11 or 14
@@ -690,8 +690,7 @@ local function drawAssemblyPanel(surface, snapshot, assembly)
                 if node.online==true and provider.controlRole=="fine" and provider.present==true and
                     provider.attachedValid==true and provider.attached==true then active=true end
             end
-            put(surface,x,y,q,"white")
-            put(surface,x+4,y,active and "ACTIVE" or "CHECK",active and "green" or "yellow")
+            put(surface,x,y,q..(active and " PROBE" or " NO PROBE"),active and "green" or "red")
             local gas=(assembly.retainedGasM3 or {})[q]
             put(surface,x,y+1,"GAS "..(finite(gas) and string.format("%.0f m3",gas) or "N/A"),"white")
         end
@@ -775,7 +774,9 @@ local function addHeader(surface, snapshot, page, live)
         local groupWidth = group.x2 - group.x1 + 1
         local label = group.label
         local labelX = group.x1 + math.max(0, math.floor((groupWidth - #label) / 2))
-        put(surface, labelX, 2, label, "lightGray")
+        if group.field or not disassembled then
+            put(surface, labelX, 2, label, "lightGray")
+        end
         if group.field then
             local cockpitReady=live and not fleetBootBlocked(snapshot) and (snapshot.cockpitControl or {}).available==true
             local mode=(controlsReady or cockpitReady) and live and not fleetBootBlocked(snapshot) and modeText(snapshot.modes,group.field) or nil
@@ -789,8 +790,8 @@ local function addHeader(surface, snapshot, page, live)
                         mode==region.mode and "selected" or (cockpitReady and "enabled" or "disabled"))
                 end
             end
-        elseif page=="STATUS" then
-            centeredColumn(surface,group.x1,groupWidth,3,"LOCKED","gray")
+        elseif disassembled then
+            centeredColumn(surface,group.x1,groupWidth,3,"SYSTEMS LOCKED","gray")
         else
             local label,style="Options [v]","enabled"
             drawButton(surface, group.x1, 3, groupWidth, label, style)
@@ -2351,7 +2352,10 @@ end
 -- Section: Page rendering | Cached character-cell views and action regions.
 -- Summary: Render the current Systems dropdown and its available actions.
 local function drawSystemsMenu(surface,renderer,snapshot)
-    if renderer.killReview or snapshot.systemsStopReview then renderer.systemsMenu=nil end
+    if vesselDefinitelyDisassembled(snapshot,isLive(snapshot)) or renderer.killReview or snapshot.systemsStopReview then
+        renderer.systemsMenu=nil
+        renderer.systemsMenuNotice=nil
+    end
     renderer.systemsMenuRegions={}
     if not renderer.systemsMenu then return surface end
     local layout=systemsMenuLayout(surface.width)
@@ -2377,6 +2381,10 @@ end
 -- Section: Operator navigation | Local selection, editing and returned actions.
 -- Summary: Resolve dropdown touches against the current snapshot's action availability.
 local function touchSystemsMenu(renderer,x,y,snapshot,width)
+    if vesselDefinitelyDisassembled(snapshot,isLive(snapshot)) then
+        renderer.systemsMenu=nil;renderer.systemsMenuNotice=nil
+        return false
+    end
     if renderer.killReview or snapshot.systemsStopReview then renderer.systemsMenu=nil;return false end
     local trigger=y==3 and x>math.floor(width*2/3)
     if not renderer.systemsMenu then
@@ -2684,7 +2692,6 @@ function UI:draw(snapshot)
     else
         local now = os.clock and os.clock() or 0
         surface = drawMain(self, snapshot, width, height, now)
-        if self.page=="STATUS" then self.systemsMenu=nil end
         surface = drawSystemsMenu(surface,self,actionSnapshot)
         if not self.killReview and not actionSnapshot.systemsStopReview and not self.systemsMenu then
             surface=Info.warning(surface,self,snapshot,now)
@@ -2735,8 +2742,7 @@ function UI:touch(x, y, snapshot)
         end
     end
     if disassembled and not snapshot.systemsStopReview and
-        (self.disassembledPage~="SETTINGS" or self.page~="SETTINGS" or
-        (y==3 and x<=math.floor(width*2/3))) then return nil end
+        (self.disassembledPage~="SETTINGS" or self.page~="SETTINGS" or y<=3) then return nil end
     local menuHandled,menuAction=touchSystemsMenu(self,x,y,snapshot,width)
     if menuHandled then return menuAction end
     local lateralWidth=math.floor((width-3)/3)

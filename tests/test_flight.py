@@ -756,18 +756,46 @@ local recorder=Debug.new({clock=function() return 123 end});recorder.enabled=tru
 ap.routeHeading=90;ap.headingBias=.4;ap.crossDemand=.125;ap.primaryIdle=true;ap.captureSettledSeconds=1.5
 recorder:capture({},io,10,{})
 assert(#recorder.queue==1)
-assert(recorder.queue[1]:match(',90,0%.4,0%.125,1,1%.5'..string.rep(',',11)..'\\n$'))
+assert(recorder.queue[1]:match(',90,0%.4,0%.125,1,1%.5'..string.rep(',',12)..'\\n$'))
 local snapshot={modes={throttle='MANUAL'},effectiveModes={throttle='MANUAL'},
  inputs={valid=true,raw={prop_forward=0,prop_reverse=0}},cockpitControl={propulsionRequestPercent=0},
  thrust={request={manualDriveOutput={left=.2,right=.2}},manualAcceleration={
-  targetAcceleration=0,measuredAcceleration=-.25,holdingSpeed=5,state='HOLDING'}}}
+  targetAcceleration=0,measuredAcceleration=-.25,holdingSpeed=5,state='HOLDING',turnYawRate=.125}}}
 recorder:capture(snapshot,io,10.5,{})
-assert(recorder.queue[2]:match(',MANUAL,MANUAL,0,0,0,0,%-0%.25,5,HOLDING,,\\n$'))
+assert(recorder.queue[2]:match(',MANUAL,MANUAL,0,0,0,0,%-0%.25,5,HOLDING,,,0%.125\\n$'))
 snapshot.inputs.valid=false
 snapshot.effectiveModes.throttle='SEL'
 snapshot.thrust.request={throttleReason='PRIMARY ENGINES IDLE'}
 recorder:capture(snapshot,io,11,{})
-assert(recorder.queue[3]:match(',MANUAL,SEL,,,0'..string.rep(',',6)..'PRIMARY ENGINES IDLE\\n$'))
+assert(recorder.queue[3]:match(',MANUAL,SEL,,,0'..string.rep(',',6)..'PRIMARY ENGINES IDLE,\\n$'))
+""")
+
+    def test_manual_neutral_turn_pause_uses_measured_yaw(self):
+        self.runtime().execute(r"""
+local _,io,controls,thrust=fixture()
+controls.modes.throttle='MANUAL'
+controls.yaw=.085
+local function tick(at,heading,speed)
+ sample(io,at,0,0,heading,0,0)
+ io.vessel.forwardSpeed=speed
+ local drive=thrust:manualAccelerationDriveRequest(io,at,controls)
+ return thrust.manualAcceleration,drive
+end
+tick(10,359.95,9)
+local status=tick(10.5,.025,9)
+assert(status.holdingSpeed==9 and math.abs(status.turnYawRate-.15)<1e-8)
+local status,drive=tick(11,.4,8.5)
+assert(status.state=='TURNING' and status.holdingSpeed==nil and drive.left==0)
+assert(tick(11.5,.6,8).state=='TURNING','intermediate yaw keeps the pause active')
+assert(tick(12,.65,7.5).state=='TURNING')
+thrust:manualAccelerationDriveRequest(io,12.4,controls)
+assert(thrust.manualAcceleration.state=='TURNING','duplicate heading sample cannot finish settling')
+assert(tick(12.5,.85,7).state=='TURNING','intermediate yaw resets settling')
+assert(tick(13,.90,6.8).state=='TURNING')
+status=tick(13.5,.95,6.5)
+assert(status.state~='TURNING','one second below exit threshold resumes')
+assert(tick(14,1,6.4).holdingSpeed==6.5,'capture the settled speed once')
+assert(tick(14.5,1.1,6.3).holdingSpeed==6.5)
 """)
 
     def test_manual_acceleration_coasts_and_qualifies_counter_thrust(self):

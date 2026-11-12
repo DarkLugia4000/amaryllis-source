@@ -1340,10 +1340,10 @@ function Thrust:setManualAccelerationUnavailable(reason,target,measured)
         saturated=false}
 end
 
-local function manualAccelerationWaiting(self,reason,target,measured)
+local function manualAccelerationWaiting(self,reason,target,turnYawRate)
     self.manualAcceleration={state="WAITING",available=false,
         reason=clean(reason,160),targetAcceleration=finite(target) and target or nil,
-        measuredAcceleration=finite(measured) and measured or nil,
+        turnYawRate=turnYawRate,
         measurementNote=ACCELERATION_MEASUREMENT_NOTE,
         saturated=false}
 end
@@ -1384,8 +1384,37 @@ function Thrust.manualDriveBounds(loop,target,speed,measured,applied,sampleAt)
     return -withDrive,counter,coasting
 end
 
+-- Track absolute yaw from distinct heading measurements in degrees per second.
+-- Rates above 0.5 start a pause. A full second below 0.25 ends it.
+-- Heading gaps clear the settling interval and require a new rate pair.
+function Thrust:manualTurnState(vessel,headingAt,now,stale)
+    local turn=self.manualTurn or {}
+    if turn.uuid~=vessel.uuid then turn={uuid=vessel.uuid} end
+    self.manualTurn=turn
+    if not finite(vessel.heading) or not finite(headingAt) or now<headingAt or now-headingAt>stale then
+        turn.heading,turn.at,turn.rate,turn.settledSince=nil,nil,nil,nil
+        return turn
+    end
+    if headingAt==turn.at then return turn end
+    local dt=turn.at and headingAt-turn.at
+    local rate=dt and dt>0 and dt<=stale and math.abs(wrapDegrees(vessel.heading-turn.heading)/dt) or nil
+    turn.heading,turn.at,turn.rate=vessel.heading,headingAt,rate
+    if rate and rate>.5 then turn.active=true end
+    if turn.active and rate and rate<.25 then
+        -- Each rate describes the interval between the two heading samples.
+        turn.settledSince=turn.settledSince or headingAt-dt
+        if headingAt-turn.settledSince>=1 then
+            turn.active=false
+            turn.settledSince=nil
+        end
+    else
+        turn.settledSince=nil
+    end
+    return turn
+end
+
 -- Summary: Compute bounded primary-drive demand for the selected manual acceleration.
-function Thrust:manualAccelerationDriveRequest(io,now,controls,yawDemand)
+function Thrust:manualAccelerationDriveRequest(io,now,controls)
     local c=self.config.thrust or {}
     local mode=controls.modes and controls.modes.throttle or "MANUAL"
     local target
@@ -1425,26 +1454,15 @@ function Thrust:manualAccelerationDriveRequest(io,now,controls,yawDemand)
         return unavailable("FRESH SIGNED SPEED REQUIRED")
     end
     if type(vessel.uuid)~="string" or vessel.uuid=="" then return unavailable("VESSEL ID UNAVAILABLE") end
-    -- Rotation changes the projection of drift onto the bow. Neutral MANUAL
-    -- must not drive the primaries to cancel that apparent acceleration.
-    local turn=self.manualTurn or {}
-    if turn.uuid~=vessel.uuid then turn={uuid=vessel.uuid} end
-    self.manualTurn=turn
-    local rate=0
-    if finite(vessel.heading) and finite(turn.heading) and finite(turn.at) and headingAt>turn.at then
-        rate=math.abs(wrapDegrees(vessel.heading-turn.heading)/(headingAt-turn.at))
-    end
-    if finite(vessel.heading) and (not turn.at or headingAt>turn.at) then
-        turn.heading,turn.at=vessel.heading,headingAt
-    end
-    local steering=finite(yawDemand) and math.abs(yawDemand) or 0
-    local pilotYaw=finite(controls.yaw) and math.abs(controls.yaw) or 0
-    if steering>.02 or pilotYaw>.02 or rate>.5 then turn.quietUntil=now+1 end
-    if target==0 and turn.quietUntil and now<turn.quietUntil then
+    -- Rotation changes the projection of drift onto the bow. Pause neutral
+    -- drive during measured turns and capture the settled forward speed.
+    local turn=self:manualTurnState(vessel,headingAt,now,stale)
+    if target==0 and turn.active then
         self:resetManualAccelerationLoop()
         self.manualAcceleration={state="TURNING",available=true,targetAcceleration=0,
             driveOutput=0,driveOutputBySide={left=0,right=0},saturated=false,
             reason="NEUTRAL CORRECTION PAUSED UNTIL TURN SETTLES",
+            turnYawRate=turn.rate,
             measurementNote=ACCELERATION_MEASUREMENT_NOTE}
         return {left=0,right=0}
     end
@@ -1484,6 +1502,7 @@ function Thrust:manualAccelerationDriveRequest(io,now,controls,yawDemand)
         loop.outputAt=now
         self.manualAcceleration={state=loop.state or "HOLDING",available=true,
             targetAcceleration=target,measuredAcceleration=loop.measuredAcceleration,
+            turnYawRate=turn.rate,
             holdingSpeed=loop.zeroAccelerationSpeed,
             driveOutput=(output.left+output.right)/2,driveOutputBySide=copy(output),
             measurementNote=ACCELERATION_MEASUREMENT_NOTE,
@@ -1491,7 +1510,7 @@ function Thrust:manualAccelerationDriveRequest(io,now,controls,yawDemand)
         return {left=output.left*c.direct_max_request,right=output.right*c.direct_max_request}
     end
     if not newSample then
-        manualAccelerationWaiting(self,"WAITING FOR A SECOND SPEED SAMPLE",target)
+        manualAccelerationWaiting(self,"WAITING FOR A SECOND SPEED SAMPLE",target,turn.rate)
         return {left=0,right=0}
     end
     if loop.lastSampleAt and sampleAt<loop.lastSampleAt then
@@ -1499,7 +1518,7 @@ function Thrust:manualAccelerationDriveRequest(io,now,controls,yawDemand)
     end
     if not loop.lastSampleAt then
         loop.lastSampleAt,loop.lastMeasurement=sampleAt,vessel.forwardSpeed
-        manualAccelerationWaiting(self,"WAITING FOR A SECOND SPEED SAMPLE",target)
+        manualAccelerationWaiting(self,"WAITING FOR A SECOND SPEED SAMPLE",target,turn.rate)
         return {left=0,right=0}
     end
     local rawDt=sampleAt-loop.lastSampleAt
@@ -1507,7 +1526,7 @@ function Thrust:manualAccelerationDriveRequest(io,now,controls,yawDemand)
     if rawDt>stale then
         self:resetManualAccelerationLoop(); loop=self.accelerationLoop
         loop.uuid,loop.lastSampleAt,loop.lastMeasurement=vessel.uuid,sampleAt,vessel.forwardSpeed
-        manualAccelerationWaiting(self,"WAITING FOR FRESH ACCELERATION",target)
+        manualAccelerationWaiting(self,"WAITING FOR FRESH ACCELERATION",target,turn.rate)
         return {left=0,right=0}
     end
     local dt=math.min(rawDt,1)
@@ -1597,6 +1616,7 @@ function Thrust:manualAccelerationDriveRequest(io,now,controls,yawDemand)
     loop.state,loop.saturated,loop.reason=state,saturated,controlReason
     self.manualAcceleration={state=state,available=true,targetAcceleration=target,
         measuredAcceleration=measured,driveOutput=(outputNext.left+outputNext.right)/2,
+        turnYawRate=turn.rate,
         holdingSpeed=loop.zeroAccelerationSpeed,
         driveOutputBySide=copy(outputNext),
         measurementNote=ACCELERATION_MEASUREMENT_NOTE,
@@ -1771,7 +1791,7 @@ function Thrust:makeTargets(io,now,controls,sideDemand)
         self:resetSpeedLoop();self:resetManualAccelerationLoop()
         self.request.throttleReason=controls.holdReason or "PROPULSION HELD"
     elseif mode=="MANUAL" then
-        local output=self:manualAccelerationDriveRequest(io,now,controls,yaw)
+        local output=self:manualAccelerationDriveRequest(io,now,controls)
         targets["primary-left"],targets["primary-right"]=
             output.left,output.right
         self.request.manualDriveOutput={left=output.left,right=output.right}
