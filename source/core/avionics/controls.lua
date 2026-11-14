@@ -37,7 +37,7 @@ end
 -- Section: Cockpit interpretation | Selected targets, pilot modes and lever handover.
 -- Summary: Reset live input history while retaining selected pilot modes and targets.
 function Controls:clear()
-    self.lateral:cancel();self.modes.lateral="MANUAL"
+    self.lateral:cancel()
     self.request=0; self.yaw=0; self.holds={}; self.lastSample=nil
     self.headingKind=nil
     -- Selected modes and targets (heading / throttle SEL) are kept through
@@ -95,7 +95,8 @@ function Controls:mode(io,action,now)
     if axis=="lateral" then
         if self.lateralStopLock and mode=="SEL" then return false,"START SYSTEMS BEFORE USING STRAFE" end
         local ok,reason=self.lateral:select(mode,io,self,now)
-        self.modes.lateral=self.lateral.mode;return ok,reason
+        if ok then self.modes.lateral=mode end
+        return ok,reason
     end
     if axis~="heading" and axis~="throttle" then return false,"INVALID MODE AXIS" end
     if mode~="MANUAL" and mode~="SEL" and not (axis=="throttle" and mode=="DIRECT") then
@@ -213,7 +214,7 @@ function Controls:update(io,now)
         self.leversAvailable=false
         self.reason="COCKPIT LEVERS UNAVAILABLE: "..tostring(inputReason or "NO DATA")
         self.request=0;self.yaw=0;self.holds={};self.lastSample=nil
-        self.lateral:cancel();self.modes.lateral="MANUAL"
+        self.lateral:cancel()
         self:noteHandover()
         return
     end
@@ -286,8 +287,17 @@ function Controls:update(io,now)
     if not apActive and not anchorActive and disconnectHeld and self.modes.throttle=="SEL" then
         self.targets.speed=0
     end
-    self.lateral:input(raw,input.at,dt,anchorActive or apActive or self.lateralStopLock)
-    self.modes.lateral=self.lateral.mode
+    local lateralBlocked=anchorActive or apActive or self.lateralStopLock or self.holdPropulsion
+    if lateralBlocked then
+        self.lateral:cancel()
+    else
+        -- A restored SEL mode starts at zero offset once lateral telemetry is usable.
+        local selected=self.modes.lateral or "MANUAL"
+        if self.lateral.mode==selected or self.lateral:select(selected,io,self,now) then
+            self.lateral:input(raw,input.at,dt,false)
+            self.modes.lateral=self.lateral.mode
+        end
+    end
     local left=pressed(raw,"left_press")
     local right=pressed(raw,"right_press")
     if not left and not right then self.centreLatch=false end
@@ -362,7 +372,6 @@ function Controls:update(io,now)
 end
 -- Summary: Add selected modes, target values and cockpit readiness to the display snapshot.
 function Controls:decorate(snapshot)
-    self.modes.lateral=self.lateral.mode
     snapshot.lateralControl=self.lateral:snapshot()
     snapshot.lateralControl.locked=self.lateralStopLock==true
     if self.lateralStopLock then snapshot.lateralControl.state="STOPPED" end

@@ -1264,17 +1264,23 @@ local function buildStatus(state, now, peripheralApi)
     }
     local thrust=(((os.__amaryllisRuntime or {}).components or {}).thrust or {})
     status.thrustControlState=thrust.controlState or "FAULT"
-    local changing=state.commandInProgress~=nil or currentSystemsHandover(state)
-    local command=state.pendingCommand
+    local applying=state.applyingCommand
+    local command=state.pendingCommand or (applying and state.commandInProgress==applying.seq and applying)
+    local direction="RDY"
     if command then
-        if command.emergencyStop or command.emergencyDisarm or command.shutdown then changing=true end
+        -- Sum signed changes in provider ceilings for the pending command.
+        -- A balanced redistribution keeps the chamber's net target steady.
+        local delta=0
         for name,target in pairs(command.targets or {}) do
             local provider=(snapshot.providers or {})[name]
-            if not provider or provider.targetValid~=true or provider.targetAmount~=target then changing=true end
+            if provider and provider.targetValid==true then
+                delta=delta+target-provider.targetAmount
+            end
         end
+        if command.emergencyStop or command.shutdown or delta<0 then direction="DEFL"
+        elseif delta>0 then direction="INFL" end
     end
-    status.liftControlState=(#status.faults>0 or not state.configValid or state.bindingFailed) and "FAULT" or
-        (changing and "CMD" or "RDY")
+    status.liftControlState=(#status.faults>0 or not state.configValid or state.bindingFailed) and "FAULT" or direction
     if status.bindingFingerprintValid then status.bindingFingerprint = state.bindingFingerprint end
     local timing=state.systemsCommandTiming
     if timing and timing.session==state.session then
@@ -2242,7 +2248,9 @@ local function processPendingCommand(state, peripheralApi, rednetApi)
     local command = state.pendingCommand
     state.pendingCommand = nil
     if not command then return false end
+    state.applyingCommand = command
     applyCommand(state, command, peripheralApi, rednetApi)
+    state.applyingCommand = nil
     return true
 end
 

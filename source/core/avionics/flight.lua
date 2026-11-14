@@ -1480,7 +1480,6 @@ function Flight:cancelLateral(locked)
  if not controls then return end
  controls.lateralStopLock=locked==true
  if controls.lateral then controls.lateral:cancel() end
- if controls.modes then controls.modes.lateral="MANUAL" end
 end
 function Flight:shutdownReview(io,now)
     self:cancelLateral(true)

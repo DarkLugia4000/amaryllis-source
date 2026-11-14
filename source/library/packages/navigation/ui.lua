@@ -324,10 +324,11 @@ end
 local function controlState(node,key)
     if type(node)~="table" or node.online==false then return "FAULT" end
     local v=node[key] or (type(node.status)=="table" and node.status[key])
+    if key=="liftControlState" and (v=="INFL" or v=="DEFL") then return v end
     if v=="CMD" or v=="RDY" or v=="FAULT" then return v end
     return "FAULT"
 end
-local function controlTone(state) return state=="FAULT" and "red" or (state=="CMD" and "yellow" or "green") end
+local function controlTone(state) return state=="FAULT" and "red" or (state=="RDY" and "green" or "yellow") end
 -- Summary: Format a chamber's link, control, lift, gas and target observations.
 local function nodeSummary(name, node)
     if type(node) ~= "table" then return name .. " UNKNOWN" end
@@ -662,7 +663,8 @@ local function fleetActionAllowed(snapshot,action)
     if not fleetBootBlocked(snapshot) or type(action)~="table" or type(action.type)~="string" then return true end
     local kind=action.type
     if kind=="debug_mode" or kind=="settings_view" or kind=="display_setting" or kind=="settings_next" or
-        kind=="setting_update" or kind=="settings_edit" or kind=="settings_key" then return true end
+        kind=="setting_update" or kind=="settings_edit" or kind=="settings_key" or
+        kind=="maintenance_probe_cycle" then return true end
     if kind:match("^maintenance_") then
         return kind=="maintenance_cancel" or fleetMaintenanceAllowed(snapshot)
     end
@@ -1074,7 +1076,7 @@ local function headingFeedbackDetail(snapshot, live, thrust)
     if controlUnavailable(control, selectedMode) then
         local reason = controlReason(control)
         if uncommissionedReason(reason) then return "HDG UNCOMMISSIONED", "yellow" end
-        return "HDG UNAVAILABLE", "yellow"
+        return "HDG CTL OFF", "yellow"
     end
     local vessel = type(snapshot.vessel) == "table" and snapshot.vessel or {}
     if not sensorAvailable(snapshot, vessel, "heading", live) then
@@ -1266,6 +1268,7 @@ end
 -- Summary: First propulsion issue, with every lease problem shown as one yellow core stall notice.
 local function firstThrustIssue(snapshot, live)
     local issue = rawThrustIssue(snapshot, live)
+    if issue and issue:find("PROPULSION DISABLED IN CONFIG",1,true) then return nil end
     if leaseText(issue) then return stallText(snapshot) end
     return issue
 end
@@ -1455,9 +1458,10 @@ local function drawFlight(surface, snapshot, live, renderer, now)
     end
     putControlStatus(surface,1,18,leftWidth,"THRUST ",thrustState,
         " "..(controllerReady == nil and "--" or tostring(controllerReady)).."/"..controllerTotal)
+    local propReady=live and thrust.available==true and dataReady==dataTotal
     putColumn(surface, 1, 19, leftWidth,
-        "PROP DATA " .. (dataReady == nil and "--" or tostring(dataReady)) .. "/" .. dataTotal .. " FRESH",
-        dataReady == dataTotal and dataReady ~= nil and "green" or "yellow")
+        propReady and ("PROP "..dataReady.."/"..dataTotal.." AVAIL") or "PROP UNAVAIL; CHECK SETTINGS",
+        propReady and "green" or "red")
 
     local lateral=snapshot.lateralControl or {}
     if live and lateral.mode=="SEL" and lateral.active==true and
@@ -1480,16 +1484,19 @@ local function drawFlight(surface, snapshot, live, renderer, now)
     if systems.active then
         local phaseText=systems.displayPhase or (systems.phase=="MAIN_LIFT" and "BUILD" or tostring(systems.phase or "STARTING"))
         local detail=systems.displayPhase and phaseText or ("SYSTEMS "..phaseText)
+        local ready=systems.phase=="READY" and phaseText=="READY"
+        if ready then detail="LIFT READY" end
         -- Show which bound is holding the climb back and the chamber ACK wait.
         if type(systems.speedLimiter) == "string" and systems.phase == "MAIN_LIFT" then
             detail = detail .. " " .. systems.speedLimiter
         end
         if type(systems.ackWaitSeconds) == "number" and systems.ackWaitSeconds == systems.ackWaitSeconds and
             systems.ackWaitSeconds > 0 then
-            detail = detail .. string.format(" ACK %.1fS", systems.ackWaitSeconds)
+            detail = detail .. string.format(ready and " RESP %.1fS" or " ACK %.1fS", systems.ackWaitSeconds)
         end
-        modeDetail, modeTone = detail, "yellow"
-    elseif systems.reason and (not live or not thrust.available) then
+        modeDetail, modeTone = detail, live and ready and "green" or "yellow"
+    elseif systems.reason and (not live or not thrust.available) and
+        not systems.reason:find("PROPULSION DISABLED IN CONFIG",1,true) then
         modeDetail, modeTone = systems.reason, "yellow"
     end
     local selectedControl=speedControlSnapshot(snapshot,thrust)
@@ -1517,9 +1524,10 @@ local function drawFlight(surface, snapshot, live, renderer, now)
         elseif type(cockpit.reason) == "string" and cockpit.reason ~= "" then issue = cockpit.reason
         elseif cockpit.thrustNotNeutral == true then issue = "THRUST NOT NEUTRAL" end
     end
-    local issueTone = not issue and "green" or
-        ((string.find(issue, "FAULT", 1, true) and not leaseText(issue)) and "red" or "yellow")
-    surface.flightMessage={text=issue and (issue:find("UNABLE TO REACH TARGET:",1,true)==1 and issue or ("PROP STATUS "..issue)) or "PROP STATUS AVAILABLE",tone=issueTone}
+    if issue then
+        local issueTone=(issue:find("FAULT",1,true) and not leaseText(issue)) and "red" or "yellow"
+        surface.flightMessage={text=issue:find("UNABLE TO REACH TARGET:",1,true)==1 and issue or ("PROP STATUS "..issue),tone=issueTone}
+    end
     drawQuadrantTiles(surface, nodes, rightX, rightWidth)
 end
 
@@ -1585,9 +1593,7 @@ local function drawNavigation(surface, snapshot, live, renderer)
             putColumn(surface,2,10,26,"HDG "..angleText(vessel.heading),"white")
             putColumn(surface,29,10,27,"TARGET "..angleText(ap.requestedHeading),"cyan")
             putColumn(surface,2,12,26,"SPEED "..numberText(live and vessel.forwardSpeed,1,false).." b/s","white")
-            if not ap.primaryIdle then
-                putColumn(surface,29,12,27,"TARGET "..numberText(ap.requestedSpeed,1,false).." b/s","cyan")
-            end
+            putColumn(surface,29,12,27,"CRUISE "..numberText(ap.cruiseSpeed,1,false).." b/s","cyan")
             putColumn(surface,2,14,54,"DEVIATION "..numberText(ap.crossTrack,1,true).." blocks","white")
             putColumn(surface,2,16,54,"DISTANCE "..numberText(ap.distance,1,false).." blocks","white")
             button(2,18,54,"DISENGAGE AUTOPILOT",{type="ap_disengage"},true)
@@ -1955,14 +1961,12 @@ local function drawSettings(surface,snapshot,renderer)
         centered(surface,6,"LIFT MAINTENANCE","cyan")
         text(8,"CoM Y "..numberText(maintenance.altitude,2,false).."   "..(maintenance.locked and "LOCKED" or "BELOW LIMIT"),"yellow")
         for _,entry in ipairs(entries) do if entry.key=="restart_y" then edit(entry,10) end end
-        local systems=snapshot.systemsStartup or {}
-        local stopSystems=systemsStopAvailable(snapshot)
-        button(2,12,26,stopSystems and "STOP SYSTEMS" or "START SYSTEMS",{type=stopSystems and "systems_stop" or "start_systems"},live and (stopSystems or (systems.available==true and not ((snapshot.emergencyLift or {}).latched))))
+        button(2,12,26,"PROBE RESET",{type="maintenance_probe_cycle",scope="ALL"})
         button(29,12,27,"HARDWARE RECHECK",view("HARDWARE"))
         text(14,"RESTART LIFT COMPUTERS (review required)")
         for i,q in ipairs({"FL","FR","BL","BR"}) do button(2+(i-1)*14,16,12,q,{type="maintenance_review",scope=q},live and not maintenance.job) end
         button(2,18,54,"RESTART ALL SEQUENTIALLY",{type="maintenance_review",scope="ALL"},live and not maintenance.job)
-        text(20,stopSystems and (tostring(systems.phase).."  TARGET "..numberText(systems.target,1,false)) or (maintenance.status or systems.reason or "Recheck reads hardware without changing output."),"gray")
+        if maintenance.status then text(20,maintenance.status,"gray") end
     elseif sub=="HARDWARE" then
         centered(surface,6,"HARDWARE RECHECK","cyan")
         text(9,"Read and verify chamber hardware.","white")
@@ -2019,8 +2023,6 @@ local function drawSettings(surface,snapshot,renderer)
         button(2,13,54,"ACCELERATION / STEERING LIMITS",view("PROP LIMITS"))
         button(2,15,54,"PROPULSION PID GAINS",view("PROP PID"))
         button(2,17,54,"PROPULSION STATUS / DETAILS",view("PROPULSION STATUS"))
-        text(20,propulsion.enabled and "Strong turns: up to 5% primary assistance." or
-            (propulsion.enableReason or "Propulsion enables once START SYSTEMS is READY."),"gray")
     elseif sub=="PROP PID" then
         centered(surface,6,"PROPULSION PID GAINS","cyan")
         button(2,9,54,"SELECTED SPEED PID",view("PROP SPEED PID"))
@@ -2423,6 +2425,7 @@ function Info.collect(renderer,snapshot)
     local live=isLive(snapshot);local items,seen={},{}
     -- Summary: Add one issue per ID and combine lease failures into the core stall notice.
     local function add(id,message,tone,source,detail)
+        if type(message)=="string" and message:find("PROPULSION DISABLED IN CONFIG",1,true) then return end
         -- Command and control lease problems are the core pausing; one notice covers all of them.
         if leaseText(message) or leaseText(detail) then
             id,message,tone,source,detail="core-stall",stallText(snapshot),"yellow","core",nil
@@ -2470,6 +2473,13 @@ function Info.collect(renderer,snapshot)
         end
     end
     local issue=firstThrustIssue(snapshot,live)
+    local inputs=snapshot.inputs or {}
+    local raw=inputs.valid==true and inputs.raw or {}
+    if live and thrustSnapshot(snapshot).enabled==false and
+        ((finite(raw.prop_forward) and raw.prop_forward>0) or
+         (finite(raw.prop_reverse) and raw.prop_reverse>0)) then
+        add("propulsion-disabled-input","PROPULSION DISABLED IN SETTINGS","red","core")
+    end
     local duplicate=false
     for _,fault in ipairs(snapshot.faults or {}) do
         if issue==tostring(fault) or issue=="FAULT "..tostring(fault) then duplicate=true end
@@ -2831,7 +2841,7 @@ function UI:touch(x, y, snapshot)
                 if disassembled and (action.type=="start_systems" or action.type=="restart_systems") then return nil end
                 if not fleetActionAllowed(snapshot,action) then return nil end
                 if action.type=="settings_view" then self.settingsView=action.view;self.settingsOffset=0;self.settingsNotice=nil;return nil end
-                if not isLive(snapshot) then return nil end
+                if not isLive(snapshot) and action.type~="maintenance_probe_cycle" then return nil end
                 if action.type=="settings_next" then
                     -- Advance by one page and wrap to the first page at the end of the list.
                     local nextOffset=(self.settingsOffset or 0)+9

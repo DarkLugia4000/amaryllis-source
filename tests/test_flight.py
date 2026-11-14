@@ -756,18 +756,26 @@ local recorder=Debug.new({clock=function() return 123 end});recorder.enabled=tru
 ap.routeHeading=90;ap.headingBias=.4;ap.crossDemand=.125;ap.primaryIdle=true;ap.captureSettledSeconds=1.5
 recorder:capture({},io,10,{})
 assert(#recorder.queue==1)
-assert(recorder.queue[1]:match(',90,0%.4,0%.125,1,1%.5'..string.rep(',',12)..'\\n$'))
+assert(recorder.queue[1]:match(',90,0%.4,0%.125,1,1%.5'..string.rep(',',32)..'\\n$'))
 local snapshot={modes={throttle='MANUAL'},effectiveModes={throttle='MANUAL'},
  inputs={valid=true,raw={prop_forward=0,prop_reverse=0}},cockpitControl={propulsionRequestPercent=0},
  thrust={request={manualDriveOutput={left=.2,right=.2}},manualAcceleration={
   targetAcceleration=0,measuredAcceleration=-.25,holdingSpeed=5,state='HOLDING',turnYawRate=.125}}}
 recorder:capture(snapshot,io,10.5,{})
-assert(recorder.queue[2]:match(',MANUAL,MANUAL,0,0,0,0,%-0%.25,5,HOLDING,,,0%.125\\n$'))
+assert(recorder.queue[2]:match(',MANUAL,MANUAL,0,0,0,0,%-0%.25,5,HOLDING,,,0%.125'..string.rep(',',20)..'\\n$'))
 snapshot.inputs.valid=false
 snapshot.effectiveModes.throttle='SEL'
 snapshot.thrust.request={throttleReason='PRIMARY ENGINES IDLE'}
 recorder:capture(snapshot,io,11,{})
-assert(recorder.queue[3]:match(',MANUAL,SEL,,,0'..string.rep(',',6)..'PRIMARY ENGINES IDLE,\\n$'))
+assert(recorder.queue[3]:match(',MANUAL,SEL,,,0'..string.rep(',',6)..'PRIMARY ENGINES IDLE'..string.rep(',',21)..'\\n$'))
+snapshot.inputs={valid=true,raw={left_lift=0,right_lift=15}}
+snapshot.modes.lateral='SEL'
+snapshot.lateralControl={state='MOVING',offset=2,remaining=-.25,sidewaysSpeed=.125,referenceHeading=57}
+snapshot.thrust.request={sideDemand=-.5}
+local flight={controls={lateral={positionTrace={rawX=10,rawZ=20,x=11,z=19,
+ sampleAt=11,projectedAt=11.5,velocityAt=10.9,evaluatedAt=11.5,credited=-.25,travelled=2.25,turning=false}}}}
+recorder:capture(snapshot,io,11.5,flight)
+assert(recorder.queue[4]:match(',SEL,MOVING,2,%-0%.25,0%.125,57,%-0%.5,0,15,10,20,11,19,11,11%.5,10%.9,11%.5,%-0%.25,2%.25,0\\n$'))
 """)
 
     def test_manual_neutral_turn_pause_uses_measured_yaw(self):
@@ -843,12 +851,21 @@ assert(flight:setting(io,{key='maximum_selected_speed',value=20},12))
 assert(flight.controls.targets.speed==20)
 assert(not flight:setting(io,{key='maximum_selected_speed',value=101},13))
 local document={schemaVersion=1,coreID=19,uuid='ship',
- modes={heading='MANUAL',throttle='SEL'},targets={speed=28}}
-local presets=Presets.new(io.config,{readJson=function()return document end,writeJson=function()return true end})
+ modes={heading='MANUAL',throttle='SEL',lateral='SEL'},targets={speed=28}}
+local stored
+local presets=Presets.new(io.config,{readJson=function()return document end,
+ writeJson=function(_,value) stored=value;return true end})
 io.localID=19;io.identityReady=true;sample(io,14,0,0,90,10,0)
 flight.controls.update=function(self)self.available=true end
 presets:update(io,flight,14)
 assert(flight.controls.modes.throttle=='SEL' and flight.controls.targets.speed==20)
+assert(flight.controls.modes.lateral=='SEL' and stored.modes.lateral=='SEL')
+flight.controls:clear()
+assert(flight.controls.modes.lateral=='SEL' and flight.controls.lateral.offset==0)
+document.modes.lateral=nil
+presets=Presets.new(io.config,{readJson=function()return document end,writeJson=function()return true end})
+presets:update(io,flight,14)
+assert(flight.controls.modes.lateral=='MANUAL','older presets restore MAN strafe')
 """)
 
     def test_manual_acceleration_closed_loop_with_drive_ramp(self):

@@ -45,6 +45,14 @@ local throttleColumns={"throttle_mode","effective_throttle_mode","prop_forward_s
  "pilot_drive_request_pct","manual_target_acceleration","manual_measured_acceleration",
  "manual_hold_speed","manual_acceleration_state","manual_acceleration_reason","throttle_request_reason","manual_turn_yaw_rate_deg_s"}
 for _,key in ipairs(throttleColumns) do columns[#columns+1]=key end
+local strafeColumns={"strafe_mode","strafe_state","strafe_offset_blocks","strafe_remaining_blocks",
+ "strafe_sideways_speed_bps","strafe_reference_heading_deg","lateral_demand",
+ "strafe_left_signal","strafe_right_signal"}
+for _,key in ipairs(strafeColumns) do columns[#columns+1]=key end
+local strafePositionColumns={"strafe_raw_x","strafe_raw_z","strafe_projected_x","strafe_projected_z",
+ "strafe_position_sample_s","strafe_position_projected_at_s","strafe_projection_velocity_sample_s",
+ "strafe_position_evaluated_s","strafe_displacement_credited_blocks","strafe_travelled_blocks","strafe_displacement_skipped_turn"}
+for _,key in ipairs(strafePositionColumns) do columns[#columns+1]=key end
 local eventColumns={"epoch_ms","core_clock_s","event","quadrant","node_boot","command_seq","stage","status_seq",
  "received_seq","applied_seq","node_received_epoch_ms","node_applied_epoch_ms","status_sent_epoch_ms","send_succeeded",
  "core_receiver_epoch_ms","core_handler_epoch_ms","core_queue_wait_s","radio_priority",
@@ -126,7 +134,7 @@ function Debug:start(io)
  end
  self.path=self.fs.combine(folder,run..".csv");self.runID=run
  self.eventPath=self.fs.combine(folder,run..".events.csv")
- local metadata={schemaVersion=7,build=BUILD,runID=run,startedEpochMs=self.clock(),coreID=io.localID,
+ local metadata={schemaVersion=9,build=BUILD,runID=run,startedEpochMs=self.clock(),coreID=io.localID,
   motionWarningThresholds=io.motionWarnings and io.motionWarnings:settings() or nil,
   coreSession=io.session,config=io.config,columns=columns,sampleIntervalSeconds=.5,
   eventColumns=eventColumns,eventFile=run..".events.csv",
@@ -146,6 +154,9 @@ function Debug:start(io)
    trim_units="Roll/pitch errors and rates are height differences in blocks; vessel_pitch_deg/vessel_roll_deg are degrees",
    prop_signals="Fresh forward and reverse cockpit redstone inputs, each 0 through 15",
    pilot_drive_request_pct="Signed cockpit request after input gates, from -100 to 100 percent",
+   lateral_demand="Signed normalized sideways drive request from -1 to 1, after yaw-priority limiting and before mixing; can include AP or anchor demand",
+   strafe_remaining_blocks="Signed selected offset minus projected sideways travel",
+   strafe_position="Last strafe evaluation: world X/Z before and after projection, core-clock sample and evaluation times, signed displacement credited on that evaluation and cumulative travel before any reset",
    manual_turn_yaw_rate_deg_s="Absolute heading rate used by the MAN neutral turn pause, in degrees per second",
    manual_acceleration="Lever acceleration target and filtered controller measurement in blocks/s^2; manual_hold_speed is the captured neutral speed in blocks/s",
    maximumRunBytes="Combined sample CSV and event CSV cap; recording stops earlier if disk reserve cannot be maintained"}}
@@ -311,6 +322,20 @@ function Debug:capture(snapshot,io,now,flight)
   manual_turn_yaw_rate_deg_s=manual.turnYawRate,
  }
  for _,key in ipairs(throttleColumns) do nextColumn=nextColumn+1;row[nextColumn]=throttleData[key] end
+ local strafe=snapshot.lateralControl or {}
+ local strafeData={strafe_mode=(snapshot.modes or {}).lateral or strafe.mode,strafe_state=strafe.state,
+  strafe_offset_blocks=strafe.offset,strafe_remaining_blocks=strafe.remaining,
+  strafe_sideways_speed_bps=strafe.sidewaysSpeed,strafe_reference_heading_deg=strafe.referenceHeading,
+  lateral_demand=request.sideDemand,strafe_left_signal=raw.left_lift,strafe_right_signal=raw.right_lift}
+ for _,key in ipairs(strafeColumns) do nextColumn=nextColumn+1;row[nextColumn]=strafeData[key] end
+ local lateral=flight and flight.controls and flight.controls.lateral
+ local trace=lateral and lateral.positionTrace or {}
+ local positionData={strafe_raw_x=trace.rawX,strafe_raw_z=trace.rawZ,strafe_projected_x=trace.x,strafe_projected_z=trace.z,
+  strafe_position_sample_s=trace.sampleAt,strafe_position_projected_at_s=trace.projectedAt,
+  strafe_projection_velocity_sample_s=trace.velocityAt,strafe_position_evaluated_s=trace.evaluatedAt,
+  strafe_displacement_credited_blocks=trace.credited,strafe_travelled_blocks=trace.travelled,
+  strafe_displacement_skipped_turn=trace.turning}
+ for _,key in ipairs(strafePositionColumns) do nextColumn=nextColumn+1;row[nextColumn]=positionData[key] end
  local out={};for i=1,#columns do out[i]=cell(row[i]) end
  self.lastAt=now;self.lastSpeed=v.forwardSpeed
  if #self.queue>=self.maxQueue then self.dropped=self.dropped+1;return end

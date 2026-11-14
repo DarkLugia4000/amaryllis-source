@@ -783,6 +783,7 @@ SUMMARIES.update({'Console.acceptRegistry': 'Validate and apply a registry annou
  'loadProgram': 'Load a role program with the current CraftOS environment and arguments.',
  'logTimestamp': 'Format the current event time for component logs.',
  'clearIdleProbeFault': 'Clear the recovered idle-probe fault while retaining other operation faults.',
+ 'processPendingCommand': 'Apply the queued chamber command and expose its targets to status reporting during the write.',
  'maintainIdleProbe': 'Retry eligible idle probes and clear their faults after cancellation or recovery.',
  'makeRemotePeripheralApi': 'Construct the configured remote-peripheral facade and its method routing.',
  'makeState': "Construct the endpoint's boot, session, target and readback state.",

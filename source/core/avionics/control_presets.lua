@@ -1,6 +1,6 @@
 local Mathx = require("avionics.mathx")
 -- Section: Pilot selections | Persistent modes and selected values.
--- Persist selections only. AP, lift authority, integrals and strafe are not saved.
+-- Store pilot modes and selected heading, speed and altitude.
 local Presets={};Presets.__index=Presets
 local finite = Mathx.finite
 -- Section: Pilot selections | Persistent modes and selected values.
@@ -19,6 +19,7 @@ function Presets:valid(v)
   type(v.uuid)~="string" or v.uuid=="" or type(v.modes)~="table" or type(v.targets)~="table" then return false end
  if v.modes.heading~="MANUAL" and v.modes.heading~="SEL" then return false end
  if v.modes.throttle~="MANUAL" and v.modes.throttle~="SEL" and v.modes.throttle~="DIRECT" then return false end
+ if v.modes.lateral~=nil and v.modes.lateral~="MANUAL" and v.modes.lateral~="SEL" then return false end
  local t=v.targets;local c=self.config.cockpit;local a=self.config.altitude_control
  if t.heading~=nil and (not finite(t.heading) or t.heading<0 or t.heading>=360) then return false end
  -- Stored speed can exceed the current selector ceiling after a limit edit.
@@ -48,7 +49,7 @@ function Presets:update(io,flight,now)
    self.reason="SAVED PRESETS BELONG TO A DIFFERENT CORE";return
   end
   controls.modes.heading=saved.modes.heading;controls.modes.throttle=saved.modes.throttle
-  controls.modes.lateral="MANUAL";controls.lateral:cancel()
+  controls.modes.lateral=saved.modes.lateral or "MANUAL";controls.lateral:cancel()
   -- The modes carry over to any vessel ID, since reassembly gives the ship
   -- a new Sable ID. Selected values carry over only for the same ID; for a
   -- new ID each SEL axis takes the current reading, as pressing SEL does,
@@ -93,13 +94,13 @@ function Presets:update(io,flight,now)
  if controls.available~=true or io.identityReady~=true or v.valid~=true or controls.uuid~=v.uuid or
   (io.autopilot and io.autopilot.active) or (io.positionAnchor and io.positionAnchor.active) then return end
  local document={schemaVersion=1,coreID=io.localID,uuid=v.uuid,
-  modes={heading=controls.modes.heading,throttle=controls.modes.throttle},
+  modes={heading=controls.modes.heading,throttle=controls.modes.throttle,lateral=controls.modes.lateral or "MANUAL"},
   targets={heading=controls.targets.heading,speed=controls.targets.speed,altitude=controls.targets.altitude}}
  if not self:valid(document) then return end
  local t=document.targets
- local key=table.concat({tostring(document.coreID),document.uuid,document.modes.heading,document.modes.throttle,
+ local modeKey=document.modes.heading.."|"..document.modes.throttle.."|"..document.modes.lateral
+ local key=table.concat({tostring(document.coreID),document.uuid,modeKey,
   tostring(t.heading),tostring(t.speed),tostring(t.altitude)},"|")
- local modeKey=document.modes.heading.."|"..document.modes.throttle
  if key==self.lastKey or (modeKey==self.lastModes and self.nextSave and now<self.nextSave) then return end
  self.nextSave=now+1
  local called,ok,reason=pcall(self.storage.writeJson,self.path,document,self.deps)

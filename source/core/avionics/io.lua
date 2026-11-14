@@ -1443,7 +1443,8 @@ function IO:validateLiftStatus(sender, message, now,radioTiming)
     if message.emergencyDisarmAppliedSeq~=nil and not integer(message.emergencyDisarmAppliedSeq,1,self.lastIssuedSeq) then return false,"emergencyDisarmAppliedSeq invalid" end
     for _,key in ipairs({"thrustControlState","liftControlState"}) do
         local v=message[key]
-        if v~=nil and v~="CMD" and v~="RDY" and v~="FAULT" then return false,key.." invalid" end
+        local directional=key=="liftControlState" and (v=="INFL" or v=="DEFL")
+        if v~=nil and v~="CMD" and v~="RDY" and v~="FAULT" and not directional then return false,key.." invalid" end
     end
     if message.emergencyStopAppliedSeq~=nil and not integer(message.emergencyStopAppliedSeq,1,self.lastIssuedSeq) then return false,"emergencyStopAppliedSeq invalid" end
     if message.emergencyStopLatched~=nil and type(message.emergencyStopLatched)~="boolean" then return false,"emergencyStopLatched invalid" end

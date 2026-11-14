@@ -13,6 +13,7 @@ function Lateral:cancel()
  self.mode="MANUAL";self.state="MANUAL";self.offset=0;self.track=nil;self.pending=false
  self.braking=false;self.output=0;self.integral=0;self.manual=0;self.hold=nil;self.waitNeutral=false
  self.settledAt=nil;self.lastAt=nil;self.turnQuietUntil=nil
+ self.positionTrace=nil
 end
 -- Section: Sideways guidance | Selected displacement, braking and pilot handover.
 -- Summary: Validate the vessel observations used for sideways position guidance.
@@ -91,10 +92,18 @@ function Lateral:evaluate(io,now,controls,yaw)
  -- axis, so forward flight adds nothing and the offset stays relative to her
  -- present track after a heading change. Movement during a turn is skipped.
  local track=self.track
+ self.positionTrace=nil
  if track then
+  local credited=0
   if not turning then
-   track.travelled=track.travelled+(v.position.x-track.x)*nx+(v.position.z-track.z)*nz
+   credited=(v.position.x-track.x)*nx+(v.position.z-track.z)*nz
+   track.travelled=track.travelled+credited
   end
+  local observation=v.positionObservation or {}
+  local raw=observation.raw or v.position
+  self.positionTrace={rawX=raw.x,rawZ=raw.z,x=v.position.x,z=v.position.z,
+   sampleAt=observation.at,projectedAt=observation.projectedAt,velocityAt=observation.projectionVelocityAt,
+   evaluatedAt=now,credited=credited,travelled=track.travelled,turning=turning}
   track.x,track.z=v.position.x,v.position.z
  end
  local error=track and self.offset-track.travelled or 0

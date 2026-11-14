@@ -332,13 +332,14 @@ function Sources.compose(io,now)
     -- preference window paused (and braked) the autopilot whenever frames
     -- ran late, so position stays usable to the full stale limit, projected
     -- forward horizontally along the frame's own velocity.
-    local position,positionAt,projectedSeconds
+    local position,positionAt,projectedSeconds,rawPosition
     if p.sableWorldCom~=nil and fresh(now,primaryAge.pose,limit) and p.localCenterOfMass~=nil and fresh(now,primaryAge.com,limit) then
         position,positionAt=copy(p.sableWorldCom),primaryAge.pose
         local vel=vec(p.sableVelocity)
         local age=now-positionAt
         if position and vel and age>0 and fresh(now,primaryAge.velocity,limit) then
             local span=math.min(age,limit)
+            rawPosition=copy(position)
             position.x=position.x+vel.x*span;position.z=position.z+vel.z*span
             projectedSeconds=span
         end
@@ -395,6 +396,10 @@ function Sources.compose(io,now)
         if value~=nil and source~="SABLE" then v.sources.mode="FALLBACK" end
     end
     field("position",position,positionSource,positionAt)
+    -- Keep the original coordinates and projection inputs for strafe diagnostics.
+    v.positionObservation={raw=rawPosition or position,at=positionAt,
+        projectedAt=projectedSeconds and positionAt+projectedSeconds or positionAt,
+        projectionVelocityAt=projectedSeconds and primaryAge.velocity or nil}
     local orientation=q;local orientationAt=qAt;local orientationSource="SABLE"
     if not orientation and id and nav and c and c.navToPose then
         orientation=quat(mul(nav,c.navToPose));orientationAt=navAt;orientationSource="NAVIGATION TABLE"

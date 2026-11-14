@@ -5,6 +5,49 @@ Version entries describe the changes recorded for each release. See the
 
 ## Unreleased
 
+- The Navigator autopilot page shows the selected **CRUISE** speed under the
+  heading target, including during acquisition. The heading monitor's **REQ**
+  shows autopilot's current speed request.
+
+- Debug recording schema 9 appends the raw and projected X/Z used by SEL strafe,
+  the position and projection velocity timestamps, and the last evaluated
+  sideways displacement and cumulative travel. Each row samples the latest
+  guidance evaluation; the evaluation timestamp identifies repeated samples.
+
+- Debug recording schema 8 appends the strafe mode, controller state, selected
+  offset, signed remaining distance, projected sideways speed, reference heading,
+  lateral demand and strafe input strengths. Existing CSV columns keep their positions.
+
+- Core saves **STRAFE MAN / SEL** with the other pilot modes. Restored SEL starts
+  at zero offset once lateral telemetry is available. Temporary loss of authority
+  clears live strafe guidance and retains the pilot selection. Older presets default
+  to MAN strafe.
+
+- Navigator Lift Maintenance replaces its **START SYSTEMS / STOP SYSTEMS**
+  button with white **PROBE RESET**. It uses Core's existing **Fix gas mix lag**
+  action to cycle all four trim probe links. The button stays clickable and
+  Core evaluates the request through the existing maintenance checks.
+
+- Chamber lift status shows **INFL** or **DEFL** in yellow for a queued or
+  applying command that raises or lowers the chamber's net gas target.
+  Shutdown and emergency stop report **DEFL** while applying. **RDY** is green
+  for steady targets and **FAULT** is red. Core accepts the new lift states
+  and legacy chamber reports.
+
+- Removed the explanatory footer from Navigator Propulsion Settings. The page
+  keeps its controls and current status.
+
+- Navigator Flight shows **PROP UNAVAIL; CHECK SETTINGS** in red and **HDG CTL OFF**
+  in yellow. The warning area shows **PROPULSION DISABLED IN SETTINGS** in red while
+  fresh forward or reverse throttle input is present and propulsion is disabled.
+
+- Navigator Flight combines **PROP DATA … FRESH** and **PROP STATUS AVAILABLE**
+  into **PROP 2/2 AVAIL** in green when propulsion is ready, or a red **PROP … UNAVAIL**
+  with the current sensor count. **LIFT READY** and its response time appear in green.
+
+- The Navigator Flight page displays **LIFT READY RESP 0.6S** for a ready lift
+  system whose latest chamber command batch took 0.6 seconds to confirm.
+
 ### Windows regression checks
 
 - `builder.py` (`project_inputs`): resolve the selected checkout root before

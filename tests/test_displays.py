@@ -479,6 +479,44 @@ check(value.systemsStartup.displayPhase=="READY","heading receives display phase
 
 
 class InformationUiTests(unittest.TestCase):
+    def test_lift_maintenance_probe_reset_dispatches_core_action(self):
+        self.run_lua("""
+local ui,s,draw=fixture(57,24,"SETTINGS");healthy(s)
+ui.settingsView="MAINTENANCE"
+draw()
+local row=ui.previous.rows[12]
+local label=assert(row.text:find("PROBE RESET",1,true))
+assert(row.background:sub(label,label)=="0","enabled button is white")
+local action=ui:touch(10,12,s)
+assert(action and action.type=="maintenance_probe_cycle" and action.scope=="ALL")
+s.systemsStartup.active=true
+draw()
+assert(ui:touch(10,12,s).type=="maintenance_probe_cycle","reset remains clickable during an active lift run")
+s.fleetBoot.ready=false;s.dataFresh=false;s.displayStale=true
+draw()
+assert(ui:touch(10,12,s).type=="maintenance_probe_cycle","reset still submits with stale fleet status")
+""")
+
+    def test_disabled_propulsion_warns_only_on_fresh_throttle_input(self):
+        self.run_lua("""
+local ui,s,draw=fixture();healthy(s)
+s.thrust.enabled=false;s.thrust.available=false
+s.faults={"PROPULSION DISABLED IN CONFIG"}
+local function warning()
+ draw()
+ for _,item in ipairs(ui.currentIssues) do
+  assert(not item.text:find("DISABLED IN CONFIG",1,true))
+  if item.text=="PROPULSION DISABLED IN SETTINGS" then return item.tone end
+ end
+end
+assert(warning()==nil)
+assert(ui.previous.rows[19].text:find("PROP UNAVAIL; CHECK SETTINGS",1,true))
+s.inputs.raw.prop_forward=15;assert(warning()=="red")
+s.inputs.raw.prop_forward=0;s.inputs.raw.prop_reverse=15;assert(warning()=="red")
+s.inputs.valid=false;assert(warning()==nil)
+s.inputs.valid=true;s.thrust.enabled=true;assert(warning()==nil)
+""")
+
     def setUp(self):
         self.lua=runtime()
         self.lua.globals().UI=self.lua.execute(collected()['library']['/packages/navigation/ui.lua'].decode())
@@ -751,6 +789,10 @@ assert(label:match("^ANCHORED ") and tone==color("yellow"),label)
 label,tone=bottom('BRAKING',{active=true,state='CRUISE',cruiseSpeed=3,distance=40,crossTrack=0})
 assert(label:match("^ANCHORED ") and tone==color("yellow"),"supersedes REQ and DIST: "..label)
 label=bottom('OFF');assert(label:match("^REQ 3.0 b/s"),label)
+label=bottom('OFF',{active=true,state='ACQ',cruiseSpeed=25,requestedSpeed=0})
+assert(label:match("^REQ 0.0 b/s"),label)
+label=bottom('OFF',{active=true,state='ACCEL',cruiseSpeed=25,requestedSpeed=4.5})
+assert(label:match("^REQ 4.5 b/s"),label)
 ''')
 
 

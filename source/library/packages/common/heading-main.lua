@@ -665,11 +665,11 @@ local function drawHorizontalHeading(snapshot,width,height)
         rowTwoRightUsed=true
     end
     drawHeadingTape(surface,width,current,not recovering and target or nil,height<7,height>=7 and 5 or 4)
-    -- Actual speed on the right; the requested speed (AP cruise speed or the
+    -- Actual speed on the right; the requested speed (current AP speed request or the
     -- SEL throttle target) on the left as REQ.
     local speed="SPD "..shownSensor(vessel,"forwardSpeed",1,false,false).." b/s"
     local requested
-    if ap then requested=ap.cruiseSpeed
+    if ap then requested=ap.requestedSpeed
     elseif (snapshot.effectiveModes or snapshot.modes or {}).throttle=="SEL" and targetValid(targets,"speed") then requested=targets.speed end
     local req=requested~=nil and ("REQ "..shown(requested,1,false).." b/s") or nil
     local left=""
