@@ -5,39 +5,41 @@ Version entries describe the changes recorded for each release. See the
 
 ## Unreleased
 
+### Flight control cleanup
+
 - `flight.lua`: removed the retired vent-only startup planner, ACK polling,
   status fields, and per-update checks. The legacy action still directs callers
   to **START SYSTEMS**, which runs the staged probe and vent ignition sequence.
-
-- `heading-main.lua` (`drawHorizontalHeading`): **RETRYING (n)** now uses the AP
-  recovery presentation, with a yellow title and **WAITING FOR TELEMETRY**.
 - Removed the unused `io.anchor` checks from cockpit input, lift, propulsion,
   and motion warnings. Digital Anchor continues to use `io.positionAnchor`.
 - `lateral.lua` (`Lateral:select`, `Lateral:input`): removed unused arguments and
-  updated callers. Added a heading retry display assertion and removed two
-  no-op statements from flight tests. All 177 display, flight, and source
-  integrity tests passed.
+  updated callers. The `Flight:cancelLateral` source and builder summaries now
+  describe how clearing live guidance retains the pilot's strafe selection.
+- Verification covered the display, flight, and source-integrity suites
+  (177 tests), followed by the control-stage, recovery, and source-integrity
+  checks after vent-only startup removal (24 tests). Removed two no-op
+  statements from the flight tests.
 
-- Corrected the `Flight:cancelLateral` source and builder summaries to describe
-  the pilot mode selection retained when live strafe guidance is cleared.
+### Autopilot and strafe
 
+- `heading-main.lua` (`drawHorizontalHeading`): **RETRYING (n)** now uses the AP
+  recovery presentation, with a yellow title and **WAITING FOR TELEMETRY**.
+  A display regression verifies the recovery label and color.
 - The Navigator autopilot page shows the selected **CRUISE** speed under the
   heading target, including during acquisition. The heading monitor's **REQ**
   shows autopilot's current speed request.
-
-- Debug recording schema 9 appends the raw and projected X/Z used by SEL strafe,
-  the position and projection velocity timestamps, and the last evaluated
-  sideways displacement and cumulative travel. Each row samples the latest
-  guidance evaluation; the evaluation timestamp identifies repeated samples.
-
-- Debug recording schema 8 appends the strafe mode, controller state, selected
-  offset, signed remaining distance, projected sideways speed, reference heading,
-  lateral demand and strafe input strengths. Existing CSV columns keep their positions.
-
 - Core saves **STRAFE MAN / SEL** with the other pilot modes. Restored SEL starts
   at zero offset once lateral telemetry is available. Temporary loss of authority
   clears live strafe guidance and retains the pilot selection. Older presets default
   to MAN strafe.
+- Debug recording schema 9 includes strafe mode, state, selected offset, signed
+  remaining distance, sideways speed, reference heading, lateral demand, and
+  input strengths. It also records the raw and projected X/Z, position and
+  velocity sample times, and signed displacement credited by the latest guidance
+  evaluation. The evaluation timestamp identifies repeated samples. Existing
+  column positions are preserved.
+
+### Navigator flight and maintenance readouts
 
 - Navigator Lift Maintenance replaces its **START SYSTEMS / STOP SYSTEMS**
   button with white **PROBE RESET**. It uses Core's existing **Fix gas mix lag**
@@ -53,16 +55,13 @@ Version entries describe the changes recorded for each release. See the
 - Removed the explanatory footer from Navigator Propulsion Settings. The page
   keeps its controls and current status.
 
-- Navigator Flight shows **PROP UNAVAIL; CHECK SETTINGS** in red and **HDG CTL OFF**
-  in yellow. The warning area shows **PROPULSION DISABLED IN SETTINGS** in red while
-  fresh forward or reverse throttle input is present and propulsion is disabled.
-
 - Navigator Flight combines **PROP DATA … FRESH** and **PROP STATUS AVAILABLE**
-  into **PROP 2/2 AVAIL** in green when propulsion is ready, or a red **PROP … UNAVAIL**
-  with the current sensor count. **LIFT READY** and its response time appear in green.
-
-- The Navigator Flight page displays **LIFT READY RESP 0.6S** for a ready lift
-  system whose latest chamber command batch took 0.6 seconds to confirm.
+  into green **PROP 2/2 AVAIL** when propulsion and both primary telemetry feeds
+  are available. Otherwise it shows red **PROP UNAVAIL; CHECK SETTINGS**.
+  **HDG CTL OFF** appears in yellow. **PROPULSION DISABLED IN SETTINGS** appears
+  in red while fresh throttle input is present and propulsion is disabled.
+- **READY ACK 0.6S** becomes green **LIFT READY RESP 0.6S**, using the confirmation
+  time of the latest completed chamber command batch.
 
 ### Windows regression checks
 
