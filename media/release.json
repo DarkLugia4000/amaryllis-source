@@ -20,7 +20,7 @@
     }
   ],
   "calibration": {
-    "capturedDate": "2026-11-14",
+    "capturedDate": "2026-11-17",
     "files": [
       {
         "adler32": "9BAC9612",
@@ -46,9 +46,9 @@
       "path": "/avionics/config.json"
     },
     {
-      "adler32": "5A6DD27F",
-      "bytes": 1541603,
-      "object": "07dcbef2953c8937927abeba3af651bdc8f955019cad2c3df0d3b0fa3532e7f6",
+      "adler32": "15CD4142",
+      "bytes": 1532493,
+      "object": "286f06092b8d9ab895c0dbab2b52bb65aec59ee89d0a1f3f36530fc7f2a93a6e",
       "path": "/avionics/main.lua"
     },
     {
@@ -58,9 +58,9 @@
       "path": "/installer/config.json"
     },
     {
-      "adler32": "9DD1F32B",
+      "adler32": "6274F462",
       "bytes": 9828,
-      "object": "888c368e3634c894c3bc0f276d0d6817f8bc2dd82edc83814f65d5aaf88a2588",
+      "object": "a4910a5fb04b4a495d87f0d7f34250dd002912f4169d8c329c2f537fe7f9e7bb",
       "path": "/installer/library.json"
     },
     {
@@ -160,9 +160,9 @@
       "path": "/packages/heading/left/config.json"
     },
     {
-      "adler32": "CB99F588",
-      "bytes": 178294,
-      "object": "91328cb4fefdc378eb3d0e074dc4d45c7dec8f49172c90b4437c25bd4a6dbf08",
+      "adler32": "8DE7AA28",
+      "bytes": 194585,
+      "object": "582c6b45aeb7bd64c93c8a381f7adc0b7ddc8b5f8a9a1d2490bf6e9cc23528da",
       "path": "/packages/heading/left/main.lua"
     },
     {
@@ -178,9 +178,9 @@
       "path": "/packages/heading/main/config.json"
     },
     {
-      "adler32": "CB99F588",
-      "bytes": 178294,
-      "object": "91328cb4fefdc378eb3d0e074dc4d45c7dec8f49172c90b4437c25bd4a6dbf08",
+      "adler32": "8DE7AA28",
+      "bytes": 194585,
+      "object": "582c6b45aeb7bd64c93c8a381f7adc0b7ddc8b5f8a9a1d2490bf6e9cc23528da",
       "path": "/packages/heading/main/main.lua"
     },
     {
@@ -196,9 +196,9 @@
       "path": "/packages/heading/right/config.json"
     },
     {
-      "adler32": "CB99F588",
-      "bytes": 178294,
-      "object": "91328cb4fefdc378eb3d0e074dc4d45c7dec8f49172c90b4437c25bd4a6dbf08",
+      "adler32": "8DE7AA28",
+      "bytes": 194585,
+      "object": "582c6b45aeb7bd64c93c8a381f7adc0b7ddc8b5f8a9a1d2490bf6e9cc23528da",
       "path": "/packages/heading/right/main.lua"
     },
     {
@@ -334,9 +334,9 @@
       "path": "/packages/thrust/rs/manifest.json"
     }
   ],
-  "libraryId": "da9babeee0aa1cb528570005a0f5b76402d599d22c18fdc7e72d1902a11ba8a9",
+  "libraryId": "02380c43cf39f2bf995aa4d72298adc30290d2996ffd9eedffbe765f770cf465",
   "minimumComputerSpaceBytes": 4000000,
-  "releaseId": "amaryllis-bc98534bdc1a",
+  "releaseId": "amaryllis-bf80acbb68ce",
   "roleOrder": [
     "navigator",
     "heading-left",
@@ -406,10 +406,10 @@
   },
   "schemaVersion": 1,
   "source": {
-    "commit": "c6ff90303815dde266ff628c28fbdf4a376f0519",
+    "commit": "418f7be5921638058217158f54de1e318f2c5256",
     "dirty": false,
     "kind": "project-source",
-    "sourceTreeSHA256": "350240ad0960df04f6d9572a4627381c1650b40ce25562956d8583e8a8d30b3b"
+    "sourceTreeSHA256": "84bea37f18aa4525f8ff6040d54841707b6a2d9e3872c02ac240690ced141b48"
   },
   "state": [
     {
@@ -419,9 +419,9 @@
       "path": "/avionics/config.json"
     },
     {
-      "adler32": "F15E5D5F",
-      "bytes": 512252,
-      "object": "1f3ed5253f2a7c0ff5edfd96a2680733971fe4d344089b99c4207472f60e4265",
+      "adler32": "77331E59",
+      "bytes": 512042,
+      "object": "030342dcd39a2eaaae9ffa04a411ceab06171c87a64d91c0b647f2b1f9281f31",
       "path": "/avionics/main.lua"
     },
     {
