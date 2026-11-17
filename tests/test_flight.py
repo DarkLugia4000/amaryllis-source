@@ -641,9 +641,9 @@ end
 local ap,io,c,t=fixture(90,0);io.autopilot=nil
 c.modes.heading='SEL';c.targets.heading=90.2
 local lateral=Lateral.new(io.config);c.lateral=lateral
-assert(lateral:select('SEL',io,c,10))
-lateral:input({left_lift=0,right_lift=0},10,.1,false)
-lateral:input({left_lift=0,right_lift=15},10.1,.1,false)
+assert(lateral:select('SEL',io,10))
+lateral:input({left_lift=0,right_lift=0},10,.1)
+lateral:input({left_lift=0,right_lift=15},10.1,.1)
 for i=1,100 do
  local at=10+i*.1;sample(io,at,0,0,90,0,0)
  local torque=i%2==0 and .019 or .7
@@ -712,7 +712,7 @@ assert(selected(0,3)<0,'approach braking works above the minimum speed')
 local ap,io,c=fixture(0,0);io.autopilot=nil
 c.modes.heading='SEL';c.targets.heading=0
 local lateral=Lateral.new(io.config);c.lateral=lateral
-sample(io,10,0,0,0,0,-8);assert(lateral:select('SEL',io,c,10))
+sample(io,10,0,0,0,0,-8);assert(lateral:select('SEL',io,10))
 lateral.offset=5;lateral.pending=true
 -- Fly 200 blocks forward (north, -Z) at the selected heading.
 for i=1,25 do sample(io,10+i,0,-8*i,0,0,-8);lateral:evaluate(io,10+i,c,0) end
@@ -733,7 +733,7 @@ assert(math.abs(lateral.track.travelled-3)<1e-9,tostring(lateral.track.travelled
 local ap,io,c=fixture(0,0);io.autopilot=nil
 c.modes.heading='SEL';c.targets.heading=0
 local lateral=Lateral.new(io.config);c.lateral=lateral
-sample(io,10,0,0,0,0,0);assert(lateral:select('SEL',io,c,10))
+sample(io,10,0,0,0,0,0);assert(lateral:select('SEL',io,10))
 lateral.offset=3;lateral.pending=true
 -- She arrives 3 blocks to starboard (+X at heading 000) and stays there.
 for i=1,4 do sample(io,10+i*.5,3,0,0,0,0);lateral:evaluate(io,10+i*.5,c,0) end
@@ -971,7 +971,6 @@ assert(ratio>=.8 and ratio<=1.2 and run.acquisitionPidActive==false)
 """)
 
     def test_longitudinal_loop_uses_maintained_thrust(self):
-        pass
         reports=[]
         for selected,initial in [(4,0),(4,6),(0,1.9),(0,4),(0,-4)]:
             lua=persistence.PersistenceTests().runtime(False)
@@ -1977,7 +1976,6 @@ class BowAxisLockTests(unittest.TestCase):
 
 class BowAxisLockSamplingTests(unittest.TestCase):
     def test_configured_axis_drives_heading_and_forward_speed_in_real_sampling(self):
-        pass
         traces = io_traces({"x": 1, "y": 0, "z": 0})
         valid = [t["vessel"] for t in traces if t.get("vessel", {}).get("valid")]
         self.assertTrue(valid)

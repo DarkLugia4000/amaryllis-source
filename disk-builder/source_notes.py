@@ -153,7 +153,7 @@ SHORT_SUMMARIES = {'/avionics/common/console.lua#requestRegistry': 'Request flee
                                              'replacement.',
  '/avionics/control_presets.lua#Presets:cancelRestore': 'Cancel pending preset restoration and release its '
                                                         'resume gate.',
- '/avionics/flight.lua#Flight:cancelLateral': 'Cancel lateral guidance, set its manual mode and apply the '
+ '/avionics/flight.lua#Flight:cancelLateral': 'Clear live lateral guidance, retain the pilot selection and apply the '
                                               'requested stop lock.',
  '/avionics/lateral.lua#Lateral:cancel': 'Clear lateral demand and guidance history; strafe input acts from the next sample.',
  '/avionics/main.lua#request': 'Dispatch the paired remote packet to remote AP request handling.',
@@ -422,7 +422,6 @@ SUMMARIES.update({'AP.new': 'Construct route guidance with its saved draft and d
  'snapshot': 'Return the current bounded operation state and available status details.',
  'startSystems': 'Validate startup and initialize its probe, target and retained-identity state.',
  'startSystemsAirborne': 'Adopt verified existing lift into an airborne altitude-control run.',
- 'startupTargets': 'Build bounded startup provider targets from the configured vent request.',
  'stopSystems': 'Release the renewable systems lease and retain the applied provider ceilings.',
  'supportStepFor': 'Calculate a bounded provider change from measured support error and actuator limits.',
  'suspend': 'Retain current operation intent and expose its retry state.',
@@ -457,7 +456,6 @@ SUMMARIES.update({'AP.new': 'Construct route guidance with its saved draft and d
  'updateMaintenance': 'Advance the current chamber maintenance operation through acknowledgement and '
                       'reconnect.',
  'updateShutdown': 'Send the confirmed probe-preserving shutdown and track each chamber acknowledgement.',
- 'updateStartup': 'Track vent-start acknowledgements and report the completed startup operation.',
  'updateSystems': 'Advance startup, acquisition, recovery and altitude-hold target batches.',
  'updateSystemsRecovery': 'Reconcile physical targets, renew authority and resume the retained systems run.',
  'updateTrim': 'Compute bounded roll and pitch corrections from chamber heights and the selected trim bias.',

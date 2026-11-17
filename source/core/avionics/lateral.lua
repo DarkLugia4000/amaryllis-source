@@ -28,7 +28,7 @@ function Lateral:telemetry(io,now)
  return v
 end
 -- Summary: Start selected sideways travel at zero offset from the current position.
-function Lateral:select(mode,io,controls,now)
+function Lateral:select(mode,io,now)
  if mode~="MANUAL" and mode~="SEL" then return false,"INVALID LATERAL MODE" end
  if io.autopilot and io.autopilot.active or io.positionAnchor and io.positionAnchor.active then
   return false,"AP / ANCHOR OWNS LATERAL CONTROL"
@@ -39,8 +39,7 @@ function Lateral:select(mode,io,controls,now)
  return true
 end
 -- Summary: Interpret lateral pilot input into bounded displacement and braking intent.
-function Lateral:input(raw,at,dt,blocked)
- if blocked then self:cancel();return end
+function Lateral:input(raw,at,dt)
  local left,right=raw.left_lift>0,raw.right_lift>0
  if not left and not right then self.waitNeutral=false end
  if self.mode=="SEL" and left and right and not self.waitNeutral then

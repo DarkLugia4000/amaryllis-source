@@ -635,7 +635,8 @@ local function drawHorizontalHeading(snapshot,width,height)
     -- to its own column so speed and AP markers cannot overwrite altitude.
     local surface={width=width,height=height,rows=fullSurface.rows}
     local ap=type(snapshot.autopilot)=="table" and snapshot.autopilot.active and snapshot.autopilot or nil
-    local recovering=ap and (ap.state=="RECOVERING" or ap.state=="RECOVERY_FAILED")
+    local recovering=ap and (ap.state=="RECOVERING" or
+        (type(ap.state)=="string" and ap.state:match("^RETRYING %(%d+%)$")~=nil))
     local vessel=snapshot.vessel or {};local targets=snapshot.targets or {}
     local lateral=type(snapshot.lateralControl)=="table" and snapshot.lateralControl or {}
     local showLateral=not ap and snapshot.displayStale~=true and lateral.mode=="SEL" and lateral.active==true

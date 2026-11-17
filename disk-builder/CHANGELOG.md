@@ -5,6 +5,22 @@ Version entries describe the changes recorded for each release. See the
 
 ## Unreleased
 
+- `flight.lua`: removed the retired vent-only startup planner, ACK polling,
+  status fields, and per-update checks. The legacy action still directs callers
+  to **START SYSTEMS**, which runs the staged probe and vent ignition sequence.
+
+- `heading-main.lua` (`drawHorizontalHeading`): **RETRYING (n)** now uses the AP
+  recovery presentation, with a yellow title and **WAITING FOR TELEMETRY**.
+- Removed the unused `io.anchor` checks from cockpit input, lift, propulsion,
+  and motion warnings. Digital Anchor continues to use `io.positionAnchor`.
+- `lateral.lua` (`Lateral:select`, `Lateral:input`): removed unused arguments and
+  updated callers. Added a heading retry display assertion and removed two
+  no-op statements from flight tests. All 177 display, flight, and source
+  integrity tests passed.
+
+- Corrected the `Flight:cancelLateral` source and builder summaries to describe
+  the pilot mode selection retained when live strafe guidance is cleared.
+
 - The Navigator autopilot page shows the selected **CRUISE** speed under the
   heading target, including during acquisition. The heading monitor's **REQ**
   shows autopilot's current speed request.

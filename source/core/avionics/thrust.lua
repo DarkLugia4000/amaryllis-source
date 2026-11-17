@@ -1643,7 +1643,6 @@ end
 function Thrust:activationReady(io,now,controls)
     local open,why=commandGate(io,now)
     if not open then return false,why end
-    if io.anchor=="ANCHORED" or io.anchor=="BRAKING" then return false,"ANCHOR SUPPRESSES PROPULSION" end
     if not controls or type(controls.usable)~="function" then return false,"COCKPIT CONTROLS UNAVAILABLE" end
     local usable,usableReason=controls:usable(io,now)
     if not usable then return false,usableReason end
@@ -1725,7 +1724,6 @@ function Thrust:makeTargets(io,now,controls,sideDemand)
     local gateOpen,gateReason=commandGate(io,now)
     if not gateOpen then return nil,gateReason end
     if not controls or controls.available~=true then return nil,controls and controls.reason or "COCKPIT INPUTS UNAVAILABLE" end
-    if io.anchor=="ANCHORED" or io.anchor=="BRAKING" then return nil,"ANCHOR SUPPRESSES PROPULSION" end
     local configReason=directConfigReason(self.config)
     if configReason then return nil,configReason end
     local side=sideDemand

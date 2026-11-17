@@ -94,7 +94,7 @@ function Controls:mode(io,action,now)
     end
     if axis=="lateral" then
         if self.lateralStopLock and mode=="SEL" then return false,"START SYSTEMS BEFORE USING STRAFE" end
-        local ok,reason=self.lateral:select(mode,io,self,now)
+        local ok,reason=self.lateral:select(mode,io,now)
         if ok then self.modes.lateral=mode end
         return ok,reason
     end
@@ -188,7 +188,6 @@ function Controls:update(io,now)
     end
     local good,inputReason,evaluatedAt=self:fresh(io,now)
     now=evaluatedAt or now
-    local anchored=io.anchor=="ANCHORED" or io.anchor=="BRAKING"
     -- A closed assembly gate pauses cockpit input interpretation.
     -- clear() retains selected targets; levers act at their position when
     -- the gate reopens.
@@ -196,9 +195,7 @@ function Controls:update(io,now)
     if type(io.assemblyGate)=="function" then assembled,assemblyReason=io:assemblyGate(now) end
     local identityReady=io.identityReady~=false
     local identityReason=io.identityReason or "CORE IDENTITY IS NOT VERIFIED AGAINST /fleet.json"
-    self.available=not anchored and assembled and identityReady
-    -- The legacy io.anchor lockout pauses the cockpit silently; position
-    -- anchoring reports its own state on the navigator.
+    self.available=assembled and identityReady
     self.reason=(not assembled and assemblyReason) or (not identityReady and identityReason) or nil
     self.updatedAt=now
     if not self.available then self:clear(); return end
@@ -293,8 +290,8 @@ function Controls:update(io,now)
     else
         -- A restored SEL mode starts at zero offset once lateral telemetry is usable.
         local selected=self.modes.lateral or "MANUAL"
-        if self.lateral.mode==selected or self.lateral:select(selected,io,self,now) then
-            self.lateral:input(raw,input.at,dt,false)
+        if self.lateral.mode==selected or self.lateral:select(selected,io,now) then
+            self.lateral:input(raw,input.at,dt)
             self.modes.lateral=self.lateral.mode
         end
     end

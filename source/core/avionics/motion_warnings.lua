@@ -172,7 +172,7 @@ function M:update(snapshot,io,now)
         self:emit("POSSIBLE IMPACT",self.impact.axis,now,string.format("DELTA V %.2f; ACC %.2f; YAW %.2f; ANG ACC %.2f",
             m.deltaSpeed or 0,m.acceleration or 0,m.yawRate or 0,m.angularAcceleration or 0))
     end
-    local anchored=io.anchor=="ANCHORED" or io.anchor=="BRAKING" or (io.positionAnchor or {}).active==true
+    local anchored=(io.positionAnchor or {}).active==true
     local thrust=snapshot.thrust or {};local request=thrust.request or {}
     if anchored or thrust.available~=true or (snapshot.emergencyLift or {}).latched==true then
         self.tracks={};self.gate=anchored and "ANCHOR ENGAGED" or "PROPULSION NOT ACTIVE"

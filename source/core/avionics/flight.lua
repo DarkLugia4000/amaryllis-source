@@ -905,14 +905,13 @@ end
 -- Summary: Validate a settings edit, save its configured value and update the affected live controller.
 function Flight:setting(io,action,now)
  local holding=self.systemsRun and self.systemsRun.phase=="READY"
- if (self.enabled and not holding) or self.tuningRun or self.startupPending or
+ if (self.enabled and not holding) or self.tuningRun or
   (self.systemsRun and not holding) or self.maintenanceJob then return false,"DISENGAGE / FINISH LIFT OPERATION FIRST" end
  if holding then
   if self.systemsRun.telemetryRecovery then return false,"WAIT FOR LIFT TELEMETRY RECOVERY" end
   local available,reason=self:systemsGuard(io,now,self.systemsRun)
   if not available then return false,reason end
  end
- if not holding and (io.anchor=="ANCHORED" or io.anchor=="BRAKING") then return false,"ANCHOR LOCKS FLIGHT SETTINGS" end
  local definition
  for _,f in ipairs(FIELDS) do if f.key==action.key then definition=f;break end end
  if not definition or not finite(action.value) or action.value<definition.min or action.value>definition.max then return false,"SETTING OUT OF RANGE" end
@@ -998,7 +997,6 @@ function Flight:manualTrimAvailability(io,now)
  if self.shutdownJob or self.stopReview then return false,"STOPPING / STOP REVIEW IN PROGRESS" end
  if self.tuningRun or self.tuningReview then return false,"PID TUNING IN PROGRESS" end
  if self.maintenanceJob or self.maintenanceReview then return false,"LIFT MAINTENANCE IN PROGRESS" end
- if self.startupPending then return false,"VENT STARTUP IN PROGRESS" end
  if self.emergencyLiftLatched then
   local kill=self.emergencyLiftJob
   if not kill or kill.complete~=true then
@@ -1090,7 +1088,7 @@ local MAINTENANCE_NAMES={restart="RESTART",recheck="RECHECK",probe_cycle="GAS MI
 function Flight:maintenanceRequest(io,action,now)
  local kind=action.type
  if kind=="maintenance_cancel" then self.maintenanceReview=nil;return true end
- if self.maintenanceJob or self.startupPending or self.systemsRun or self.tuningRun then return false,"LIFT OPERATION ALREADY PENDING" end
+ if self.maintenanceJob or self.systemsRun or self.tuningRun then return false,"LIFT OPERATION ALREADY PENDING" end
  if kind=="maintenance_review" or kind=="maintenance_recheck" or kind=="maintenance_probe_cycle" then
   local scope=action.scope or "ALL";local list={}
   if scope=="ALL" then for _,q in ipairs(QUADS) do list[#list+1]=q end
@@ -1186,8 +1184,7 @@ end
 -- Summary: Check telemetry, hover stability and vent headroom for a bounded PID test.
 function Flight:tuningReady(io,now)
  if not io.config.tuning or io.config.tuning.enabled~=true then return false,"TUNING MODE DISABLED" end
- if self.enabled or self.maintenanceJob or self.startupPending or self.systemsRun then return false,"FINISH OTHER LIFT OPERATION FIRST" end
- if io.anchor=="ANCHORED" or io.anchor=="BRAKING" then return false,"RELEASE DIGITAL ANCHOR FIRST" end
+ if self.enabled or self.maintenanceJob or self.systemsRun then return false,"FINISH OTHER LIFT OPERATION FIRST" end
  local ok,reason=self:check(io,now,true);if not ok then return false,reason end
  for _,q in ipairs(QUADS) do
   local n=io.nodes[q]
@@ -1474,7 +1471,7 @@ function Flight:engage(io,now)
     clearOperationIssue(self,"flight","altitude","Core altitude control recovered: altitude hold engaged")
     return true
 end
--- Summary: Cancel lateral guidance, set its manual mode and apply the requested stop lock.
+-- Summary: Clear live lateral guidance and apply the requested stop lock while retaining the pilot's mode selection.
 function Flight:cancelLateral(locked)
  local controls=self.controls
  if not controls then return end
@@ -1540,7 +1537,7 @@ end
 -- Summary: Attempt validated recovery or airborne adoption while retained running intent is active.
 function Flight:autoResumeSystems(io,now)
     if self.systemsRun or self.shutdownJob or self.stopReview or self.emergencyLiftLatched or
-        self.tuningRun or self.tuningReview or self.startupPending or self.maintenanceJob or
+        self.tuningRun or self.tuningReview or self.maintenanceJob or
         (self.restart and (self.restart.job or self.restart.saved)) then return end
     if not self:systemsIntent() then return end
     if self.nextAutoResumeAt and now<self.nextAutoResumeAt then return end
@@ -1573,7 +1570,7 @@ function Flight:confirmShutdown(io,action,now)
     if self.systemsRun then self:stopSystems(io,"CONFIRMED SYSTEMS SHUTDOWN",now) end
     self:stop("STOPPING / MAIN LIFT OFF")
     self.tuningRun=nil;self.tuningReview=nil;self.maintenanceJob=nil;self.maintenanceReview=nil
-    self.startupPending=nil;self.trimStatus=nil
+    self.trimStatus=nil
     self.shutdownJob={FL={},FR={},BL={},BR={}}
     self:updateShutdown(io,now)
     return true,"PROBE-PRESERVING SHUTDOWN REQUESTED"
@@ -1598,7 +1595,6 @@ function Flight:emergencyKillLift(io,now)
     end
     self.systemsRun=nil;self.systemsAvailable=false;self.systemsBlockedReason="EMERGENCY LIFT KILL LATCHED"
     self.enabled=false;self.available=false;self.pending=nil;self.hoverSince=nil
-    self.startupPending=nil;self.startupAvailable=false;self.startupReason="EMERGENCY LIFT KILL LATCHED"
     self.maintenanceJob=nil;self.maintenanceReview=nil;self.tuningRun=nil;self.tuningReview=nil
     self.trimStatus=nil;self.baseline=nil;self.boots=nil;self.mixBaseline=nil
     -- Revoke the previous lift PID lease once on operator acceptance. The
@@ -2015,66 +2011,6 @@ function Flight:request(io,action,now)
     if action.type=="altitude_disengage" then self:stop(); return true end
     if action.type=="altitude_engage" then return self:engage(io,now) end
     return false,"FLIGHT ACTION UNAVAILABLE"
-end
--- Minimum-output preparation is a separate, explicitly requested operation.
--- It cannot grant altitude authority, raise an already operating vent ceiling,
--- reset the trim probe, or restore itself on boot.
--- Section: Systems control | Startup, measured dynamics and bounded provider demand.
--- Summary: Build bounded startup provider targets from the configured vent request.
-function Flight:startupTargets(io,now)
-    if self.tuningRun then return nil,"PID TUNING IN PROGRESS" end
-    if self.maintenanceJob then return nil,"LIFT MAINTENANCE IN PROGRESS" end
-    if io.config.vent_startup_enabled~=true then return nil,"VENT STARTUP DISABLED" end
-    if self.enabled then return nil,"ALTITUDE CONTROL ALREADY ENGAGED" end
-    if self.controls and not self.controls:usable(io,now) then return nil,"COCKPIT CONTROLS UNAVAILABLE" end
-    if io.anchor=="ANCHORED" or io.anchor=="BRAKING" then return nil,"ANCHOR SUPPRESSES STARTUP" end
-    local v=io.vessel
-    if not v or not v.valid or not v.uuid or not finite(v.at) or now<v.at or
-        now-v.at>io.config.network.sensor_stale_seconds then return nil,"VESSEL DATA UNAVAILABLE" end
-    local maps={}
-    for _,q in ipairs(QUADS) do
-        local n=io.nodes[q]
-        if not n or not io:nodeFresh(q,now) or not n.startReady or n.armed or n.operationBusy or not n.boot or
-            not n.altitude or not n.altitude.valid then return nil,q.." STARTUP INTERFACES NOT READY" end
-        local b=n.balloon
-        if not b or not b.hasBalloonValid or not b.hasBalloon or not b.gasMixValid then return nil,q.." PROBE ENVELOPE UNAVAILABLE" end
-        local bulk,fine=0,0;maps[q]={}
-        for name,p in pairs(n.providers) do
-            if not p.present or not p.writable or not p.targetValid or not finite(p.targetAmount) or
-                not p.signalValid or not finite(p.signalStrength) then return nil,q.." STARTUP PROVIDER INTERFACE INVALID" end
-            if p.controlRole=="bulk" then
-                bulk=bulk+1
-                if p.minimumNonzeroTarget~=50 or p.maxTarget<50 or
-                    (p.signalStrength>1 and p.targetAmount~=50) then return nil,q.." VENT ALREADY OPERATING / FLOOR INVALID" end
-                maps[q][name]=50
-            elseif p.controlRole=="fine" then
-                fine=fine+1
-                if p.signalStrength~=15 or not p.attachedValid or not p.attached or p.targetAmount<5 then
-                    return nil,q.." ACTIVE TRIM PROBE REQUIRED"
-                end
-                maps[q][name]=p.targetAmount
-            else return nil,q.." PROVIDER ROLE INVALID" end
-        end
-        if bulk~=steamCount(n) or fine~=1 then return nil,q.." EXPECTED CONFIGURED VENTS AND ONE PROBE" end
-    end
-    local model,modelReason=self:balancedLiftModel(io,self.controls and self.controls.targets and
-        self.controls.targets.altitude or v.altitude,now)
-    self.balancedLift=model
-    if model.phase=="UNAVAILABLE" or model.phase=="INFEASIBLE" then
-        if self:isFloorOnlyTargets(io,maps,false,true) then return maps end
-        return nil,modelReason or model.reason or "BALANCED LIFT CAPACITY UNAVAILABLE"
-    end
-    local capped,capReason,limited=self:capBalancedTargets(io,maps,model)
-    if not capped then return nil,capReason end
-    if limited then
-        for _,q in ipairs(QUADS) do
-            for name,value in pairs(capped[q]) do
-                if value~=maps[q][name] then return nil,"BALANCED LIFT LIMIT BELOW VERIFIED STARTUP FLOOR" end
-            end
-        end
-    end
-    maps=capped
-    return maps
 end
 -- Section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
 -- START SYSTEMS is an explicit, session-limited route from an idle vessel to
@@ -2818,9 +2754,7 @@ function Flight:systemsPreflight(io,now)
     local c=self.config
     if self.tuningRun or self.tuningReview then return nil,"PID TUNING IN PROGRESS" end
     if self.maintenanceJob then return nil,"LIFT MAINTENANCE IN PROGRESS" end
-    if self.startupPending then return nil,"VENT STARTUP ALREADY PENDING" end
     if self.enabled then return nil,"ALTITUDE CONTROL ALREADY ENGAGED" end
-    if io.anchor=="ANCHORED" or io.anchor=="BRAKING" then return nil,"ANCHOR SUPPRESSES START SYSTEMS" end
     local stale=io.config.network.sensor_stale_seconds
     local v=io.vessel
     if not v or v.valid~=true or type(v.uuid)~="string" or v.uuid=="" or
@@ -2922,7 +2856,6 @@ function Flight:systemsPreflight(io,now)
 end
 -- Summary: Revalidate the active run's observations, identities and configured provider boundaries.
 function Flight:systemsGuard(io,now,s,allowInactiveLease,skipTargetMatch)
-    if io.anchor=="ANCHORED" or io.anchor=="BRAKING" then return false,"ANCHOR ENGAGED" end
     local stale=io.config.network.sensor_stale_seconds
     local v=io.vessel
     local vesselState,vesselReason=TelemetryRecovery.vesselState(io,s,now)
@@ -4751,7 +4684,7 @@ end
 -- Summary: Record a terminal recovery guard result while retaining applied lift intent.
 function Flight:abortRecoveryState(io,now)
     if self.systemsRun or self.shutdownJob or self.stopReview or self.emergencyLiftLatched or
-        self.tuningRun or self.startupPending or self.maintenanceJob or
+        self.tuningRun or self.maintenanceJob or
         (self.restart and (self.restart.job or self.restart.saved)) then
         return nil,"FINISH CURRENT SYSTEMS OPERATION FIRST"
     end
@@ -5872,42 +5805,6 @@ function Flight:updateSystems(io,now)
     end
     return systemsActiveControl(self,io,now,s,balanced)
 end
--- Summary: Track vent-start acknowledgements and report the completed startup operation.
-function Flight:updateStartup(io,now)
-    self.startupComplete=io.config.vent_startup_enabled==true
-    for _,q in ipairs(QUADS) do
-        local n=io.nodes[q];local bulk=0
-        if not n or not io:nodeFresh(q,now) then self.startupComplete=false
-        else
-            for _,p in pairs(n.providers or {}) do
-                if p.controlRole=="bulk" then
-                    bulk=bulk+1
-                    if not p.signalValid or p.signalStrength~=15 or not p.attachedValid or not p.attached or
-                        not p.gasOutputValid or not finite(p.gasOutput) or p.gasOutput<0 or
-                        (p.activeSupported and (not p.activeValid or not p.active)) then self.startupComplete=false end
-                end
-            end
-            if bulk~=steamCount(n) then self.startupComplete=false end
-        end
-    end
-    if self.startupPending then
-        local applied=true
-        for _,q in ipairs(QUADS) do
-            local command=self.startupPending[q]
-            if io.nodes[q].boot~=command.boot then
-                self.startupPending=nil;self.startupReason=q.." STARTUP BOOT CHANGED";break
-            end
-            if not io:commandWasApplied(q,command.seq,command.targets) then applied=false end
-        end
-        if self.startupPending and applied then self.startupPending=nil;self.startupReason="VENTS STARTED"
-        elseif self.startupPending and now-self.startupSentAt>(io.config.vent_startup_ack_seconds or 18) then
-            self.startupPending=nil;self.startupReason="VENT STARTUP NOT ACKNOWLEDGED; CHECK LIFT LOGS"
-        end
-    end
-    local maps,blocked=self:startupTargets(io,now)
-    self.startupBlockedReason=blocked
-    self.startupAvailable=not self.startupComplete and self.startupPending==nil and maps~=nil
-end
 -- Section: Flight lifecycle | Operator actions, runtime gates and cached presentation.
 -- Summary: Copy a permitted navigator action into a bounded core request.
 local function copyBridgeAction(value,depth,budget)
@@ -5995,7 +5892,7 @@ function Flight:assemblyBlocked(io,now,reason)
     if self.tuningRun then self:abortTuning(io,reason) end
     if self.systemsRun then self:stopSystems(io,reason,now) end
     if self.enabled then self:stop(reason) end
-    self.tuningReview=nil;self.startupPending=nil
+    self.tuningReview=nil
     self.hoverSince=nil;self.tuningHoverSince=nil
     self.available=false;self.reason=reason
     self.systemsAvailable=false;self.systemsBlockedReason=reason
@@ -6005,7 +5902,6 @@ function Flight:assemblyBlocked(io,now,reason)
         abortReason=last and last.phase=="ABORTED" and last.reason or nil,
         abortDetails=last and last.abortDetails or nil}
     self.tuningSnapshot={available=false,active=false,reason=reason,result=self.tuningResult}
-    self.startupAvailable=false;self.startupBlockedReason=reason
     self.trimStatus=nil
 end
 -- Sum saved provider ceilings in m3 per chamber. A pending restart or active
@@ -6087,7 +5983,7 @@ function Flight:renewLiftControlContext(io,now)
     local activeSystemsPhase=not self.systemsRun or self.systemsRun.phase=="READY" or
         (self.systemsRun.phase=="MAIN_LIFT" and self.systemsRun.acquisitionPidActive==true)
     local pidCandidate=self.enabled==true and not self.shutdownJob and not self.emergencyLiftLatched and
-        not self.tuningRun and not self.startupPending and not self.maintenanceJob and activeSystemsPhase and
+        not self.tuningRun and not self.maintenanceJob and activeSystemsPhase and
         not telemetrySuspended and not assemblySuppressed
     local pidActive=false
     if pidCandidate and altitudeValid and inputsActive then
@@ -6160,7 +6056,7 @@ function Flight:update(io,now)
     if self.emergencyLiftLatched then
         if self.emergencyLiftDisarmJob then self:updateLiftDisarm(io,now)
         else self:updateEmergencyLiftKill(io,now) end
-        self.available=false;self.startupAvailable=false;self.systemsAvailable=false
+        self.available=false;self.systemsAvailable=false
         if self.emergencyLiftLatched then
             self.reason=self.emergencyLiftDisarmJob and self.emergencyLiftDisarmJob.reason or "EMERGENCY LIFT KILL LATCHED; DISARM KILL FIRST"
             self.systemsBlockedReason=self.reason
@@ -6196,7 +6092,6 @@ function Flight:update(io,now)
     self.balancedLift=self:balancedLiftModel(io,targetY,now)
     self:updateTuning(io,now)
     if self.tuningRun then self.available=false;return end
-    self:updateStartup(io,now)
     if self.systemsRun then
         self:updateSystems(io,now);self.available=false
         return
@@ -6298,8 +6193,6 @@ function Flight:decorate(snapshot,io,now)
         end
         snapshot.ap=ap.active and "ACTIVE" or ap.state
     end
-    -- The old io.anchor guard represents a total cockpit lockout. Horizontal
-    -- anchor authority lives separately so steering and lift remain available.
     snapshot.anchorControl=io.positionAnchor and io.positionAnchor:snapshot() or {active=false,state="OFF"}
     if type(io.assemblyGate)=="function" then
         local _,_,assembly=io:assemblyGate(now);snapshot.assembly=assembly
@@ -6445,8 +6338,6 @@ function Flight:decorate(snapshot,io,now)
         snapshot.systemsStartup.pidActive=false
         snapshot.systemsStartup.initialGasTarget=clone(self.systemsLastOutcome and self.systemsLastOutcome.initialGasTarget)
     end
-    snapshot.ventStartup={available=self.startupAvailable==true,pending=self.startupPending~=nil,
-        complete=self.startupComplete==true,reason=self.startupReason or self.startupBlockedReason,ceilingPerVent=50}
     if self.enabled and not self.controls then snapshot.targets.altitude=self.target end
     return snapshot
 end

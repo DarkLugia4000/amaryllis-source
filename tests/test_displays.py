@@ -793,6 +793,12 @@ label=bottom('OFF',{active=true,state='ACQ',cruiseSpeed=25,requestedSpeed=0})
 assert(label:match("^REQ 0.0 b/s"),label)
 label=bottom('OFF',{active=true,state='ACCEL',cruiseSpeed=25,requestedSpeed=4.5})
 assert(label:match("^REQ 4.5 b/s"),label)
+local retry=drawHorizontalHeading({
+ vessel={valid=true,heading=90,forwardSpeed=2,altitude=160,verticalSpeed=0},
+ autopilot={active=true,state='RETRYING (2)',requestedHeading=90,crossTrack=4,distance=50},
+},57,10)
+assert(retry.rows[1].fg[1]==color("yellow"),"AP retry uses the recovery color")
+assert(table.concat(retry.rows[8].chars):find("WAITING FOR TELEMETRY",1,true))
 ''')
 
 
