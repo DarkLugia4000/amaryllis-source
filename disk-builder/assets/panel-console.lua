@@ -311,14 +311,13 @@ function Panel:frame(context,width,height)
         -- Fix gas mix lag: core restarts each chamber's trim probe link (maintenance_probe_cycle).
         local y=5
         for _,text in ipairs({"Mixing Hot Air and Steam in balloons can at times create inexplicable lag spikes. If you're experiencing these, this should fix most of it.",
-            "","Turns each chamber's probe link off and on again. Altitude control must be disengaged."})do
+            "","Turns each chamber's probe link off and on again."})do
             for _,part in ipairs(text==""and{""}or wrap(text,width-4))do if y<=height-6 then put(2,y,part)end;y=y+1 end
         end
         local last=os.__amaryllisCoreAction
         if type(last)~="table"or last.type~="maintenance_probe_cycle"then last=nil end
-        local engaged=(snap.altitudeControl or {}).enabled==true
         pair(height-4,"Status",last and not last.accepted and last.reason or(snap.maintenance or {}).status or
-            (engaged and"DISENGAGE ALTITUDE CONTROL FIRST")or"READY")
+            "READY")
         if self.gasMixConfirm then
             button(2,height-2,half,1,"Confirm","gasmix:confirm");button(right,height-2,half,1,"Cancel","gasmix:cancel")
         else button(2,height-2,width-3,1,"Fix gas mix lag","gasmix:ask")end

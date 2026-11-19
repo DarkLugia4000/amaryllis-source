@@ -1,4 +1,4 @@
-"""Narrow, offline editor for three ComputerCraft TOML settings.
+"""Offline editor for ComputerCraft capacities, execution threads and HTTP.
 
 Keeps all unrelated bytes, creates a verified sibling backup, and atomically
 replaces one explicitly selected file. Never invoked by an installer export.
@@ -96,12 +96,14 @@ class Plan:
         for key, label in zip(KEYS, LABELS):
             suffix = " bytes" if key != KEYS[2] else ""
             lines.append(f"{label}: {self.old[key]:,}{suffix} → {self.new[key]:,}{suffix}")
+        http_before = {True: "Enabled", False: "Disabled", None: "Default"}[self.old["http.enabled"]]
+        lines.append(f"HTTP: {http_before} → Enabled")
         lines += ["", "Installer creates a backup next to the file.",
                   "Ensure Minecraft or server is closed/stopped completely before applying."]
         return "\n".join(lines)
 
 
-# Patch selected integer settings and verify all other TOML values are preserved.
+# Apply the selected integer settings and enable HTTP while preserving the other TOML values.
 def plan(path, desired):
     path, before, document, old = load(path)
     need(set(desired) == set(KEYS), "Specify only computer capacity, disk capacity and execution threads.")
@@ -112,10 +114,24 @@ def plan(path, desired):
     section = ""
     found = set()
     lines = before.decode("utf-8-sig").splitlines(keepends=True)
+    http = document.get("http", {})
+    need(isinstance(http, dict) and ("enabled" not in http or type(http["enabled"]) is bool),
+         "Unsupported HTTP setting. Expected a boolean http.enabled.")
+    http_enabled = http.get("enabled")
+    http_header = None
+    http_line = re.compile(r"^([ \t]*enabled[ \t]*=[ \t]*)(true|false)([ \t]*(?:#[^\r\n]*)?)(\r?\n)?$")
     number = re.compile(r"^([ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*)([+-]?[0-9][0-9_]*)([ \t]*(?:#[^\r\n]*)?)(\r?\n)?$")
     for index, line in enumerate(lines):
         if line.lstrip().startswith("["):
-            section = "execution" if re.fullmatch(r"[ \t]*\[execution\][ \t]*(?:#[^\r\n]*)?(?:\r?\n)?", line) else "other"
+            header = re.fullmatch(r"[ \t]*\[(execution|http)\][ \t]*(?:#[^\r\n]*)?(?:\r?\n)?", line)
+            section = header[1] if header else "other"
+            if section == "http":
+                http_header = index
+        if section == "http":
+            match = http_line.fullmatch(line)
+            if match and match[2] == "false":
+                lines[index] = match[1] + "true" + match[3] + (match[4] or "")
+            continue
         match = number.fullmatch(line)
         if not match:
             continue
@@ -127,13 +143,22 @@ def plan(path, desired):
         if desired[key] != old[key]:
             lines[index] = match[1] + str(desired[key]) + match[4] + (match[5] or "")
     need(found == set(KEYS), "Unsupported setting layout. Expected plain integer keys and an [execution] section.")
+    if http_enabled is None:
+        newline = "\r\n" if b"\r\n" in before else "\n"
+        if http_header is None:
+            lines.append(newline + "[http]" + newline + "enabled = true" + newline)
+        else:
+            if not lines[http_header].endswith("\n"):
+                lines[http_header] += newline
+            lines.insert(http_header + 1, "enabled = true" + newline)
     after = (b"\xef\xbb\xbf" if before.startswith(b"\xef\xbb\xbf") else b"") + "".join(lines).encode("utf-8")
     updated, actual = parse(after)
     expected = dict(document)
     expected[KEYS[0]], expected[KEYS[1]] = desired[KEYS[0]], desired[KEYS[1]]
     expected["execution"] = {**document["execution"], "computer_threads": desired[KEYS[2]]}
+    expected["http"] = {**http, "enabled": True}
     need(actual == desired and updated == expected, "Patch would affect unrelated TOML values; no changes were written.")
-    return Plan(path, before, after, dict(old), dict(desired))
+    return Plan(path, before, after, {**old, "http.enabled": http_enabled}, {**desired, "http.enabled": True})
 
 
 def java_processes_fallback():
@@ -215,7 +240,7 @@ def atomic_replace(path, data):
 def apply(change, closed_ack=False):
     need(closed_ack is True, "Ensure Minecraft is not running before applying.")
     # Re-plan so even an altered/stale Plan cannot write unrelated settings.
-    current = plan(change.path, change.new)
+    current = plan(change.path, {key: change.new[key] for key in KEYS})
     need(current.before == change.before and current.after == change.after, "Config has changed since preview. Please load settings again.")
     if change.before == change.after:
         return None

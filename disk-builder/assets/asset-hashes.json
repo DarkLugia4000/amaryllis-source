@@ -5,12 +5,12 @@
   "core-progress.lua": "645be71418efabeeaf489911be579eba81db7a696e70f4ccfa71f36955b2e1e4",
   "identity-watch.lua": "4d42a9e77fbac7479cf91d3e3be6141bc7540096454d06f766c8f22da8372aa8",
   "installer.lua": "432f74b9d610db865abe2574d8d47e17ca3364eb0a3449b2889b757bc2d857f8",
-  "panel-console.lua": "4203c845d47ee0740ede9cd441b2d67d1d81715efb163d79ad0307e2ea1c02d9",
+  "panel-console.lua": "c6fada1cd0b13d1d3aab59e83a2c67c077dc8b681ae84f6c06add451d5d5662b",
   "runtime-loader.lua": "1594ed67e19c1141c8544945dc69899f0fc558a20f46e0c6506c5cdeed8bfc02",
   "setup.lua": "5eba66357a3fd0d2ba6618252a29a9d359a26b4eee5aaa6af404a12d69a2a5d4",
   "startup.lua": "844651c596c554295b66f1e82cde0a68aeb0850295f8e89abfcb339c57ad88da",
   "remote-panel.lua": "9832468a3abb3d0c3d808db5f7d7fd184a7ee07380c2d27a496bbe9749b62c78",
   "disk-download.lua": "e158476e43f56990919a78b501712033a9973a752a44f0b45abc96f973b207d1",
-  "web-setup.lua": "4d4de95de811ef6f986e19af780ea3d630499234bff3fa9e1f537faf5939dab6",
+  "web-setup.lua": "2178f891ad54d53d041d552e9645d35dd69016c5e7145e6f6071dd5481bda7ca",
   "pastebin-loader.lua": "f2e44d4c63a477500572ce09d84503f9de690e9f23b007308946fc237007b13a"
 }

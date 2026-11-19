@@ -236,11 +236,13 @@ The worker count initially shows the existing value. The utility edits:
 computer_space_limit
 floppy_space_limit
 execution.computer_threads
+http.enabled
 ```
 
 Capacity changes only increase limits and require at least 4,000,000 bytes.
 Use the larger requirement from the generated installer README. The worker
-selector supports 1-64. Unrelated settings, comments and line endings are preserved.
+selector supports 1-64. Applying the settings enables ComputerCraft HTTP and
+keeps the existing HTTP rules. Unrelated settings, comments and line endings are preserved.
 
 Minecraft/server must stay fully closed while applying (unlike ship updates), and
 the interface asks you to acknowledge this. Each change creates a verified `.amaryllis-...bak` and JSON hash

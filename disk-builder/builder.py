@@ -21,6 +21,7 @@ import zipfile
 import zlib
 
 VERSION = "3.0.0"
+RELEASE_VERSION = "3.1.0"
 HOME = Path(__file__).resolve().parent
 DEFAULT_OUTPUT = HOME / "Installers"
 _bundle_spec = importlib.util.spec_from_file_location("amaryllis_bundling", HOME / "bundling.py")
@@ -578,7 +579,8 @@ def build(selection, output_parent, include_learning=True, log=lambda s: None, b
                 digest = sha(data);(objects / digest).write_bytes(data)
                 out.append({"path": path, "object": digest, "bytes": len(data), "adler32": f"{zlib.adler32(data):08X}"})
             return out
-        manifest = {"schemaVersion": 1, "roles": source["roles"], "roleOrder": ROLES,
+        manifest = {"schemaVersion": 1, "version": RELEASE_VERSION,
+                    "roles": source["roles"], "roleOrder": ROLES,
                     "core": entries(source["payload"]), "state": entries(source["state"]),
                     "library": entries(source["library"]), "libraryId": source["catalog"]["libraryId"],
                     "bootstrap": entries({"/installer.lua": source["assets"]["installer.lua"],
@@ -605,7 +607,7 @@ def build(selection, output_parent, include_learning=True, log=lambda s: None, b
         core_bytes = sum(e["bytes"] for e in manifest["core"]) + sum(len(d) for d in source["calibration"].values())
         require(core_bytes + 65536 < 4_000_000, "Core payload no longer fits the supported 4 MB installation budget.")
         media_bytes = sum(p.stat().st_size for p in media.rglob("*") if p.is_file())
-        report = {"builderVersion": VERSION, "releaseId": manifest["releaseId"],
+        report = {"builderVersion": VERSION, "version": manifest["version"], "releaseId": manifest["releaseId"],
                   "builtAtUTC": datetime.now(timezone.utc).isoformat(), "sourceCore": str(source["core"]),
                   "coreFiles": len(manifest["core"]), "corePayloadBytes": core_bytes,
                   "libraryBytes": sum(len(d) for d in source["library"].values()),

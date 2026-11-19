@@ -3,7 +3,39 @@
 Version entries describe the changes recorded for each release. See the
 [README](README.md) for current usage.
 
-## Unreleased
+## 3.1.0
+
+- `flight.lua` (`request`, `maintenanceRequest`, `renewLiftControlContext`):
+  Core's gas-mix fix and Navigator's PROBE RESET accept requests during START
+  SYSTEMS and active altitude control. Probe maintenance keeps PID context
+  renewal active. Other maintenance retains its existing operation gates.
+- `chamber-lift.lua` (`receive`, `processPendingMaintenance`): probe cycles
+  operate alongside active systems/tuning leases and retain queued probe work
+  when a newer lift command arrives. Session, boot and age validation still apply.
+- `panel-console.lua`: changed "Turns each chamber's probe link off and on again.
+  Altitude control must be disengaged." to "Turns each chamber's probe link off
+  and on again." The idle status now shows READY during active altitude control,
+  replacing DISENGAGE ALTITUDE CONTROL FIRST. Updated the asset checksum.
+- Verification: all 168 flight/display tests and 18 focused probe, Core panel
+  and source-integrity tests passed. Live deployment and in-game validation pending.
+
+- `source/core/avionics/thrust.lua` (`Thrust.assistPrimaryTurn`): corrected
+  primary differential assistance by removing the inverted yaw sign. Forward
+  right turns reduce the right primary, and forward left turns reduce the left;
+  reverse thrust swaps the reduced side. Assistance retains its 75% yaw-demand
+  threshold and maximum 5% reduction. UI message text is unchanged.
+  Added regression coverage in `tests/test_flight.py` for both turn directions,
+  forward/reverse thrust, the activation threshold and idle. Four numerical
+  direction checks and `git diff --check` passed. After installing `lupa`, all
+  20 tests in `StrafeBalanceTests` and `SourceIntegrityTests` passed, including
+  the Lua primary-assistance regression. Physical flight validation remains pending.
+
+- `cc_settings.py` (`plan`, `Plan.preview`): ComputerCraft Settings previews and
+  enables `http.enabled` in the selected server config for web installation.
+  Existing HTTP rules are preserved.
+
+- Installer manifests carry the vessel release version alongside the build ID.
+  Pastebin setup displays **Amaryllis v3.1.0** during installation and registration.
 
 ### Flight control cleanup
 
