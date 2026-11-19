@@ -1088,7 +1088,7 @@ local MAINTENANCE_NAMES={restart="RESTART",recheck="RECHECK",probe_cycle="GAS MI
 function Flight:maintenanceRequest(io,action,now)
  local kind=action.type
  if kind=="maintenance_cancel" then self.maintenanceReview=nil;return true end
- if self.maintenanceJob or self.systemsRun or self.tuningRun then return false,"LIFT OPERATION ALREADY PENDING" end
+ if self.maintenanceJob or ((self.systemsRun or self.tuningRun) and kind~="maintenance_probe_cycle") then return false,"LIFT OPERATION ALREADY PENDING" end
  if kind=="maintenance_review" or kind=="maintenance_recheck" or kind=="maintenance_probe_cycle" then
   local scope=action.scope or "ALL";local list={}
   if scope=="ALL" then for _,q in ipairs(QUADS) do list[#list+1]=q end
@@ -1099,7 +1099,7 @@ function Flight:maintenanceRequest(io,action,now)
    boots[q]=io.nodes[q].boot
   end
   if kind=="maintenance_recheck" or kind=="maintenance_probe_cycle" then
-   if self.enabled then return false,"DISENGAGE ALTITUDE CONTROL FIRST" end
+   if self.enabled and kind=="maintenance_recheck" then return false,"DISENGAGE ALTITUDE CONTROL FIRST" end
    self.coreLogIssues=self.coreLogIssues or {};self.coreLogIssues[issueScope("flight","maintenance")]=nil
    self.maintenanceJob={operation=kind=="maintenance_recheck" and "recheck" or "probe_cycle",list=list,index=1,boots=boots}
    self:updateMaintenance(io,now);return true
@@ -1965,6 +1965,7 @@ function Flight:request(io,action,now)
         if not accepted then logOperationIssue(self,"flight","propulsion enable",reason) end
         return accepted,reason
     end
+    if action.type=="maintenance_probe_cycle" then return self:maintenanceRequest(io,action,now) end
     if self.systemsRun then
         if action.type=="altitude_disengage" then return self:shutdownReview(io,now) end
         if action.type=="start_systems" then return false,"START SYSTEMS ALREADY ACTIVE" end
@@ -5983,7 +5984,7 @@ function Flight:renewLiftControlContext(io,now)
     local activeSystemsPhase=not self.systemsRun or self.systemsRun.phase=="READY" or
         (self.systemsRun.phase=="MAIN_LIFT" and self.systemsRun.acquisitionPidActive==true)
     local pidCandidate=self.enabled==true and not self.shutdownJob and not self.emergencyLiftLatched and
-        not self.tuningRun and not self.maintenanceJob and activeSystemsPhase and
+        not self.tuningRun and (not self.maintenanceJob or self.maintenanceJob.operation=="probe_cycle") and activeSystemsPhase and
         not telemetrySuspended and not assemblySuppressed
     local pidActive=false
     if pidCandidate and altitudeValid and inputsActive then

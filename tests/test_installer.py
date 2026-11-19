@@ -938,6 +938,9 @@ class WebSetupTests(unittest.TestCase):
 
     def test_core_installs_from_the_web_and_opens_registration(self):
         _, core = self.core()
+        release = core.json("/installer/web/release.json")
+        self.assertEqual(release["version"], project.builder_module().RELEASE_VERSION)
+        self.assertIn("Amaryllis v" + release["version"], core.text())
         journal = core.json("/amaryllis-install.json")
         self.assertEqual((journal["role"], journal["id"], journal["pending"]), ("core", 0, False))
         self.assertEqual(core.json("/installer/web/source.json")["base"], BASE)
@@ -953,6 +956,7 @@ class WebSetupTests(unittest.TestCase):
         node.key("two")
         settle(network)
         self.assertIn("REGISTER #5 WITH CORE #0", node.text())
+        self.assertIn("Amaryllis v" + project.builder_module().RELEASE_VERSION, node.text())
         node.key("enter", "y")  # first role in the list
         first = json.loads((WEB_MEDIA / "release.json").read_text())["roleOrder"][0]
         self.assertIn("Registered as " + first, node.text())

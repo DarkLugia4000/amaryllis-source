@@ -403,7 +403,7 @@ local function receiveSystems(state,message,now)
         message.nodeBoot~=state.boot or message.enable~=true then
         return false,"SYSTEMS_IDENTITY_OR_CAPABILITY_INVALID",true
     end
-    if state.tuningLease then return false,"TUNING_IN_PROGRESS",true end
+    if state.tuningLease and not probeMaintenance then return false,"TUNING_IN_PROGRESS",true end
     local lease=state.systemsLease
     if lease and now>=lease.expires then
         state.systemsLease=nil
@@ -805,7 +805,9 @@ function Main.receiveMessage(state, sender, message, now)
     end
     if message.kind=="lift_systems" then return receiveSystems(state,message,now) end
     if message.kind=="lift_systems_stop" then return receiveSystemsStop(state,message) end
-    if state.systemsLease then return false,"SYSTEMS_IN_PROGRESS",true end
+    -- Probe maintenance shares active lift operation while the sole writer cycles its link.
+    local probeMaintenance=message.kind=="lift_maintenance" and message.operation=="probe_cycle"
+    if state.systemsLease and not probeMaintenance then return false,"SYSTEMS_IN_PROGRESS",true end
     if message.kind=="lift_tuning" or message.kind=="lift_tuning_stop" then return receiveTuning(state,message,now) end
     if state.tuningLease then return false,"TUNING_IN_PROGRESS",true end
     if message.kind=="lift_maintenance" then
@@ -2202,7 +2204,7 @@ local function processPendingMaintenance(state,peripheralApi,rednetApi,reboot)
     local command=state.pendingMaintenance;state.pendingMaintenance=nil
     if not command then return false end
     if command.session~=state.session or command.sessionGeneration~=state.sessionGeneration or
-        command.nodeBoot~=state.boot or command.seq~=state.lastReceivedSeq or not state.configValid or state.config.maintenanceEnabled~=true then return false end
+        command.nodeBoot~=state.boot or (command.operation~="probe_cycle" and command.seq~=state.lastReceivedSeq) or not state.configValid or state.config.maintenanceEnabled~=true then return false end
     local now=os.clock()
     if now<command.receivedAt or now-command.receivedAt>15 then return false end
     local ok,detail=true,"RESTART ACCEPTED"

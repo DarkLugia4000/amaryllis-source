@@ -2120,11 +2120,8 @@ io.config.node_ids={FL=14,FR=9,BL=13,BR=10}
 io.session="core-session"
 function io:nodeFresh() return true end
 function io:sendLiftMaintenance(q,operation) sent[#sent+1]=q..":"..operation;return true,#sent end
-f.enabled=true;f.startupPending=nil;f.systemsRun=nil;f.tuningRun=nil;f.maintenanceJob=nil
+f.enabled=true;f.startupPending=nil;f.systemsRun={phase="READY"};f.tuningRun=nil;f.maintenanceJob=nil
 local ok,why=f:maintenanceRequest(io,{type="maintenance_probe_cycle",scope="ALL"},10)
-check(not ok and why=="DISENGAGE ALTITUDE CONTROL FIRST","altitude control must be off: "..tostring(why))
-f.enabled=false
-ok,why=f:maintenanceRequest(io,{type="maintenance_probe_cycle",scope="ALL"},10)
 check(ok,why);check(sent[1]=="FL:probe_cycle","first chamber asked to restart its probe")
 check(f.maintenanceStatus=="FL RESTARTING PROBE",f.maintenanceStatus)
 for i,q in ipairs({"FL","FR","BL","BR"}) do
@@ -2192,7 +2189,7 @@ class PanelGasMixTests(unittest.TestCase):
         lua = self.panel()
         lua.execute('panel:choose("gasMix")')
         lua.execute('CONTEXT.runtime.snapshot.altitudeControl.enabled=true')
-        self.assertIn("DISENGAGE ALTITUDE CONTROL FIRST", lua.execute("return screen()"))
+        self.assertIn("READY", lua.execute("return screen()"))
         lua.execute('os.__amaryllisCoreAction={type="maintenance_probe_cycle",accepted=true};CONTEXT.runtime.snapshot.maintenance.status="BL RESTARTING PROBE"')
         self.assertIn("BL RESTARTING PROBE", lua.execute("return screen()"))
         lua.execute('os.__amaryllisCoreAction=nil')
@@ -2253,6 +2250,25 @@ local function near(a,b) return math.abs(a-b)<1e-9 end
 
 
 class StrafeBalanceTests(unittest.TestCase):
+    def test_primary_turn_assistance_matches_forward_and_reverse_yaw(self):
+        self.run_lua(r"""
+            for _,yaw in ipairs({-1,1}) do
+                for _,drive in ipairs({-.57,.57}) do
+                    local left,right,reduction=Thrust.assistPrimaryTurn(drive,drive,yaw)
+                    assert(near(reduction,.05))
+                    assert((left-right)*yaw>0, 'Primary differential must assist requested yaw')
+                    assert(near(math.max(math.abs(left),math.abs(right)),.57))
+                    assert(near(math.min(math.abs(left),math.abs(right)),.57*.95))
+                end
+            end
+            for _,yaw in ipairs({-.75,0,.75}) do
+                local left,right,reduction=Thrust.assistPrimaryTurn(.57,.57,yaw)
+                assert(near(left,.57) and near(right,.57) and reduction==0)
+            end
+            local left,right=Thrust.assistPrimaryTurn(0,0,1)
+            assert(left==0 and right==0)
+        """)
+
     def run_lua(self, body):
         lua = registry_tool.runtime()
         lua.execute(PRELUDE + body)

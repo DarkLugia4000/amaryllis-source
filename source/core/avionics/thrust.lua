@@ -1704,11 +1704,12 @@ end
 -- Section: Drive demand | Bounded feedback and maneuver mixing.
 -- Summary: Apply the configured primary-propeller turn assistance to mixed demands.
 function Thrust.assistPrimaryTurn(left,right,yaw)
-    yaw=-yaw -- Match the corrected physical steering direction.
+    -- Positive yaw requests a right turn. Reduce starboard forward thrust or
+    -- port reverse thrust so the primary differential assists that rotation.
     local reduction=.05*clamp((math.abs(yaw)-.75)/.25,0,1)
     local adjustedLeft,adjustedRight=left,right
-    -- Remove a little opposing yaw torque. Reverse thrust swaps the engine
-    -- to reduce; this never reverses, increases or starts a primary engine.
+    -- Scale the opposing engine request down by up to five percent. The
+    -- signed request selects the appropriate engine during reverse travel.
     if yaw*left<0 then adjustedLeft=left*(1-reduction) end
     if yaw*right>0 then adjustedRight=right*(1-reduction) end
     return adjustedLeft,adjustedRight,reduction
