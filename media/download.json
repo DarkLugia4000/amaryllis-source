@@ -21,6 +21,11 @@
       "path": "objects/112d752e50974e32eebc59920b07b072caae454bc9008af5af3ebb888a72e223"
     },
     {
+      "adler32": "B6C7103A",
+      "bytes": 1532342,
+      "path": "objects/118fa7260025ddca177aaa96c32b110a25d84dbf1aa7d46d1a7d0a1e05fd0568"
+    },
+    {
       "adler32": "2BDD3938",
       "bytes": 196,
       "path": "objects/13f82b10438202138f43294cd35ef9643b17d73a2db8ea0176d723043aab4c3b"
@@ -39,11 +44,6 @@
       "adler32": "86DCC331",
       "bytes": 655,
       "path": "objects/24675ffe7bc530cc578a8df28353a332638965148a6c625244a0d7132f9318b2"
-    },
-    {
-      "adler32": "15CD4142",
-      "bytes": 1532493,
-      "path": "objects/286f06092b8d9ab895c0dbab2b52bb65aec59ee89d0a1f3f36530fc7f2a93a6e"
     },
     {
       "adler32": "B39F9D80",
@@ -246,13 +246,13 @@
       "path": "download.lua"
     },
     {
-      "adler32": "49E56E84",
-      "bytes": 35403,
+      "adler32": "9262BB76",
+      "bytes": 35628,
       "path": "web-setup.lua"
     },
     {
-      "adler32": "7790E650",
-      "bytes": 12866,
+      "adler32": "3E99EAD1",
+      "bytes": 12888,
       "path": "release.json"
     },
     {
@@ -261,6 +261,6 @@
       "path": "startup.lua"
     }
   ],
-  "releaseId": "amaryllis-5be59cff083f",
+  "releaseId": "amaryllis-53e6d8d44b05",
   "schemaVersion": 1
 }

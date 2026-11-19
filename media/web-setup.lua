@@ -76,6 +76,10 @@ local function validBase(text)
     return type(text)=="string" and text:match("^https://[%w%.%-]+/[%w%.%-_/]+/$")~=nil
 end
 
+local function releaseLabel(release)
+    return release.version and ("v"..release.version) or release.releaseId
+end
+
 -- Fetch the release index and the release files into dir, each checked against the index.
 -- Summary: Fetch the release index and the release files into dir, each checked against the index.
 local function loadRelease(releaseBase,dir)
@@ -193,7 +197,7 @@ local function startCoreUpdate(id,release,latest)
     writeFile(UPDATE_MARKER,textutils.serializeJSON({base=latest.base,releaseId=nextRelease.releaseId,from=release.releaseId}))
     if not fs.exists(UPDATE_STARTUP) then fs.move("/startup.lua",UPDATE_STARTUP) end
     writeFile("/startup.lua",UPDATE_BOOT)
-    message("Updating core",{"Core restarts and installs "..nextRelease.releaseId..".",
+    message("Updating core",{"Core restarts and installs "..releaseLabel(nextRelease)..".",
         "Settings, calibration and assignments stay."},YELLOW)
     os.reboot()
 end
@@ -213,7 +217,7 @@ local function coreScreen(Setup,release,id,releaseBase,latest)
         local state=Setup.deployment(CORE_MEDIA,release)
         local count=0;for _ in pairs(state.computers) do count=count+1 end
         local complete=count==#order
-        screen("AMARYLLIS WEB SETUP | CORE #"..id)
+        screen("Amaryllis "..releaseLabel(release).." | CORE #"..id)
         line(2,count.."/"..#order.." registered. Run the loader on each computer.",complete and GREEN or WHITE)
         local _,h=term.getSize();local rows=h-6
         local first=math.max(1,math.min(selected-math.floor(rows/2),#order-rows+1))
@@ -291,7 +295,7 @@ local function installCore(id)
     screen("AMARYLLIS WEB SETUP | CORE #"..id);line(3,"Downloading release...")
     local Setup,release,releaseId=loadRelease(base,CORE_MEDIA)
     writeFile(fs.combine(CORE_MEDIA,"source.json"),textutils.serializeJSON({base=base,releaseId=releaseId}))
-    line(4,"Installing core "..releaseId.."...")
+    line(4,"Installing Amaryllis "..releaseLabel(release).."...")
     Setup.installCore(CORE_MEDIA,release,id)
     bootIntoRegistration()
     return coreScreen(Setup,release,id,base)
@@ -315,11 +319,12 @@ local function pickRole(Setup,release,core,id)
     local selected=1
     while true do
         screen("REGISTER #"..id.." WITH CORE #"..core.coreID)
+        line(2,"Amaryllis "..releaseLabel(release))
         local _,h=term.getSize();local rows=h-4
         local first=math.max(1,math.min(selected-math.floor(rows/2),#order-rows+1))
         for i=first,math.min(#order,first+rows-1) do
             local role=order[i];local holder=core.computers[role]
-            line(1+i-first+1,(i==selected and "> " or "  ")..(holder and ("#"..holder.id) or "--").."  "..Setup.title(role),
+            line(3+i-first,(i==selected and "> " or "  ")..(holder and ("#"..holder.id) or "--").."  "..Setup.title(role),
                 holder and (holder.id==id and YELLOW or GRAY) or WHITE)
         end
         line(h,"Up/Down  Enter: register  Q: cancel",GRAY)
@@ -527,7 +532,7 @@ local function updateStateReader(id,releaseBase)
     local writing=false
     local ok,issue=pcall(function()
         local Setup,release=loadRelease(releaseBase,NODE_MEDIA)
-        line(4,"Installing "..release.releaseId.."...")
+        line(4,"Installing Amaryllis "..releaseLabel(release).."...")
         Setup.updateInstalled(NODE_MEDIA,release,"state",id,{beforeWrite=function() writing=true end})
         return release.releaseId
     end)
