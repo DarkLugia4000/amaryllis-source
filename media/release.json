@@ -20,7 +20,7 @@
     }
   ],
   "calibration": {
-    "capturedDate": "2026-11-19",
+    "capturedDate": "2026-11-25",
     "files": [
       {
         "adler32": "9BAC9612",
@@ -46,9 +46,9 @@
       "path": "/avionics/config.json"
     },
     {
-      "adler32": "D308822E",
-      "bytes": 1532675,
-      "object": "681d67aab493aa9e41613f8e9a670a617d120038ffba2d702c29b200db84b719",
+      "adler32": "B65DB1A1",
+      "bytes": 1533582,
+      "object": "8977fb6b521b883e28772028c40bfa0a464e10290c1e2de244570cb1ed6678b7",
       "path": "/avionics/main.lua"
     },
     {
@@ -58,9 +58,9 @@
       "path": "/installer/config.json"
     },
     {
-      "adler32": "8F1AF5E4",
+      "adler32": "4BDCF642",
       "bytes": 9828,
-      "object": "9f07a5825c97d4713c6bab6fde1ac29d0c34b95e546bdefca7c6e454a1e0495d",
+      "object": "3c05c718cc44b092e550a18e49567b18ebfcda6f4c9a1453092094376ac1de16",
       "path": "/installer/library.json"
     },
     {
@@ -214,9 +214,9 @@
       "path": "/packages/navigation/config.json"
     },
     {
-      "adler32": "F9F2403B",
-      "bytes": 306988,
-      "object": "814a3d3256a291d93731b188c3103a0bbfda072a851845f6522ddcb1d4f4d741",
+      "adler32": "1607737C",
+      "bytes": 307149,
+      "object": "619651f7f3921f54c91439bfb1efddb9c32937703c8f9a439440c581886b5d84",
       "path": "/packages/navigation/main.lua"
     },
     {
@@ -334,9 +334,9 @@
       "path": "/packages/thrust/rs/manifest.json"
     }
   ],
-  "libraryId": "07083e06d7f80c4ad8be5de5bd30d48bc50336cf3b9f2a4561cd67fa22a10830",
+  "libraryId": "5c79fcbf16c3eba020f7d1716b5b5c06fa82eb686b3e3ce50ecd780f932492ed",
   "minimumComputerSpaceBytes": 4000000,
-  "releaseId": "amaryllis-5a0d742e2f9a",
+  "releaseId": "amaryllis-175715be1778",
   "roleOrder": [
     "navigator",
     "heading-left",
@@ -406,10 +406,10 @@
   },
   "schemaVersion": 1,
   "source": {
-    "commit": "14837160c7d7f547b24fa70cbb786d3c5a21c762",
+    "commit": "dd0dcdbfffc96739724437d6733a74f731151f63",
     "dirty": false,
     "kind": "project-source",
-    "sourceTreeSHA256": "8c65c3b1a1c2c32bea9ad06a62bb7f7cf72c553d36a51b7f1298be21f3ce9cf8"
+    "sourceTreeSHA256": "7609bef2a4bcd35c1571d1473650ed3511ecd7ad855b50d78308e81bce3c418d"
   },
   "state": [
     {

@@ -139,9 +139,9 @@
       "path": "/packages/navigation/config.json"
     },
     {
-      "adler32": "F9F2403B",
-      "bytes": 306988,
-      "object": "814a3d3256a291d93731b188c3103a0bbfda072a851845f6522ddcb1d4f4d741",
+      "adler32": "1607737C",
+      "bytes": 307149,
+      "object": "619651f7f3921f54c91439bfb1efddb9c32937703c8f9a439440c581886b5d84",
       "path": "/packages/navigation/main.lua"
     },
     {
@@ -259,7 +259,7 @@
       "path": "/packages/thrust/rs/manifest.json"
     }
   ],
-  "libraryId": "07083e06d7f80c4ad8be5de5bd30d48bc50336cf3b9f2a4561cd67fa22a10830",
+  "libraryId": "5c79fcbf16c3eba020f7d1716b5b5c06fa82eb686b3e3ce50ecd780f932492ed",
   "roles": {
     "chamber_bl": {
       "packageId": "amaryllis.chamber.bl",
