@@ -5,6 +5,13 @@ Version entries describe the changes recorded for each release. See the
 
 ## 3.1.0
 
+- Primary-propeller turn assistance now leaves engines balanced for selected
+  heading errors within a speed-dependent angle: 10 degrees at or below 15 b/s,
+  shrinking linearly to 2 degrees at 30 b/s and above (absolute forward speed).
+  Missing speed uses 10 degrees. Assistance ramps to full at 20 degrees.
+  The existing 75 percent yaw-demand threshold and 5 percent maximum reduction
+  still apply. Manual yaw assistance retains its existing behavior.
+
 - `source/core/avionics/controls.lua` (`Controls:step`, `Controls:update`):
   altitude selector holds accumulate fractional elapsed movement and emit whole
   blocks when slow, medium and fast altitude rates are all integers. Pilot
@@ -49,7 +56,7 @@ Version entries describe the changes recorded for each release. See the
   the Lua primary-assistance regression. Physical flight validation remains pending.
 
 - `cc_settings.py` (`plan`, `Plan.preview`): ComputerCraft Settings previews and
-  enables `http.enabsled` in the selected server config for web installation.
+  enables `http.enabled` in the selected server config for web installation.
   Existing HTTP rules are preserved.
 
 - Installer manifests carry the vessel release version alongside the build ID.

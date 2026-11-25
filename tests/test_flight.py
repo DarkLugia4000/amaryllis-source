@@ -2250,6 +2250,40 @@ local function near(a,b) return math.abs(a-b)<1e-9 end
 
 
 class StrafeBalanceTests(unittest.TestCase):
+    def test_primary_turn_assistance_requires_large_selected_heading_error(self):
+        self.run_lua(r"""
+            for _,error in ipairs({-.9,.9,-2,0,2}) do
+                local left,right,reduction=Thrust.assistPrimaryTurn(.57,.57,1,error)
+                assert(near(left,.57) and near(right,.57) and reduction==0)
+            end
+            for _,yaw in ipairs({-1,1}) do
+                for _,drive in ipairs({-.57,.57}) do
+                    local left,right,reduction=Thrust.assistPrimaryTurn(drive,drive,yaw,11*yaw,30)
+                    assert(near(reduction,.025))
+                    assert((left-right)*yaw>0)
+                    local _,_,full=Thrust.assistPrimaryTurn(drive,drive,yaw,20*yaw)
+                    assert(near(full,.05))
+                end
+            end
+        """)
+
+    def test_primary_turn_dead_zone_shrinks_with_absolute_speed(self):
+        self.run_lua(r"""
+            for _,case in ipairs({{0,10},{15,10},{22.5,6},{30,2},{45,2},{-22.5,6},{-30,2}}) do
+                local speed,threshold=case[1],case[2]
+                for _,sign in ipairs({-1,1}) do
+                    local left,right,reduction=Thrust.assistPrimaryTurn(.57,.57,sign,threshold*sign,speed)
+                    assert(reduction==0 and near(left,right))
+                    local _,_,half=Thrust.assistPrimaryTurn(.57,.57,sign,(threshold+20)/2*sign,speed)
+                    assert(near(half,.025))
+                    local _,_,full=Thrust.assistPrimaryTurn(.57,.57,sign,20*sign,speed)
+                    assert(near(full,.05))
+                end
+            end
+            local _,_,missing=Thrust.assistPrimaryTurn(.57,.57,1,10)
+            assert(missing==0)
+        """)
+
     def test_primary_turn_assistance_matches_forward_and_reverse_yaw(self):
         self.run_lua(r"""
             for _,yaw in ipairs({-1,1}) do

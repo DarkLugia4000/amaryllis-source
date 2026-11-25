@@ -1703,10 +1703,19 @@ end
 
 -- Section: Drive demand | Bounded feedback and maneuver mixing.
 -- Summary: Apply the configured primary-propeller turn assistance to mixed demands.
-function Thrust.assistPrimaryTurn(left,right,yaw)
+function Thrust.assistPrimaryTurn(left,right,yaw,headingError,speed)
     -- Positive yaw requests a right turn. Reduce starboard forward thrust or
     -- port reverse thrust so the primary differential assists that rotation.
     local reduction=.05*clamp((math.abs(yaw)-.75)/.25,0,1)
+    -- The no-balancing angle shrinks from ten to two degrees as absolute
+    -- forward speed rises from 15 to 30 b/s. Missing speed uses ten degrees.
+    -- Ramp assistance to full authority at twenty degrees; manual turns omit
+    -- headingError and retain the yaw-demand threshold alone.
+    if finite(headingError) then
+        local speedFraction=finite(speed) and clamp((math.abs(speed)-15)/15,0,1) or 0
+        local threshold=10-8*speedFraction
+        reduction=reduction*clamp((math.abs(headingError)-threshold)/(20-threshold),0,1)
+    end
     local adjustedLeft,adjustedRight=left,right
     -- Scale the opposing engine request down by up to five percent. The
     -- signed request selects the appropriate engine during reverse travel.
@@ -1842,7 +1851,10 @@ function Thrust:makeTargets(io,now,controls,sideDemand)
         end
     end
     if type(io.logState)=="function" then io:logState("propulsion idle",idleReason) end
-    local left,right,reduction=Thrust.assistPrimaryTurn(targets["primary-left"],targets["primary-right"],yaw)
+    local headingError=self.headingControl and self.headingControl.mode=="SEL" and
+        self.headingControl.headingError or nil
+    local left,right,reduction=Thrust.assistPrimaryTurn(targets["primary-left"],targets["primary-right"],yaw,
+        headingError,io.vessel and io.vessel.forwardSpeed)
     -- Preserve primary idle through the final turn-assist output selection.
     if controls.apPrimaryIdle==true or idleReason or (mode=="SEL" and self.speedControl.zeroCoast==true) then left,right,reduction=0,0,0 end
     targets["primary-left"],targets["primary-right"]=left,right
