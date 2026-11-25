@@ -5,6 +5,24 @@ Version entries describe the changes recorded for each release. See the
 
 ## 3.1.0
 
+- `source/core/avionics/controls.lua` (`Controls:step`, `Controls:update`):
+  altitude selector holds accumulate fractional elapsed movement and emit whole
+  blocks when slow, medium and fast altitude rates are all integers. Pilot
+  adjustment rounds inherited fractional targets to the nearest block before
+  applying the change; whole-block bounds stay inside configured altitude limits.
+  A fractional rate preserves decimal selection, and a fractional slow rate also
+  supplies the tap increment (for example, 0.1 produces tenth-block taps).
+  Decimal displays retain their existing formatting. Whole-number slow rates
+  retain the existing one-block tap. Release and reversal clear hold remainders.
+  Tests cover integer accelerated holds, inherited fractions, decimal taps,
+  reversal and limits. All 63 state/source-integrity tests passed.
+
+- Navigator `navigation/ui.lua` (`readbackRaw`): inverted the displayed signed
+  RPM for both MAIN PROPS / RAW SHAFT SPEED readouts. Positive bearing readings
+  display negative and negative readings display positive. Stored telemetry and
+  propulsion commands retain their existing values. UI labels are unchanged.
+  Verification: all 70 display and source-integrity tests passed.
+
 - `flight.lua` (`request`, `maintenanceRequest`, `renewLiftControlContext`):
   Core's gas-mix fix and Navigator's PROBE RESET accept requests during START
   SYSTEMS and active altitude control. Probe maintenance keeps PID context
@@ -31,7 +49,7 @@ Version entries describe the changes recorded for each release. See the
   the Lua primary-assistance regression. Physical flight validation remains pending.
 
 - `cc_settings.py` (`plan`, `Plan.preview`): ComputerCraft Settings previews and
-  enables `http.enabled` in the selected server config for web installation.
+  enables `http.enabsled` in the selected server config for web installation.
   Existing HTTP rules are preserved.
 
 - Installer manifests carry the vessel release version alongside the build ID.

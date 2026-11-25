@@ -455,6 +455,36 @@ for name,case in MODE_TESTS.items():
 import unittest
 
 CEILING_TESTS = {
+'integer_altitude_selection_accumulates_held_steps': r'''
+local io,f,p,clock=setup()
+local c=f.controls
+c.targets.altitude=160.31
+sample(io,clock,11,{"altitude_up",15});c:update(io,11)
+check(c.targets.altitude==161,"tap clears inherited decimal")
+for i=1,20 do
+    sample(io,clock,11+i*.2,{"altitude_up",15});c:update(io,11+i*.2)
+    check(c.targets.altitude%1==0,"held accelerated selection stays integral")
+end
+check(c.targets.altitude>162,"fractional sample progress earns whole steps")
+sample(io,clock,16,{"altitude_up",0});c:update(io,16)
+sample(io,clock,16.2,{"altitude_down",15});c:update(io,16.2)
+check(c.targets.altitude%1==0,"reverse tap stays integral")
+''',
+'decimal_altitude_configuration_preserves_precision': r'''
+local io,f,p,clock=setup()
+local c=f.controls
+c.config.altitude_rate_slow=.1
+c.targets.altitude=160.3
+sample(io,clock,11,{"altitude_up",15});c:update(io,11)
+check(math.abs(c.targets.altitude-160.4)<1e-8,"fractional slow setting supplies fractional tap")
+sample(io,clock,11.2,{"altitude_up",0});c:update(io,11.2)
+sample(io,clock,11.4,{"altitude_down",15});c:update(io,11.4)
+check(math.abs(c.targets.altitude-160.3)<1e-8,"fractional downward tap")
+c.config.altitude_rate_slow=1;c.config.altitude_rate_medium=2.5
+sample(io,clock,11.6,{"altitude_down",0});c:update(io,11.6)
+sample(io,clock,11.8,{"altitude_up",15});c:update(io,11.8)
+check(math.abs(c.targets.altitude-161.3)<1e-8,"fractional repeat configuration retains decimal target")
+''',
 'selector_stops_at_ceiling': r'''
 local io,f,p,clock=setup()
 local c=f.controls

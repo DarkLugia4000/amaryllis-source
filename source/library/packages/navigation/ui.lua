@@ -1295,7 +1295,11 @@ local function readbackRaw(endpoint, key)
     readingName = type(readingName) == "string" and readingName or
         (type(endpoint.name) == "string" and endpoint.name or
         (type(endpoint.label) == "string" and endpoint.label or endpoint.role))
-    if finite(value) then return numberText(value, 1, true), readingName end
+    if finite(value) then
+        -- Main propeller shaft rotation uses the opposite display sign to the bearing reading.
+        if key == "speedRaw" then value = -value end
+        return numberText(value, 1, true), readingName
+    end
     if type(value) == "table" and key == "thrustVector" then
         if finite(value.x) and finite(value.y) and finite(value.z) then
             return numberText(value.x, 1, true) .. "/" .. numberText(value.y, 1, true) .. "/" ..

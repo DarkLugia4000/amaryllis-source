@@ -138,18 +138,26 @@ function Controls:mode(io,action,now)
     self:noteHandover()
     return true
 end
--- Return one discrete step on the edge, then elapsed-time repeat. Capping dt
--- prevents a stalled program from replaying several seconds of held input.
--- Summary: Return one discrete step on the edge, then elapsed-time repeat. Capping dt prevents a stalled program from replaying several seconds of held input.
-function Controls:step(name,direction,at,dt,delay,rate)
+-- Summary: Produce the configured tap and elapsed-time repeat changes, retaining fractional progress between whole-block repeats.
+-- Whole-block selection accumulates elapsed movement in the hold remainder.
+-- Release and reversal start a fresh hold; decimal selection applies each sample's movement.
+function Controls:step(name,direction,at,dt,delay,rate,wholeBlocks,tap)
     if direction==0 then self.holds[name]=nil; return 0 end
     local hold=self.holds[name]
     if not hold or hold.direction~=direction then
-        self.holds[name]={direction=direction,start=at}; return direction
+        self.holds[name]={direction=direction,start=at,remainder=0}
+        return direction*(tap or 1)
     end
     local active=math.max(0,at-hold.start-delay)
     local previous=math.max(0,at-dt-hold.start-delay)
-    return direction*(active-previous)*rate
+    local amount=(active-previous)*rate
+    if wholeBlocks then
+        amount=amount+(hold.remainder or 0)
+        local steps=math.floor(amount+1e-9)
+        hold.remainder=math.max(0,amount-steps)
+        amount=steps
+    end
+    return direction*amount
 end
 -- A tap retains the configured heading step. Held input accelerates only
 -- through fresh samples. Release, reversal and handovers discard the ramp.
@@ -363,9 +371,20 @@ function Controls:update(io,now)
     local rate=self.config.altitude_rate_slow
     if held>=self.config.altitude_fast_after_seconds then rate=self.config.altitude_rate_fast
     elseif held>=self.config.altitude_medium_after_seconds then rate=self.config.altitude_rate_medium end
-    local change=self:step("altitude",altitudeDirection,input.at,dt,self.config.repeat_delay_seconds,rate)
-    if finite(self.targets.altitude) then self.targets.altitude=clamp(self.targets.altitude+change,
-        self.altitudeConfig.minimum_world_y,Controls.altitudeCeiling(self.altitudeConfig)) end
+    local wholeBlocks=self.config.altitude_rate_slow%1==0 and
+        self.config.altitude_rate_medium%1==0 and self.config.altitude_rate_fast%1==0
+    local tap=self.config.altitude_rate_slow%1~=0 and self.config.altitude_rate_slow or 1
+    local change=self:step("altitude",altitudeDirection,input.at,dt,
+        self.config.repeat_delay_seconds,rate,wholeBlocks,tap)
+    if finite(self.targets.altitude) and altitudeDirection~=0 then
+        local target=self.targets.altitude
+        -- Integer-rate controls clear inherited decimal offsets on pilot adjustment.
+        if wholeBlocks then target=math.floor(target+0.5) end
+        local minimum=self.altitudeConfig.minimum_world_y
+        local maximum=Controls.altitudeCeiling(self.altitudeConfig)
+        if wholeBlocks then minimum=math.ceil(minimum);maximum=math.floor(maximum) end
+        self.targets.altitude=clamp(target+change,minimum,maximum)
+    end
 end
 -- Summary: Add selected modes, target values and cockpit readiness to the display snapshot.
 function Controls:decorate(snapshot)
