@@ -103,6 +103,18 @@ function StateUpdate.stage(packet,deps)
     return true
 end
 
+-- The computer's own fs, for staging. The bundle runtime (runtime-loader.lua)
+-- gives its programs an fs that refuses to change the bundle's own files, and
+-- on the state reader /startup.lua is one of them, so staging through that fs
+-- stops at "Bundled source is read only". The bundle environment inherits from
+-- the computer's environment, which holds the unrestricted fs. Outside a
+-- bundle this is the ordinary fs.
+function StateUpdate.physicalFS()
+    local meta=getmetatable(_ENV)
+    local outer=type(meta)=="table" and type(meta.__index)=="table" and meta.__index.fs
+    return type(outer)=="table" and outer or fs
+end
+
 -- Handle one wired packet that may be a state_update request. Returns nil for
 -- any packet that is not a valid request for this computer (it is ignored and
 -- not answered). Otherwise returns the acknowledgement for core,

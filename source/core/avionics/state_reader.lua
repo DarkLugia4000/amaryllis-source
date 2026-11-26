@@ -223,7 +223,7 @@ local function network()
             -- Core's web update asks this state reader to update itself
             -- (avionics/state_update.lua): acknowledge, then restart into the
             -- staged update when staging succeeded.
-            local ack,restart=StateUpdate.handle(d,cfg,{fs=fs,http=http,textutils=textutils})
+            local ack,restart=StateUpdate.handle(d,cfg,{fs=StateUpdate.physicalFS(),http=http,textutils=textutils})
             if ack and modem then pcall(modem.transmit,Wire.CORE_CHANNEL,Wire.STATE_CHANNEL,ack) end
             if restart then os.reboot() end
         elseif event=="modem_message" and a==side and b==Wire.STATE_CHANNEL then context(d)

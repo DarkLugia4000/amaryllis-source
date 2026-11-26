@@ -3,6 +3,18 @@
 Version entries describe the changes recorded for each release. See the
 [README](README.md) for current usage.
 
+## 3.1.1
+
+- Core retries a failed package download three times, closes failed HTTP
+  responses and shows the download's reason in the installer fault.
+- A package object missing from core's pinned web release is fetched from the
+  newest release. The local updater replaces core's catalog but keeps the
+  pinned address, which can name an older release.
+- Core's web setup screen redraws only after an event that changes it, so it
+  no longer flickers while the installed ship transmits.
+- The state reader stages its web update through the computer's own file
+  system. The bundle's file system refused to replace /startup.lua.
+
 ## 3.1.0
 
 - Generalized Markdown documentation: removed named-save deployment reports,

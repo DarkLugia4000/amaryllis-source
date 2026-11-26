@@ -1540,6 +1540,7 @@ SUMMARIES.update({
     "/disk/setup.lua#Setup.registerRole": "Record a role for a computer in core's deployment record (web registration).",
     "/disk/setup.lua#Setup.clearRole": "Clear one role from core's deployment record before import (web registration).",
     "/disk/setup.lua#Setup.installRegistered": "Install the payload for a role that core has accepted (web registration).",
+    "/installer/media.lua#Media:download": "Download one package object, trying three times and closing any failed response.",
     "/installer/media.lua#Media:openWeb": "Fetch one package object from the web release and check it against the trusted catalog.",
 })
 

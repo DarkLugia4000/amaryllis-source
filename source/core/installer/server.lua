@@ -398,8 +398,11 @@ local function loadBundle(deps, config, role, checkpoint)
         end
         local relativeSource = definition.sources[destination]
         local source = relativeSource:sub(1, 1) == "/" and relativeSource or definition.root .. "/" .. relativeSource
-        local ok, handle = pcall(deps.fs.open, source, "r")
-        if not ok or not handle then return nil, "cannot open bundled file " .. source end
+        local ok, handle, openIssue = pcall(deps.fs.open, source, "r")
+        if not ok or not handle then
+            local reason = not ok and handle or openIssue
+            return nil, "cannot open bundled file " .. source .. (reason and (": " .. tostring(reason)) or "")
+        end
         local readOk, data = pcall(handle.read, config.max_file_bytes + 1)
         pcall(handle.close)
         if not readOk or type(data) ~= "string" then return nil, "cannot read bundled file " .. source end

@@ -950,6 +950,27 @@ class WebSetupTests(unittest.TestCase):
         self.assertIn("/installer/web/web-setup.lua", core.files["/startup.lua"], "core boots into registration until import")
         self.assertIn("/installer/web/core-startup.lua", core.files)
 
+    def test_core_screen_holds_steady_while_the_ship_transmits(self):
+        _, core = self.core()
+        core.lua.execute("""
+DRAWS={clear=0,write=0}
+local clear,write=term.clear,term.write
+term.clear=function(...) DRAWS.clear=DRAWS.clear+1;return clear(...) end
+term.write=function(...) DRAWS.write=DRAWS.write+1;return write(...) end
+""")
+        before = core.text()
+        for _ in range(20):
+            core.state = core.resume("modem_message", "top", 65533, 1, core.lua.table())
+            core.state = core.resume("rednet_message", 7, core.lua.table(), "amaryllis.status")
+            core.state = core.resume("timer", 1)
+        draws = core.lua.globals().DRAWS
+        self.assertEqual((draws.clear, draws.write), (0, 0), "traffic for other programs does not redraw the screen")
+        self.assertEqual(core.text(), before)
+        core.key("down")
+        self.assertEqual(draws.clear, 0, "a redraw writes over the old screen")
+        self.assertGreater(draws.write, 0)
+        self.assertNotEqual(core.text(), before, "a key press still redraws")
+
     def test_computer_finds_core_registers_and_installs_its_receiver(self):
         network, core = self.core()
         node = Computer(network, 5)
@@ -1353,6 +1374,38 @@ local ack,restart=StateUpdate.handle(PACKET,{coreID=0,computerID=7},{fs=fs,http=
 return ack,restart""")
         return (python_value(ack) if ack is not None else None), restart, files
 
+    def test_bundled_state_reader_stages_its_update(self):
+        # On the state reader /startup.lua is one of the bundle's own files, which
+        # the bundle's fs refuses to move or rewrite.
+        b = project.builder_module()
+        entry = b"return {StateUpdate=require('avionics.state_update'),fs=fs}"
+        sources = {"/avionics/state_update.lua": (ROOT / "source/core/avionics/state_update.lua").read_bytes(),
+                   "/startup.lua": b"own startup", "/avionics/main.lua": entry}
+        bundle = b.bundling.pack(sources, (b.HOME / "assets/runtime-loader.lua").read_bytes(),
+                                 role="state-update-test", entry="/avionics/main.lua")
+        lua, files = native_runtime({"/startup.lua": "own startup"})
+        g = lua.globals()
+        def get(request):
+            path = WEB_MEDIA2 / request["url"][len(BASE2):]
+            data = path.read_bytes().decode("utf-8")
+            return lua.table_from({"getResponseCode": lambda: 200, "readAll": lambda: data, "close": lambda: None})
+        g.HTTP = lua.table_from({"get": get})
+        g.JSON = lua.table_from({"unserializeJSON": lambda raw: table(lua, json.loads(raw)),
+                                 "serializeJSON": lambda value: json.dumps(python_value(value))})
+        g.PACKET = table(lua, self.packet())
+        ack, restart, refused = lua.execute(r"""
+local bundled=assert(load(...))()
+local StateUpdate=bundled.StateUpdate
+local ok,issue=pcall(StateUpdate.handle,PACKET,{coreID=0,computerID=7},{fs=bundled.fs,http=HTTP,textutils=JSON})
+local refused=not ok and tostring(issue):find("Bundled source is read only",1,true)~=nil
+local ack,restart=StateUpdate.handle(PACKET,{coreID=0,computerID=7},{fs=StateUpdate.physicalFS(),http=HTTP,textutils=JSON})
+return ack,restart,refused""", bundle.decode("utf-8"))
+        self.assertTrue(refused, "the bundle's own fs refuses to move /startup.lua")
+        self.assertTrue(python_value(ack)["ok"], python_value(ack))
+        self.assertTrue(restart)
+        self.assertEqual(files["/amaryllis-web/state-startup.lua"], "own startup")
+        self.assertIn("/amaryllis-web/web-setup.lua", files["/startup.lua"])
+
     def packet(self, **changes):
         value = {"protocol": "amaryllis.state.v1", "kind": "state_update", "sender": 0, "target": 7,
                  "base": BASE2, "releaseId": RELEASE2["releaseId"]}
@@ -1419,6 +1472,77 @@ return h.readAll()
 ''', entry["path"])
         self.assertEqual(data, (WEB_MEDIA / ("objects/" + entry["object"])).read_bytes().decode("utf-8"))
         self.assertEqual(served, [BASE + "objects/" + entry["object"]])
+
+    def run_flaky_download(self, failures):
+        lua, files = native_runtime({
+            "/installer/library.json": (WEB_MEDIA / "library.json").read_bytes().decode("utf-8"),
+            "/installer/web/source.json": json.dumps({"base": BASE}),
+        })
+        entry = json.loads((WEB_MEDIA / "library.json").read_text())["files"][0]
+        lua.globals().BODY = lambda url: (WEB_MEDIA / url[len(BASE):]).read_bytes().decode("utf-8")
+        lua.globals().SOURCE = (ROOT / "disk-builder/assets/core-media.lua").read_text(encoding="utf-8")
+        lua.globals().JSON = lua.table_from({"unserializeJSON": lambda raw: table(lua, json.loads(raw))})
+        result = lua.execute(r'''
+local path,failures=...
+local calls,closed,waits=0,0,{}
+local HTTP={get=function(request)
+  calls=calls+1
+  if calls<=failures then
+    return nil,"Timed out",{close=function() closed=closed+1 end}
+  end
+  local data=BODY(request.url)
+  return {getResponseCode=function() return 200 end,readAll=function() return data end,close=function() end}
+end}
+local Media=assert(load(SOURCE))()
+local media=Media.new(fs,{getNames=function() return {} end},{},JSON,function(s) waits[#waits+1]=s end,HTTP)
+assert(media:refresh(),"web media is available")
+local h,why=media.fs.open(path,"r")
+return {data=h and h.readAll() or false,why=why or "",calls=calls,closed=closed,waits=#waits}
+''', entry["path"], failures)
+        return entry, dict(result.items())
+
+    def test_web_package_download_retries_transient_failures(self):
+        entry, result = self.run_flaky_download(2)
+        self.assertEqual(result["data"], (WEB_MEDIA / ("objects/" + entry["object"])).read_bytes().decode("utf-8"))
+        self.assertEqual(result["calls"], 3)
+        self.assertEqual(result["closed"], 2, "failed responses release their HTTP request slot")
+
+    def test_web_package_download_failure_names_the_reason(self):
+        _, result = self.run_flaky_download(6)
+        self.assertFalse(result["data"])
+        self.assertEqual(result["calls"], 6, "three tries at the pinned release, then three at the newest")
+        self.assertEqual(result["why"], "Package download failed: Timed out; newest release: Timed out")
+
+    def test_object_missing_from_pinned_release_comes_from_newest_release(self):
+        # The local updater replaces core's catalog but keeps the pinned web address.
+        lua, files = native_runtime({
+            "/installer/library.json": (WEB_MEDIA / "library.json").read_bytes().decode("utf-8"),
+            "/installer/web/source.json": json.dumps({"base": BASE}),
+        })
+        entry = json.loads((WEB_MEDIA / "library.json").read_text())["files"][0]
+        latest = "https://raw.githubusercontent.com/ama/release/release/media/"
+        lua.globals().BODY = lambda url: (WEB_MEDIA / url[len(latest):]).read_bytes().decode("utf-8")
+        lua.globals().PINNED, lua.globals().LATEST = BASE, latest
+        lua.globals().SOURCE = (ROOT / "disk-builder/assets/core-media.lua").read_text(encoding="utf-8")
+        lua.globals().JSON = lua.table_from({"unserializeJSON": lambda raw: table(lua, json.loads(raw))})
+        result = lua.execute(r'''
+local urls={}
+local HTTP={get=function(request)
+  urls[#urls+1]=request.url
+  if request.url:sub(1,#PINNED)==PINNED then return nil,"Not Found",{close=function() end} end
+  local data=BODY(request.url)
+  return {getResponseCode=function() return 200 end,readAll=function() return data end,close=function() end}
+end}
+local Media=assert(load(SOURCE))()
+local media=Media.new(fs,{getNames=function() return {} end},{},JSON,function() end,HTTP)
+assert(media:refresh())
+local h=assert(media.fs.open(...,"r"))
+return {data=h.readAll(),urls=urls}
+''', entry["path"])
+        self.assertEqual(result["data"], (WEB_MEDIA / ("objects/" + entry["object"])).read_bytes().decode("utf-8"))
+        self.assertEqual(list(result["urls"].values()),
+                         [BASE + "objects/" + entry["object"], latest + "objects/" + entry["object"]],
+                         "a missing object is not retried at the pinned address")
 
     def test_checked_web_package_is_cached_between_requests(self):
         lua, files = native_runtime({

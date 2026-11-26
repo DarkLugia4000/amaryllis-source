@@ -24,6 +24,12 @@ function Media.new(native,peripherals,disks,json,yield,web)
     local source=read(native,WEB_SOURCE,4096);source=source and json.unserializeJSON(source)
     if type(source)=="table" and type(source.base)=="string" and source.base:match("^https://[%w%.%-]+/[%w%.%-_/]+/$") then
         self.webBase=source.base;self.http=web;self.issue=web and "" or "HTTP is disabled; web packages unavailable"
+        -- The local updater replaces core's catalog and keeps this pinned address,
+        -- which can name an older release without the new catalog's objects.
+        -- Objects are named by content and kept on the release branch, so a
+        -- missing object is fetched from the branch's newest release instead.
+        local head,tail=source.base:match("^(https://raw%.githubusercontent%.com/[^/]+/[^/]+/)%x+(/media/)$")
+        if head then self.webLatest=head.."release"..tail end
         -- A web release is fixed for the life of this catalog: its objects are
         -- content-addressed and checked against the catalog on every download.
         -- Generation 1 gives package files a positive modification time, which
@@ -140,12 +146,35 @@ function Media:open(path)
         local value=data:sub(offset);offset=#data+1;return value
     end,close=function() closed=true;data="" end}
 end
+-- Summary: Download one package object, trying three times and closing any failed response.
+function Media:download(url)
+    local last
+    for attempt=1,3 do
+        local response,why,failed=self.http.get({url=url,binary=true})
+        if response then
+            local code=response.getResponseCode();local data=response.readAll() or "";response.close()
+            if code==200 then return data end
+            last="HTTP "..tostring(code)
+        else
+            -- A failed response stays open until closed and holds one of the
+            -- computer's limited HTTP request slots.
+            if type(failed)=="table" and failed.close then pcall(failed.close) end
+            last=tostring(why)
+        end
+        -- A missing object stays missing; only other failures are worth repeating.
+        if last=="Not Found" or last=="HTTP 404" then break end
+        if attempt<3 then self.yield(attempt) end
+    end
+    return nil,"Package download failed: "..tostring(last)
+end
 -- Summary: Fetch the indexed package object over HTTP and verify its length and Adler-32 checksum.
 function Media:openWeb(entry)
-    local response,why=self.http.get({url=self.webBase.."objects/"..entry.object,binary=true})
-    if not response then return nil,"Package download failed: "..tostring(why) end
-    local code=response.getResponseCode();local data=response.readAll() or "";response.close()
-    if code~=200 then return nil,"Package download failed: HTTP "..tostring(code) end
+    local data,why=self:download(self.webBase.."objects/"..entry.object)
+    if not data and self.webLatest then
+        local latest,latestWhy=self:download(self.webLatest.."objects/"..entry.object)
+        if latest then data,why=latest,nil else why=why.."; newest release: "..tostring(latestWhy):gsub("^Package download failed: ","") end
+    end
+    if not data then return nil,why end
     if #data~=entry.bytes then return nil,"Package object size differs from catalog" end
     local a,b=1,0
     for i=1,#data do

@@ -21,7 +21,7 @@ import zipfile
 import zlib
 
 VERSION = "3.0.0"
-RELEASE_VERSION = "3.1.0"
+RELEASE_VERSION = "3.1.1"
 HOME = Path(__file__).resolve().parent
 DEFAULT_OUTPUT = HOME / "Installers"
 _bundle_spec = importlib.util.spec_from_file_location("amaryllis_bundling", HOME / "bundling.py")
