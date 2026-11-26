@@ -36,11 +36,6 @@
       "path": "objects/24675ffe7bc530cc578a8df28353a332638965148a6c625244a0d7132f9318b2"
     },
     {
-      "adler32": "1C34BDD4",
-      "bytes": 520167,
-      "path": "objects/2770b44246185f6e6ea1edb646b6d2a2ce941e38596ed2923e84b9e72defa70f"
-    },
-    {
       "adler32": "B39F9D80",
       "bytes": 528,
       "path": "objects/2c3c7d4ccf6945fc902b37d33fcbd59e40ac0c3aff196d35f542ecee31f7a459"
@@ -136,6 +131,11 @@
       "path": "objects/830ad34c820a170ddb6653a9eee9355f539b2c2179623991c593f28146da34e0"
     },
     {
+      "adler32": "0132E7CF",
+      "bytes": 1547270,
+      "path": "objects/8bce977bb8c151acd29396d193756e98c533f02662cd5a4487cb90978aa3cb76"
+    },
+    {
       "adler32": "BB333A08",
       "bytes": 198,
       "path": "objects/8ea6e1311cf309c50b3093e79583bc77939e93a19605d6bce9b648c3b39cd08a"
@@ -171,11 +171,6 @@
       "path": "objects/b30163b2c60913133c1ea3fa8fd497a7a447d4232b1b7c9388df1ec986cd0636"
     },
     {
-      "adler32": "427002BA",
-      "bytes": 1544967,
-      "path": "objects/b3bd8ca5faa4a960e4090c706e2a32ab10b71faea3e92f77bacef9781a8dffd6"
-    },
-    {
       "adler32": "8A610B12",
       "bytes": 1836,
       "path": "objects/b3e5695983fa216dbd1b5e148dbc43b950d7096cf56cb0234b32fdd470b0e47c"
@@ -184,6 +179,11 @@
       "adler32": "B4C0EDBD",
       "bytes": 453557,
       "path": "objects/c2488365624143a47e4c398281b88cbba446a8a9f2f4beed8e25c7d0dccf761c"
+    },
+    {
+      "adler32": "AD01A0A8",
+      "bytes": 520824,
+      "path": "objects/c44405124c4d68d61706f3db610019be441cdedebca3e24be3c24c51bef317b5"
     },
     {
       "adler32": "953BB1BD",
@@ -246,12 +246,12 @@
       "path": "download.lua"
     },
     {
-      "adler32": "9262BB76",
-      "bytes": 35628,
+      "adler32": "98B6808E",
+      "bytes": 36346,
       "path": "web-setup.lua"
     },
     {
-      "adler32": "CC99E97D",
+      "adler32": "B800E759",
       "bytes": 12888,
       "path": "release.json"
     },
@@ -261,6 +261,6 @@
       "path": "startup.lua"
     }
   ],
-  "releaseId": "amaryllis-54613a5e3231",
+  "releaseId": "amaryllis-b54510e89741",
   "schemaVersion": 1
 }

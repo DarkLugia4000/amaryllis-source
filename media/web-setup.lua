@@ -213,32 +213,47 @@ local function coreScreen(Setup,release,id,releaseBase,latest)
     assert(openModems(),"Attach a modem to core: the other computers register over rednet")
     local order=roleOrder(release);local selected=1
     local notice=latest and ("W: update to "..latest.releaseId) or ""
+    -- On an installed ship the other computers keep transmitting, and every
+    -- message wakes this loop. The screen is drawn only after an event that can
+    -- change it, and drawn line by line over the old one, so it holds steady.
+    local state,complete,drawn
+    local dirty=true
     while true do
-        local state=Setup.deployment(CORE_MEDIA,release)
-        local count=0;for _ in pairs(state.computers) do count=count+1 end
-        local complete=count==#order
-        screen("Amaryllis "..releaseLabel(release).." | CORE #"..id)
-        line(2,count.."/"..#order.." registered. Run the loader on each computer.",complete and GREEN or WHITE)
-        local _,h=term.getSize();local rows=h-6
-        local first=math.max(1,math.min(selected-math.floor(rows/2),#order-rows+1))
-        for i=first,math.min(#order,first+rows-1) do
-            local role=order[i];local entry=state.computers[role]
-            line(3+i-first,(i==selected and "> " or "  ")..(entry and ("#"..entry.id) or "--").."  "..Setup.title(role),
-                entry and WHITE or GRAY)
+        if dirty then
+            state=Setup.deployment(CORE_MEDIA,release)
+            local count=0;for _ in pairs(state.computers) do count=count+1 end
+            complete=count==#order
+            local title="Amaryllis "..releaseLabel(release).." | CORE #"..id
+            if drawn then line(1,title,CYAN) else screen(title);drawn=true end
+            line(2,count.."/"..#order.." registered. Run the loader on each computer.",complete and GREEN or WHITE)
+            local _,h=term.getSize();local rows=h-6
+            local first=math.max(1,math.min(selected-math.floor(rows/2),#order-rows+1))
+            for y=3,h-3 do
+                local i=first+y-3;local role=order[i]
+                if role and y-3<rows then
+                    local entry=state.computers[role]
+                    line(y,(i==selected and "> " or "  ")..(entry and ("#"..entry.id) or "--").."  "..Setup.title(role),
+                        entry and WHITE or GRAY)
+                else line(y,"") end
+            end
+            line(h-2,notice,YELLOW)
+            line(h-1,complete and "Enter: import assignments and start core" or "Waiting for registrations",complete and GREEN or GRAY)
+            line(h,"Up/Dn Bksp:clear R:reset U:uninstall Q:leave",GRAY)
+            dirty=false
         end
-        line(h-2,notice,YELLOW)
-        line(h-1,complete and "Enter: import assignments and start core" or "Waiting for registrations",complete and GREEN or GRAY)
-        line(h,"Up/Dn Bksp:clear R:reset U:uninstall Q:leave",GRAY)
         local event,a,b,c=os.pullEvent()
+        if event=="key" or event=="char" or event=="term_resize" then dirty=true end
         if event=="rednet_message" and c==PROTOCOL and type(b)=="table" and b.v==1 then
             if b.kind=="discover" then
                 rednet.send(a,{v=1,kind="core",coreID=id,releaseId=release.releaseId,base=releaseBase,
                     computers=state.computers,reset=state.reset,releaseHistory=state.releaseHistory},PROTOCOL)
             elseif b.kind=="register" and b.releaseId==release.releaseId and type(b.role)=="string" then
+                dirty=true
                 local ok,issue=pcall(Setup.registerRole,CORE_MEDIA,release,b.role,a,b.move==true)
                 rednet.send(a,{v=1,kind="registered",ok=ok,error=not ok and tostring(issue) or nil,role=b.role,coreID=id},PROTOCOL)
                 notice=ok and ("#"..a.." registered as "..b.role) or ("#"..a.." refused: "..tostring(issue))
             elseif b.kind=="unregister" and type(b.role)=="string" then
+                dirty=true
                 local holder=state.computers[b.role]
                 if holder and holder.id==a and b.role~="core" and pcall(Setup.clearRole,CORE_MEDIA,release,b.role) then
                     notice="#"..a.." removed its registration as "..b.role
