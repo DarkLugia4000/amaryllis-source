@@ -154,7 +154,7 @@ and [state telemetry](docs/architecture/STATE_MODULE.md) for the implementation.
 
 ## Updating an existing installation
 
-### Published web releases
+### Published web releases (recommended)
 
 Run `pastebin run bn1RbWtb` on a web-installed core. When setup detects a newer
 published release, its core screen offers **W** to update. Follow the displayed
