@@ -1,9 +1,5 @@
 @echo off
 setlocal
-if exist "%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\pythonw.exe" (
-    start "" "%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\pythonw.exe" "%~dp0builder.py" --gui
-    exit /b
-)
 where pyw.exe >nul 2>&1
 if not errorlevel 1 (
     start "" pyw.exe -3 "%~dp0builder.py" --gui
