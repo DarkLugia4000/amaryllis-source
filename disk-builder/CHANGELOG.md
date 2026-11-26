@@ -5,6 +5,52 @@ Version entries describe the changes recorded for each release. See the
 
 ## 3.1.0
 
+- Main README reorganized around the system overview, ship-specific scope,
+  Pastebin installation and recovery, the 16 computer roles, and web/local
+  update paths. Detailed development procedures are preserved in
+  `docs/development/WORKFLOW.md`, linked from the documentation index.
+
+- Identical live rundown renewals now preserve in-progress propulsion writes;
+  changed drive targets, direction permission, profile or expired authority
+  still revoke them. Coordinated rundown accrues elapsed time from successful
+  writes, with one-second bounded catch-up, rather than losing time on aborted
+  passes. Recorder v148 and endpoint diagnostics v3 add write attempts,
+  completion/failure counts, results, command identity, requested shift level
+  and subsequent matching-readback confirmation. Physical validation pending.
+
+- Rundown diagnostics v2 retain the last writer evaluation across identical
+  profile renewals, preserving its original timestamp and command sequence.
+  New/removed profiles and revoked leases clear the trace. Recorder v147
+  appends separate evaluation and received command sequences for each primary
+  controller, making stale evaluations distinguishable from current commands.
+  Brake behavior and tuning are unchanged.
+
+- Debug recorder v146 appends core brake-release predictions and shared rundown
+  parameters, plus each propulsion controller's diagnostic version, last
+  evaluation reason/time, profile epoch, target, envelope, readback age and
+  boot identity. Core validates diagnostic ranges. ACTIVE denotes envelope
+  evaluation, not proof of a completed write or matched physical shaft RPM.
+
+- Selected-zero braking now suppresses primary turn assistance and coordinates
+  decreasing main-engine demand with one UTC-based rundown envelope across
+  both propulsion controllers. Existing output differences converge downward;
+  the lower side does not increase to match its peer. Lease expiry and invalid
+  profiles retain local safe-zero behavior. Physical symmetry remains to be
+  validated with both updated propulsion controllers installed.
+
+- Brake-release tuning pass two increases the residual speed allowance from
+  1.5 to 2.5 b/s after the independent second stop still reached 0.88 b/s
+  backward. Regression coverage includes an earlier-release checkpoint from
+  that recording; another physical stop is needed to validate this adjustment.
+
+- SEL-zero main-engine braking now forecasts residual reverse-output rundown
+  from both applied readbacks and releases into coast before the estimated
+  remaining speed is consumed. The provisional model uses the 26 November
+  brake recording, retains the configured stop-band fallback, and keeps the
+  release latch while output decays. Source comments and
+  `docs/architecture/PRIMARY-BRAKING-MODEL.md` document the fit, limitations and
+  future shaft-RPM replacement. Physical validation remains pending.
+
 - Primary-propeller turn assistance now leaves engines balanced for selected
   heading errors within a speed-dependent angle: 10 degrees at or below 15 b/s,
   shrinking linearly to 2 degrees at 30 b/s and above (absolute forward speed).

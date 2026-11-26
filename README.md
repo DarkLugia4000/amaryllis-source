@@ -1,161 +1,192 @@
-# Amaryllis Lua Source
+# A.E.V. Amaryllis Source Code & Release Repo
 
-Source Code, installer mediums and a bunch of other tools for testing/setting up A.E.V. Amaryllis: An airship powered by CC: Tweaked and magic.
+Distributed flight-control software for **A.E.V. Amaryllis**, a steam/diesel
+hybrid airship built with Create Aeronautics and controlled through CC: Tweaked.
+This repository contains the Lua programs, in-game installer, Windows builder
+and updater, and regression tests.
 
-## Project layout
+The system is built around Amaryllis's hardware, her multi-chamber system and measured handling.
+Installing it on a different vessel is not recommended, as this would require substantial changes to peripheral bindings,
+propulsion arrangement, lift management and control tuning.
 
-| Location | Purpose |
+[Installation](#web-install-pastebin) · [Computer roles](#computer-roles) ·
+[Updates](#updating-an-existing-installation) · [Development](#development) ·
+[Documentation](docs/README.md) · [Changelog](disk-builder/CHANGELOG.md)
+
+## What it does
+
+- **Integrated fly-by-wire control:** 16 computers coordinate bridge inputs,
+  altitude, heading, speed, propulsion and stabilization.
+- **Selectable handling:** manual and selected heading/speed modes, direct
+  primary-propeller control, and adjustable heading and speed response through
+  the onboard monitor interface.
+- **Flight management:** four independently controlled lift chambers, leveling,
+  lateral positioning and a digital position anchor.
+- **Point-to-point autopilot:** configurable route speed and altitude, heading
+  acquisition, route capture, acceleration, cruise, approach and arrival handover.
+  Route tracking and braking are still being refined through flight recordings.
+- **Diagnostics and recovery:** per-computer status, removable-disk debug
+  recordings, retained pilot selections and recovery paths for installation
+  mistakes and interrupted updates.
+
+For the controls and display labels, see the [pilot reference](docs/installation/PILOT-REFERENCE.md).
+
+## Web install (Pastebin)
+
+**Use Pastebin for new installations.** Floppy-disk installation is largely
+[deprecated](disk-builder/README.md#installer-floppy-disk-deprecated) and retained
+as a legacy fallback.
+
+### Before starting
+
+- Use the Amaryllis vessel and its matching mod environment. The project is
+  developed for Minecraft 1.21.1 / NeoForge, with CC: Tweaked, Create Aeronautics,
+  Sable, CC: Sable, CC: Avionics and the vessel's other hardware integrations.
+- Make sure ComputerCraft HTTP is enabled (`http.enabled = true`) in the
+  world/server configuration. It is normally enabled by default.
+- Have core and the registering computers able to communicate over wireless
+  rednet. The state computer uses a wired connection to core during normal
+  operation; see the [state wiring guide](docs/architecture/STATE_MODULE.md#wiring).
+- Match each computer to the role written on its sign. Each role must have a
+  distinct ComputerCraft ID; copied computers sharing an ID must be corrected
+  before registration.
+
+### Install core, register the fleet, then import
+
+Run this in the ComputerCraft shell:
+
+```text
+pastebin run bn1RbWtb
+```
+
+1. **Install core first.** On the core computer, choose **1 Install core** and
+   confirm the computer ID. It downloads its programs and opens the registration
+   screen. Until assignments are imported, rebooting core returns to this screen.
+2. **Register the other 15 computers.** Run the same command on each and choose
+   **2 Register this computer**. It finds core, loads core's release and lists
+   the roles and their current holders. Select the role on the computer's sign.
+   The computer installs its commissioning receiver, or the state reader's own
+   programs, and reboots.
+3. **Review all 16 assignments on core.** Correct any mistakes, then press
+   **Enter** to import them. Core restarts and distributes the auxiliary role
+   packages from its pinned release.
+
+The loader is published at [pastebin.com/bn1RbWtb](https://pastebin.com/bn1RbWtb).
+Its maintained source is [tools/pastebin/loader.lua](tools/pastebin/loader.lua).
+Computers joining an installation use core's release so that its packages stay
+consistent across the fleet.
+
+### Fixing registration mistakes
+
+| Situation | Action |
 |---|---|
-| source/core/ | Editable core and state-shared Lua modules and portable configuration. |
-| source/library/ | Editable navigator, heading, chamber and propulsion packages. |
-| source/calibration/ | The two explicitly shipped numeric hover/level default records. |
-| source/baseline.json | Source fingerprints, role labels, asset ownership and migration evidence. |
-| disk-builder/ | Windows Disk Builder, updater and checked installer/UI assets. |
-| tests/ | Maintained Python regression suites, Java harness and isolated fixtures. |
-| tools/ | Maintained development utilities, including builder ZIP packaging. |
-| releases/builders/ | Versioned builder ZIPs, preserved locally; future builder packages are written here. |
-| archive/scripts/ | Historical Python, Lua and PowerShell scripts, preserved locally. |
-| project.py | Source verification, source builds, tests and Cobalt validation. |
-| docs/ | Topic folders and a documentation index in docs/README.md. |
-| output/ and .cache/ | Generated files and disposable test ships; ignored by Git. |
+| Need to reopen setup on a registered computer | Hold **Ctrl+T** to stop its commissioning screen, then run the Pastebin command again. |
+| Wrong role selected before import | Run setup on that computer and select the correct role. Core moves the assignment. **Backspace** on core clears the selected role. |
+| Remove a registration | Choose **3 Remove this computer's registration**. This removes its commissioning receiver or state-reader programs and asks core to clear the role. An already-installed auxiliary role package is retained. |
+| Reset registration | Press **R** on core's setup screen. Assignments are cleared; computer programs and settings remain for registration again. |
+| Uninstall core before import | Press **U** on core's setup screen to uninstall core and delete its files. |
 
-Logs, recordings, installer exports, release ZIPs, backups and older one-off
-scripts remain available locally and are excluded from the repository. The
-existing Windows builder folder keeps its current name and launcher.
+See the [full installer guide](disk-builder/README.md#web-install-pastebin) for
+additional setup and recovery details, and the
+[owner installation and first-flight guide](docs/installation/Amaryllis-Owner-Installation-and-First-Flight-DRAFT-v3.md)
+for commissioning guidance. The owner guide is a draft; use the current installer
+screens for menu choices.
 
-Browse the [documentation index](docs/README.md) for guides, architecture, plans and history.
+## Computer roles
 
-## Development setup
+Computer IDs are assigned during installation. The role names describe what
+each computer does; they are not fixed numeric IDs.
 
-Use Python 3.12 for the dev environment.
+| Computers | Roles | Responsibility |
+|---:|---|---|
+| 1 | `core` | Flight-control decisions, pilot selections, AP, anchor, stabilization and commands to the fleet. |
+| 1 | `state` | Vessel and cockpit sensor sampling, sent to core over the wired link. |
+| 1 | `navigator` | Interactive bridge management interface and requests to core. |
+| 3 | `heading-left`, `heading-main`, `heading-right` | Heading and flight instrument displays. |
+| 4 | `chamber_fl`, `chamber_fr`, `chamber_bl`, `chamber_br` | Independent lift-chamber control. |
+| 4 | `thrust-lb`, `thrust-rb`, `thrust-ls`, `thrust-rs` | Propulsion actuator control; the `ls` and `rs` controllers also operate the main propellers. |
+| 2 | `primary_l`, `primary_r` | Primary-propeller bearing readback. |
 
-    python -m venv .venv
-    .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-    .\.venv\Scripts\python.exe project.py check
-    .\.venv\Scripts\python.exe project.py test --quick
+Core interprets pilot input and computes commands. The state computer supplies
+measurements, while the propulsion and chamber computers apply commands locally
+and report their status. The navigator presents the management interface.
 
-The test dependency is pinned to Lupa 2.6 with its Lua 5.2 engine. Test fixtures
-use synthetic computer assignments under .cache/fixtures, enabling tests to be run without a minecraft save or similar.
+See [core responsibilities](docs/architecture/Amaryllis-Core-File-Responsibilities.md)
+and [state telemetry](docs/architecture/STATE_MODULE.md) for the implementation.
 
-## Authoritative source, installation disks and updates
+## Updating an existing installation
 
-The maintained software is this repository. Edit Lua under `source/core/` and
-`source/library/`; shipped hover/level defaults live under `source/calibration/`.
-Five shared modules have one editing location in the builder's `assets/` folder:
-`core-progress.lua`, `core-media.lua`, `identity-watch.lua`, `panel-console.lua`
-and `remote-panel.lua`. Their installed paths are mapped by `source/baseline.json`.
-The migration fingerprints in that file are historical reference values.
+### Published web releases
 
-Auxillary computer packages live in `source/library/packages/common/`.
-The `sharedModules` mapping in `source/baseline.json` expands each implementation
-to its role destinations during collection. Edit the canonical file once; the
-build checks family membership and rejects conflicting destination copies.
-Role-specific configuration remains beside each role's package directory.
+Run `pastebin run bn1RbWtb` on a web-installed core. When setup detects a newer
+published release, its core screen offers **W** to update. Follow the displayed
+instructions and check that the state computer and auxiliary packages have
+completed their updates.
 
-### Windows interface
+Pushes to `main` trigger the [release workflow](.github/workflows/release.yml).
+After a successful build, installer media is published to the `release` branch.
+The loader selects a release commit; existing core installations retain their
+pinned package objects across later releases.
 
-Open `disk-builder/Start Builder.cmd`. **Project source** is
-selected automatically when maintained source is present. Select the project
-folder and choose:
+### Local source updates with the Windows builder
 
-- **Build installer** to create a new commissioning disk package.
-- **Update existing ship…** to open the updater with maintained source selected.
-  Select the target save and an external backup folder. **Preview update** bundles
-  current source for review; **Apply update** installs that reviewed snapshot.
+Open [Start Builder.cmd](disk-builder/Start%20Builder.cmd), choose **Update existing
+ship…**, and select the target save and an external backup folder. **Preview
+update** prepares the current source; **Apply update** installs that snapshot.
 
-Both actions read software from the project. A world folder is needed only as
-the update destination. Existing IDs, stored settings, PID configuration,
-learning and restart records are retained by the updater. Managed programs are
-overwritten and obsolete managed files are removed after an external backup.
-The world may stay open while applying: running computers keep their program until
-they reboot, and runtime files (`installer/install_status.json`, `avionics/data/`) are
-never touched.
+The updater preserves computer IDs, stored settings, PID configuration, learned
+values and restart records. It backs up managed files before replacing them.
+Running computers keep their loaded programs until they restart, so replacing
+files alone does not confirm the new code is running. Update and restart related
+computers together when a change spans core and its controllers.
 
-### Project commands
+See the [builder and updater instructions](disk-builder/README.md) for details.
 
-    python project.py build
-    python project.py update --target "D:\Minecraft\saves\Amaryllis"
-    python project.py gui
+## Development
 
-`build` creates a verified installer under `output/installers/`. `update` bundles
-current source in a temporary workspace and prints a preview; it leaves the target
-unchanged and removes the temporary payload when the command finishes.
-To apply that replacement with an external backup:
+Use **Python 3.12**. From the repository root:
 
-    python project.py update --target "D:\Minecraft\saves\Amaryllis" --apply --backup "D:\Amaryllis Backups"
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe project.py check
+.\.venv\Scripts\python.exe project.py test --quick
+```
 
-Project builds read maintained inputs directly and use a temporary compatibility
-adapter for the existing packager. The adapter is removed after collection.
-Production builds do not use the test fixture cache. Installed program payloads
-remain five files on core and three on state and each auxiliary.
+Run the full regression suite with:
 
-### Release provenance
+```powershell
+.\.venv\Scripts\python.exe project.py test
+```
 
-Project releases record their source commit, whether the working tree contained
-uncommitted changes, and a fingerprint of the source and builder inputs. This
-record is included in `media/release.json`, the shared README and the local
-build report. The updater shows it in the preview and retains it in each
-computer's existing installation record. The floppy disk's installer also
-records it during fresh installation.
+The Lua tests use Lupa 2.6 with its Lua 5.2 engine. Synthetic computer assignments
+allow the regression suites to run without a Minecraft save. In-game recordings
+are still needed to validate physical handling and tuning.
 
-The local build report lists individual input fingerprints and source paths;
-it remains outside the distributable installer ZIP. Source changes during a
-build prevent that output from being published as complete.
+| Location | Contents |
+|---|---|
+| [source/core/](source/core/) | Core and state-shared Lua modules and portable configuration. |
+| [source/library/](source/library/) | Navigator, display, chamber and propulsion packages. Shared implementations live under `packages/common/`. |
+| [source/calibration/](source/calibration/) | Shipped hover and leveling default records. |
+| [source/baseline.json](source/baseline.json) | Source fingerprints, role labels, shared-module mappings and migration evidence. |
+| [disk-builder/](disk-builder/) | Builder, updater and installer/console assets. |
+| [tests/](tests/) | Regression suites and runtime harnesses. |
+| [tools/](tools/) | Development and packaging utilities. |
+| [project.py](project.py) | Verification, builds, updates, tests and Cobalt validation. |
+| [docs/](docs/) | Architecture, installation, maintenance, diagnostics and development guides. |
 
-Standalone Disk Builder ZIPs include a release snapshot of the maintained source
-and its revision record. They can build installers without a Minecraft save or
-Git. Their source snapshot represents that packaged release. Work on future
-software in this repository and create a new utility snapshot when distributing it.
+Edit the maintained source and shared implementations, then build or update from
+this repository. The builder expands shared modules into their role packages.
+Generated output, recordings, world data and private backups stay outside Git.
 
-The builder's guarded compatibility transformations remain in place. Changes
-to guarded helper sections may require corresponding builder/asset updates.
+The [development workflow](docs/development/WORKFLOW.md) covers source ownership,
+build/update commands, release provenance, Cobalt validation and Git practices.
 
-## Validation
+## Further documentation
 
-    .\.venv\Scripts\python.exe project.py test
-
-Run an individual maintained suite from the repository root with:
-
-    .\.venv\Scripts\python.exe -m unittest tests.test_displays
-
-The full suite covers builder failure paths, bundle installation and recovery,
-legacy source formats, navigator presentation, information/assembly behavior,
-persistent pilot modes and current-source packaging. Results are written to
-output/tests/. Quick checks include current-source compilation and bundle
-round trips.
-
-Cobalt is extracted from an explicitly selected CC:Tweaked mod JAR:
-
-    .\.venv\Scripts\python.exe project.py cobalt --cc-mod "<cc-tweaked.jar>" --java "<java.exe>"
-
-The pinned dependency is Cobalt 0.9.9, with its expected checksum in
-tests/fixtures/cobalt.json. The Java engine and Minecraft binaries stay outside
-Git. Upstream is https://codeberg.org/SquidDev/Cobalt.
-
-## Git workflow
-
-The main branch tracks origin/main at git@github.com:DarkLugia4000/amaryllis-source.git.
-
-    git status
-    git diff
-    git add <reviewed-files>
-    git commit -m "Describe the resulting change"
-
-Keep generated outputs and private ship data outside commits. Preserve shipped
-ZIPs as immutable releases. Git source history starts at this migration; the
-older narrative remains in docs/history/LEGACY-HISTORY.md.
-
-## Operating contracts
-
-Ordinary core restarts and recoverable faults preserve applied lift settings.
-Stop Systems and Kill Lift retain their deliberate operator-controlled shutdown
-paths. Selected pilot modes and values survive supported restarts and recovery.
-Assembly uncertainty continues checking and warns after five minutes.
-Computer names remain lowercase. Major functions receive concise purpose
-summaries, and source comments stay aligned with implemented behavior.
-
-See [the information plan](docs/plans/NAVIGATOR-INFORMATION-PLAN.md),
-[maintenance catalogue](docs/maintenance/Amaryllis-Maintenance-Catalogue.md) and
-[core responsibilities](docs/architecture/Amaryllis-Core-File-Responsibilities.md).
-
-See [migration details](docs/development/GIT-MIGRATION.md) for source provenance and scope.
+- [Documentation index](docs/README.md)
+- [Pilot reference](docs/installation/PILOT-REFERENCE.md)
+- [Maintenance catalogue](docs/maintenance/Amaryllis-Maintenance-Catalogue.md)
+- [Flight and thrust tuning](docs/development/TUNING-REFERENCE.md)
+- [Primary-engine braking model and validation limits](docs/architecture/PRIMARY-BRAKING-MODEL.md)
+- [Changelog](disk-builder/CHANGELOG.md)

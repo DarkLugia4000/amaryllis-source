@@ -457,6 +457,23 @@ assert(not measure(14,1.5).zeroCoast)
 thrust:resetSpeedLoop();io.config.thrust.zero_brake_stop_bps=nil
 assert(measure(15,1.5).zeroCoast)
 """,
+'sel_zero_releases_before_residual_reverse_and_retains_latch': r"""
+for _,sign in ipairs({-1,1}) do
+    local ap,io,c,thrust=fixture();c.targets.speed=0;c.modes.throttle='SEL'
+    local applied=-sign*.23
+    thrust.speedApplied=function() return {left=applied,right=applied} end
+    sample(io,10,0,0,90,sign*5.38,0)
+    thrust:speedDriveRequest(io,10,c)
+    assert(not thrust.speedControl.zeroCoast)
+    sample(io,11,0,0,90,sign*3.94,0)
+    thrust:speedDriveRequest(io,11,c)
+    assert(thrust.speedControl.zeroCoast,'release before residual thrust consumes remaining speed')
+    applied=0
+    sample(io,12,0,0,90,sign*3.5,0)
+    thrust:speedDriveRequest(io,12,c)
+    assert(thrust.speedControl.zeroCoast,'decaying output must not rearm the same stop')
+end
+""",
 'position_loss_fallback_is_preserved': r"""
 local ap,io,c,thrust=fixture();cruising(ap,io)
 local held=clone(c);held.targets.heading=90;held.targets.speed=3
@@ -753,21 +770,24 @@ assert(math.abs(lateral.remaining-.5)<1e-9,'the next press is measured from wher
         lua.execute("""
 local ap,io,c=fixture();local Debug=require('avionics.debug_recorder')
 local recorder=Debug.new({clock=function() return 123 end});recorder.enabled=true;recorder.sequence=0
+local function legacy(row)
+ return row:gsub(string.rep(',[^,\\n]*',47)..'\\n$', '\\n')
+end
 ap.routeHeading=90;ap.headingBias=.4;ap.crossDemand=.125;ap.primaryIdle=true;ap.captureSettledSeconds=1.5
 recorder:capture({},io,10,{})
 assert(#recorder.queue==1)
-assert(recorder.queue[1]:match(',90,0%.4,0%.125,1,1%.5'..string.rep(',',32)..'\\n$'))
+assert(legacy(recorder.queue[1]):match(',90,0%.4,0%.125,1,1%.5'..string.rep(',',32)..'\\n$'))
 local snapshot={modes={throttle='MANUAL'},effectiveModes={throttle='MANUAL'},
  inputs={valid=true,raw={prop_forward=0,prop_reverse=0}},cockpitControl={propulsionRequestPercent=0},
  thrust={request={manualDriveOutput={left=.2,right=.2}},manualAcceleration={
   targetAcceleration=0,measuredAcceleration=-.25,holdingSpeed=5,state='HOLDING',turnYawRate=.125}}}
 recorder:capture(snapshot,io,10.5,{})
-assert(recorder.queue[2]:match(',MANUAL,MANUAL,0,0,0,0,%-0%.25,5,HOLDING,,,0%.125'..string.rep(',',20)..'\\n$'))
+assert(legacy(recorder.queue[2]):match(',MANUAL,MANUAL,0,0,0,0,%-0%.25,5,HOLDING,,,0%.125'..string.rep(',',20)..'\\n$'))
 snapshot.inputs.valid=false
 snapshot.effectiveModes.throttle='SEL'
 snapshot.thrust.request={throttleReason='PRIMARY ENGINES IDLE'}
 recorder:capture(snapshot,io,11,{})
-assert(recorder.queue[3]:match(',MANUAL,SEL,,,0'..string.rep(',',6)..'PRIMARY ENGINES IDLE'..string.rep(',',21)..'\\n$'))
+assert(legacy(recorder.queue[3]):match(',MANUAL,SEL,,,0'..string.rep(',',6)..'PRIMARY ENGINES IDLE'..string.rep(',',21)..'\\n$'))
 snapshot.inputs={valid=true,raw={left_lift=0,right_lift=15}}
 snapshot.modes.lateral='SEL'
 snapshot.lateralControl={state='MOVING',offset=2,remaining=-.25,sidewaysSpeed=.125,referenceHeading=57}
@@ -775,7 +795,19 @@ snapshot.thrust.request={sideDemand=-.5}
 local flight={controls={lateral={positionTrace={rawX=10,rawZ=20,x=11,z=19,
  sampleAt=11,projectedAt=11.5,velocityAt=10.9,evaluatedAt=11.5,credited=-.25,travelled=2.25,turning=false}}}}
 recorder:capture(snapshot,io,11.5,flight)
-assert(recorder.queue[4]:match(',SEL,MOVING,2,%-0%.25,0%.125,57,%-0%.5,0,15,10,20,11,19,11,11%.5,10%.9,11%.5,%-0%.25,2%.25,0\\n$'))
+assert(legacy(recorder.queue[4]):match(',SEL,MOVING,2,%-0%.25,0%.125,57,%-0%.5,0,15,10,20,11,19,11,11%.5,10%.9,11%.5,%-0%.25,2%.25,0\\n$'))
+io.thrust.speedControl={brakeReleaseLossBps=4,coastThresholdBps=5,zeroCoast=true}
+io.thrust.primaryRundown={epoch=10000,magnitude=.3,rate=.08,direction=-1}
+io.thrust.controllers={['thrust-ls']={boot='boot-left',status={primaryRundownVersion=2,
+ primaryRundownReason='ACTIVE',primaryRundownAt=11000,primaryRundownProfileEpoch=10000,
+ primaryRundownTarget=.22,primaryRundownEnvelope=.22,readbackAgeSeconds=.1,
+ primaryRundownEvaluationSeq=7,lastReceivedSeq=9}}}
+recorder:capture(snapshot,io,12,flight)
+assert(recorder.queue[5]:match(',4,5,1,10000,0%.3,0%.08,%-1,2,ACTIVE,11000,10000,0%.22,0%.22,0%.1,boot%-left'..string.rep(',',8)..',7,9,,'..string.rep(',',20)..'\\n$'))
+io.thrust.controllers['thrust-ls'].status.primaryRundownWrite={attempts=2,completed=1,failed=1,
+ result='SETTER_COMPLETED',at=12000,seq=8,level=60,profileEpoch=10000,confirmedAt=12100,confirmedLevel=60}
+recorder:capture(snapshot,io,12.5,flight)
+assert(recorder.queue[6]:match(',2,1,1,SETTER_COMPLETED,12000,8,60,10000,12100,60'..string.rep(',',10)..'\\n$'))
 """)
 
     def test_manual_neutral_turn_pause_uses_measured_yaw(self):
@@ -2250,6 +2282,33 @@ local function near(a,b) return math.abs(a-b)<1e-9 end
 
 
 class StrafeBalanceTests(unittest.TestCase):
+    def test_primary_brake_release_forecast_matches_recorded_rundown(self):
+        self.run_lua(r"""
+            for _,sign in ipairs({-1,1}) do
+                local loss=Thrust.primaryBrakeReleaseLoss(-sign*.23,-sign*.23,sign)
+                assert(near(loss,5.145))
+                -- Model replay: triangular actuator release consumes 2.645
+                -- b/s, leaving the pass-two 2.5 b/s residual allowance.
+                local speed=loss
+                local output=.23
+                while output>0 do
+                    local dt=math.min(.01,output/.08)
+                    local nextOutput=math.max(0,output-.08*dt)
+                    speed=speed-8*(output+nextOutput)/2*dt
+                    output=nextOutput
+                end
+                assert(near(speed,2.5))
+            end
+            assert(Thrust.primaryBrakeReleaseLoss(nil,0,1)==nil)
+            assert(Thrust.primaryBrakeReleaseLoss(.5,.5,1)==0)
+            assert(Thrust.primaryBrakeReleaseLoss(0,0,1)==0)
+            -- Independent second recording: at 6.258 b/s the applied
+            -- reverse magnitudes were .3164 on both sides. The new forecast
+            -- exceeds this speed by over 1 b/s, increasing release margin.
+            local forecast=Thrust.primaryBrakeReleaseLoss(-.31640625,-.31640625,1)
+            assert(forecast>6.2581043+1)
+        """)
+
     def test_primary_turn_assistance_requires_large_selected_heading_error(self):
         self.run_lua(r"""
             for _,error in ipairs({-.9,.9,-2,0,2}) do

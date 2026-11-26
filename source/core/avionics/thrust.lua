@@ -466,6 +466,36 @@ function Thrust:acceptStatus(io,sender,message,now)
         if message.directionVerified~=nil and type(message.directionVerified)~="boolean" then return self:rejected(io,"status",role,sender,"CONTROLLER STATUS FAILED VALIDATION") end
         if message.directionPhase~=nil and not bounded(message.directionPhase,32) then return self:rejected(io,"status",role,sender,"CONTROLLER STATUS FAILED VALIDATION") end
         if message.directionSignal~=nil and not integer(message.directionSignal,0,15) then return self:rejected(io,"status",role,sender,"CONTROLLER STATUS FAILED VALIDATION") end
+        if message.primaryRundownVersion~=nil and message.primaryRundownVersion~=1 and message.primaryRundownVersion~=2 and message.primaryRundownVersion~=3 then return self:rejected(io,"status",role,sender,"INVALID RUNDOWN DIAGNOSTICS") end
+        local writeTrace=message.primaryRundownWrite
+        if writeTrace~=nil then
+            if type(writeTrace)~="table" or not bounded(writeTrace.result,160) then return self:rejected(io,"status",role,sender,"INVALID RUNDOWN WRITE TRACE") end
+            for _,key in ipairs({"attempts","completed","failed"}) do
+                if not integer(writeTrace[key],0,maxSeq) then return self:rejected(io,"status",role,sender,"INVALID RUNDOWN WRITE TRACE") end
+            end
+            if writeTrace.completed+writeTrace.failed>writeTrace.attempts or
+                not integer(writeTrace.seq,-1,maxSeq) or writeTrace.seq>(message.lastReceivedSeq or -1) or
+                not integer(writeTrace.level,0,256) then return self:rejected(io,"status",role,sender,"INVALID RUNDOWN WRITE TRACE") end
+            for _,key in ipairs({"at","profileEpoch","confirmedAt"}) do
+                if writeTrace[key]~=nil and (not finite(writeTrace[key]) or writeTrace[key]<0 or writeTrace[key]>1e15) then return self:rejected(io,"status",role,sender,"INVALID RUNDOWN WRITE TRACE") end
+            end
+            if writeTrace.confirmedLevel~=nil and not integer(writeTrace.confirmedLevel,0,256) then return self:rejected(io,"status",role,sender,"INVALID RUNDOWN WRITE TRACE") end
+            writeTrace={attempts=writeTrace.attempts,completed=writeTrace.completed,failed=writeTrace.failed,
+                result=writeTrace.result,seq=writeTrace.seq,level=writeTrace.level,at=writeTrace.at,
+                profileEpoch=writeTrace.profileEpoch,confirmedAt=writeTrace.confirmedAt,confirmedLevel=writeTrace.confirmedLevel}
+        end
+        if message.primaryRundownEvaluationSeq~=nil and
+            (not integer(message.primaryRundownEvaluationSeq,-1,maxSeq) or
+            message.primaryRundownEvaluationSeq>(message.lastReceivedSeq or -1)) then
+            return self:rejected(io,"status",role,sender,"INVALID RUNDOWN DIAGNOSTICS")
+        end
+        if message.primaryRundownReason~=nil and not bounded(message.primaryRundownReason,32) then return self:rejected(io,"status",role,sender,"INVALID RUNDOWN DIAGNOSTICS") end
+        for _,key in ipairs({"primaryRundownAt","primaryRundownProfileEpoch"}) do
+            if message[key]~=nil and (not finite(message[key]) or message[key]<0 or message[key]>1e15) then return self:rejected(io,"status",role,sender,"INVALID RUNDOWN DIAGNOSTICS") end
+        end
+        for _,key in ipairs({"primaryRundownTarget","primaryRundownEnvelope"}) do
+            if message[key]~=nil and (not finite(message[key]) or message[key]<0 or message[key]>1) then return self:rejected(io,"status",role,sender,"INVALID RUNDOWN DIAGNOSTICS") end
+        end
         if message.direction~=nil and message.direction~="forward" and message.direction~="reverse" and
             message.direction~="unknown" then return self:rejected(io,"status",role,sender,"CONTROLLER STATUS FAILED VALIDATION") end
         node.status={thrustControlState=controlState,ready=message.ready,enabled=message.enabled,configValid=message.configValid,
@@ -479,7 +509,11 @@ function Thrust:acceptStatus(io,sender,message,now)
             leaseRemainingSeconds=message.leaseRemainingSeconds,
             direction=message.direction,directionVerified=message.directionVerified,
             directionPhase=message.directionPhase,directionSignal=message.directionSignal,
-            readbackAgeSeconds=message.readbackAgeSeconds,seq=message.seq,assembled=message.assembled}
+            readbackAgeSeconds=message.readbackAgeSeconds,seq=message.seq,assembled=message.assembled,
+            primaryRundownVersion=message.primaryRundownVersion,primaryRundownReason=message.primaryRundownReason,
+            primaryRundownAt=message.primaryRundownAt,primaryRundownTarget=message.primaryRundownTarget,
+            primaryRundownEnvelope=message.primaryRundownEnvelope,primaryRundownProfileEpoch=message.primaryRundownProfileEpoch,
+            primaryRundownEvaluationSeq=message.primaryRundownEvaluationSeq,primaryRundownWrite=writeTrace}
     end
     node.statusSeq,node.statusAt,node.lastSeen=message.seq,now,now
     node.statusReason=nil
@@ -832,6 +866,34 @@ local function speedOutputSlew(config,target,measured,previous,goal)
 end
 
 -- Summary: Apply SEL 0 coast hysteresis and speed-proportional braking through the output slew.
+-- Summary: Estimate the speed lost after releasing reverse drive, in b/s.
+-- Initial vessel-level fit: brake recording 0-1795709962162, 26 November 2026.
+-- Integrated two-second braking windows gave about 7.94 b/s^2 per normalized
+-- applied output; release readbacks fell about .08-.09 output/s. Use 8 and .08.
+-- The second run (0-1795711265613) still peaked at .88 b/s backward with a
+-- 1.5 b/s tail allowance. Pass two uses 2.5 b/s, adding a rounded 1 b/s
+-- release margin; this is an empirical adjustment pending another stop.
+-- Ignore drag in this
+-- short release forecast so drag cannot hide residual reverse acceleration.
+-- TODO: Once shaft RPM is recorded, replace this output-based triangular
+-- rundown and fixed tail allowance with measured shaft decay and thrust.
+-- This fit includes actuator/reporting latency; it is not propeller physics.
+
+-- Summary: Forecast residual speed loss from signed primary applied outputs; require both readbacks.
+function Thrust.primaryBrakeReleaseLoss(left,right,travelSign)
+    if not finite(left) or not finite(right) then return nil end
+    local function reverseMagnitude(value)
+        return math.max(0,-value*travelSign)
+    end
+    -- Use applied outputs: a queued reverse command while the shafts still
+    -- drive forward is not residual reverse thrust available for release.
+    local l=reverseMagnitude(left)
+    local r=reverseMagnitude(right)
+    if l==0 and r==0 then return 0 end
+    return 8*(l*l+r*r)/(4*.08)+2.5
+end
+
+-- Summary: Release SEL-zero braking before estimated residual thrust carries speed through zero.
 local function zeroSelectedSpeedDrive(self,c,loop,measured,sampleAt,now,directMaximum)
     -- SEL 0 brake. Her drag alone slows her at about v/5 per second, and
     -- a reversal takes 5-8 s, so full reverse arrived when she was nearly
@@ -840,9 +902,8 @@ local function zeroSelectedSpeedDrive(self,c,loop,measured,sampleAt,now,directMa
     -- (zero_brake_gain per b/s, default 0.06), so it fades to zero thrust
     -- as she stops. It brakes against the original direction of travel
     -- only; below 2 b/s, or if she has reversed, it latches to a coast
-    -- (re-armed only if she later moves faster than 3 b/s). Brake output
-    -- never exceeds the speed-proportional value, so it cannot start her
-    -- moving the other way.
+    -- (re-armed only if she later moves faster than 3 b/s). The release
+    -- forecast below additionally accounts for remaining actuator rundown.
     local applied=self:speedApplied(now)
     local previous=loop.output or (finite(applied.left) and finite(applied.right) and
         clamp((applied.left+applied.right)/2/directMaximum,-1,1)) or 0
@@ -874,10 +935,18 @@ local function zeroSelectedSpeedDrive(self,c,loop,measured,sampleAt,now,directMa
         -- New SEL 0: brake against the current direction of travel.
         loop.zeroCoast=math.abs(measured)<=stopBand
         loop.brakeSign=measured>0 and 1 or -1
+        loop.brakeReleaseRearmSpeed=nil
     end
-    if not loop.zeroCoast and (measured*loop.brakeSign<=stopBand) then loop.zeroCoast=true end
+    local releaseLoss=Thrust.primaryBrakeReleaseLoss(applied.left,applied.right,loop.brakeSign)
+    local releaseThreshold=math.max(stopBand,releaseLoss or 0)
+    if not loop.zeroCoast and measured*loop.brakeSign<=releaseThreshold then
+        loop.zeroCoast=true
+        -- Keep the release latch while the outputs decay. A falling forecast
+        -- must not re-arm braking on the same unfinished stop.
+        loop.brakeReleaseRearmSpeed=math.max(3,math.abs(measured)+.5)
+    end
     -- Re-arm only for a real new movement (above 3 b/s either way).
-    if loop.zeroCoast and math.abs(measured)>math.max(3,stopBand) then
+    if loop.zeroCoast and math.abs(measured)>math.max(3,stopBand,loop.brakeReleaseRearmSpeed or 0) then
         loop.zeroCoast=false;loop.brakeSign=measured>0 and 1 or -1
     end
     local coast=loop.zeroCoast==true
@@ -891,7 +960,8 @@ local function zeroSelectedSpeedDrive(self,c,loop,measured,sampleAt,now,directMa
     local braking=desired~=0 or output~=0
     self.speedControl={state=braking and "BRAKING" or "COASTING",controlStatus=braking and "BRAKING" or "COASTING",
         available=true,targetSpeed=0,measuredSpeed=measured,error=-measured,output=output,
-        zeroCoast=coast,coastThresholdBps=stopBand,saturated=false}
+        zeroCoast=coast,coastThresholdBps=releaseThreshold,
+        brakeReleaseLossBps=releaseLoss,saturated=false}
     return loop.driveRequest
 end
 
@@ -1855,6 +1925,37 @@ function Thrust:makeTargets(io,now,controls,sideDemand)
         self.headingControl.headingError or nil
     local left,right,reduction=Thrust.assistPrimaryTurn(targets["primary-left"],targets["primary-right"],yaw,
         headingError,io.vessel and io.vessel.forwardSpeed)
+    local zeroStop=mode=="SEL" and controls.targets and controls.targets.speed==0
+    if zeroStop then
+        -- Selected-zero braking uses equal primary demand; yaw belongs to
+        -- the lateral mixer while the main propellers are winding down.
+        left,right,reduction=targets["primary-left"],targets["primary-right"],0
+    end
+    local rundown=zeroStop and controls.apPrimaryIdle~=true and not idleReason
+    local goal=math.abs(left)
+    local rundownEpoch=os.epoch and os.epoch("utc")
+    if self.primaryRundown and finite(rundownEpoch) and
+        rundownEpoch-self.primaryRundown.epoch>(self.primaryRundown.magnitude/.08+2)*1000 then
+        self.primaryRundown=nil
+    end
+    if self.primaryRundown and (not rundown or left*self.primaryRundown.direction<0 or
+        goal>(self.primaryRundownGoal or 0)+.000001) then
+        self.primaryRundown=nil
+    end
+    if rundown and not self.primaryRundown then
+        local applied=self:speedApplied(now)
+        local epoch=os.epoch and os.epoch("utc")
+        if finite(epoch) and finite(applied.left) and finite(applied.right) and
+            applied.left*applied.right>0 and (left==0 or left*applied.left>0) and
+            goal<math.max(math.abs(applied.left),math.abs(applied.right)) then
+            -- One shared epoch and envelope for both controllers. A lower
+            -- side holds until the falling envelope reaches it; never
+            -- increase thrust to match the higher side during release.
+            self.primaryRundown={epoch=epoch,magnitude=math.max(math.abs(applied.left),math.abs(applied.right)),
+                direction=applied.left>0 and 1 or -1,rate=.08}
+        end
+    end
+    self.primaryRundownGoal=self.primaryRundown and goal or nil
     -- Preserve primary idle through the final turn-assist output selection.
     if controls.apPrimaryIdle==true or idleReason or (mode=="SEL" and self.speedControl.zeroCoast==true) then left,right,reduction=0,0,0 end
     targets["primary-left"],targets["primary-right"]=left,right
@@ -1950,6 +2051,9 @@ function Thrust:send(io,now,targets)
             role=role,targets=roleTargets,issuedAtEpochMs=os.epoch and os.epoch("utc") or nil,ttlSeconds=self.config.thrust.command_ttl_seconds}
         local primary=role=="thrust-ls" and "primary-left" or (role=="thrust-rs" and "primary-right" or nil)
         if primary then
+            if self.primaryRundown then
+                packet.primaryRundown=copy(self.primaryRundown)
+            end
             local target=roleTargets[primary] or 0
             local current=node.status and node.status.direction
             local phase=node.status and node.status.directionPhase

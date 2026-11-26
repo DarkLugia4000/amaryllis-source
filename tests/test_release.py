@@ -808,6 +808,127 @@ assert(STATES["thrust-lb"].leaseUntil==11)
 ''')
         return lua
 
+    def test_shared_primary_rundown_envelope_and_authority(self):
+        lua = self.propulsion_runtime()
+        lua.execute(r'''
+local endpoint=MODULES['thrust-ls']
+local state=STATES['thrust-ls']
+state.direction=-1;state.desiredTargets['primary-left']=0
+state.primaryRundown={epoch=10000,magnitude=.30,rate=.08,direction=-1}
+local plan=endpoint.primaryRundownTarget
+assert(math.abs(plan(state,'primary-left',.25,11000,true)-.22)<1e-9)
+-- Both sides use the same clock curve after the larger side catches down.
+assert(plan(state,'primary-left',.30,11000,true)==plan(state,'primary-left',.25,11000,true))
+assert(plan(state,'primary-left',.10,11000,true)==.10,'lower side never increases')
+assert(plan(state,'primary-left',.20,15000,true)==0)
+assert(plan(state,'primary-left',.20,11000,false)==nil,'expired command uses ordinary safe-zero ramp')
+state.direction=1
+assert(plan(state,'primary-left',.20,11000,true)==nil,'rundown cannot reverse direction')
+state.direction=-1;state.desiredTargets['primary-left']=-.5
+assert(plan(state,'primary-left',.20,11000,true)==nil,'new drive demand overrides release')
+state.desiredTargets['primary-left']=-.15
+assert(plan(state,'primary-left',.20,13000,true)==.15,'decreasing nonzero brake retains common floor')
+os.epoch=function() return 11000 end
+local function packet(profile)
+    local targets={};for _,drive in ipairs(state.drives) do targets[drive]=0 end
+    return {v=1,kind='thrust_command',role=state.role,nodeBoot=state.nodeBoot,
+        session=state.session,seq=state.lastReceivedSeq+1,ttlSeconds=1,
+        targets=targets,primaryRundown=profile}
+end
+local valid={epoch=10000,magnitude=.3,rate=.08,direction=-1}
+assert(endpoint.processPacket(state,0,packet(valid),state.config.protocol,NOW))
+assert(state.primaryRundown.epoch==10000)
+assert(not endpoint.processPacket(state,0,packet({epoch=10000,magnitude=2,rate=.08,direction=-1}),state.config.protocol,NOW))
+assert(state.primaryRundown==nil,'bad profile revokes special rundown')
+assert(endpoint.processPacket(state,0,packet(valid),state.config.protocol,NOW))
+local evaluatedSeq=state.lastReceivedSeq
+state.primaryRundownDiagnostic={epoch=11000,reason='ACTIVE',target=.22,envelope=.22,profileEpoch=10000,seq=evaluatedSeq}
+local previous=state.primaryRundownDiagnostic
+assert(endpoint.processPacket(state,0,packet(valid),state.config.protocol,NOW))
+assert(state.primaryRundownDiagnostic==previous,'same-profile renewal retains last evaluation')
+assert(previous.seq<state.lastReceivedSeq and previous.epoch==11000,'renewal does not relabel old evaluation as fresh')
+local reported=endpoint.statusPacket(state,NOW)
+assert(reported.primaryRundownVersion==3 and reported.primaryRundownReason=='ACTIVE')
+assert(reported.primaryRundownEvaluationSeq==evaluatedSeq and reported.lastReceivedSeq>evaluatedSeq)
+assert(reported.primaryRundownAt==11000 and reported.primaryRundownProfileEpoch==10000)
+local id;for candidate,role in pairs(IDS) do if role=='thrust-ls' then id=candidate end end
+core.controllers['thrust-ls'].lastIssuedSeq=state.lastReceivedSeq
+reported.primaryRundownWrite={attempts=2,completed=1,failed=1,result='SETTER_COMPLETED',
+ at=11000,seq=evaluatedSeq,level=60,profileEpoch=10000,confirmedAt=11000,confirmedLevel=60}
+assert(core:acceptStatus(io,id,reported,NOW))
+assert(core.controllers['thrust-ls'].status.primaryRundownTarget==.22)
+assert(core.controllers['thrust-ls'].status.primaryRundownWrite.confirmedLevel==60)
+reported.seq=reported.seq+1;reported.primaryRundownTarget=2
+assert(not core:acceptStatus(io,id,reported,NOW),'reject out-of-range diagnostic target')
+assert(endpoint.processPacket(state,0,packet({epoch=10500,magnitude=.3,rate=.08,direction=-1}),state.config.protocol,NOW))
+assert(state.primaryRundownDiagnostic==nil,'new profile clears old trace')
+state.primaryRundownDiagnostic=previous
+assert(endpoint.processPacket(state,0,packet(nil),state.config.protocol,NOW))
+assert(state.primaryRundownDiagnostic==nil,'profile removal clears old trace')
+assert(endpoint.processPacket(state,0,packet(valid),state.config.protocol,NOW))
+state.primaryRundownDiagnostic=previous
+endpoint.targetsAt(state,NOW+2)
+assert(state.primaryRundownDiagnostic==nil,'lease expiry clears old trace')
+''')
+
+    def test_rundown_write_survives_identical_renewal_only(self):
+        for mode in ("renew", "changed", "expired", "permission", "profile", "removed", "stop"):
+            with self.subTest(mode=mode):
+                lua = self.propulsion_runtime()
+                lua.globals().TEST_MODE = mode
+                lua.execute(r'''
+local endpoint=MODULES['thrust-ls'];local state=STATES['thrust-ls'];local hardware
+for i=1,40 do
+ local name,value=debug.getupvalue(endpoint.controllerTick,i)
+ if name=='Hardware' then hardware=value end
+end
+assert(hardware)
+local shifts,bindings={},{}
+for _,drive in ipairs(state.drives) do
+ shifts[drive]=drive=='primary-left' and 80 or 0;bindings[drive]={drive=drive}
+end
+os.epoch=function() return NOW*1000 end
+local function command()
+ local targets={};for _,drive in ipairs(state.drives) do targets[drive]=0 end
+ if TEST_MODE=='changed' then targets['lateral-ls-p']=.1 end
+ return {v=1,kind='thrust_command',role=state.role,nodeBoot=state.nodeBoot,session=state.session,
+  seq=state.lastReceivedSeq+1,ttlSeconds=1,targets=targets,primaryDirectionReady=TEST_MODE~='permission',
+  primaryRundown={epoch=10000,magnitude=.3125,rate=.08,direction=-1}}
+end
+state.direction=-1;state.directionVerified=true;state.directionPhase='READY'
+local initial=command();initial.targets['lateral-ls-p']=0;initial.primaryDirectionReady=true
+assert(endpoint.processPacket(state,0,initial,state.config.protocol,NOW))
+hardware.readShift=function(binding) return shifts[binding.drive],nil,'incremental' end
+hardware.writeShift=function(binding,level,allowed)
+ assert(allowed())
+ -- A peripheral mode read yields to a renewal or advances beyond the lease.
+ if TEST_MODE=='expired' then NOW=NOW+2
+ else
+  local message=command()
+  if TEST_MODE=='profile' then message.primaryRundown.epoch=10500 end
+  if TEST_MODE=='removed' then message.primaryRundown=nil end
+  if TEST_MODE=='stop' then message.kind='thrust_stop' end
+  assert(endpoint.processPacket(state,0,message,state.config.protocol,NOW))
+ end
+ if not allowed() then return false,'command authority expired after reading mode' end
+ shifts[binding.drive]=level;return true
+end
+NOW=11
+-- Per-pass dt is .1; the successful-output clock has accumulated one second.
+endpoint.controllerTick(state,state.config,bindings,NOW,.1)
+local trace=assert(state.primaryRundownWrite)
+assert(trace.attempts==1)
+if TEST_MODE=='renew' then
+ assert(shifts['primary-left']==60,'elapsed rundown catches shared envelope despite short per-pass dt')
+ assert(trace.completed==1 and trace.failed==0 and trace.result=='SETTER_COMPLETED')
+ assert(trace.confirmedLevel==60 and trace.confirmedAt==11000)
+ assert(trace.seq<state.lastReceivedSeq,'identical renewal preserved original write identity')
+else
+ assert(shifts['primary-left']==80,'changed authority or expired lease cancels write')
+ assert(trace.failed==1 and trace.completed==0 and trace.confirmedAt==nil)
+end
+''')
+
     def test_propulsion_lease_recovers_after_repeated_lost_commands(self):
         """Expire all drive leases, keep dropping renewals, then recover without a reboot."""
         lua = self.propulsion_runtime()

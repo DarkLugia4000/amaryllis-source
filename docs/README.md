@@ -38,7 +38,7 @@ Check their status sections and current source when assessing remaining work.
 ## Development
 
 - [Git migration and verification](development/GIT-MIGRATION.md)
-- [Current development workflow](../README.md)
+- [Development workflow](development/WORKFLOW.md)
 - [Maintenance delivery record](development/MAINTENANCE-ROADMAP.md)
 - [Control refactoring evidence and measurements](development/CONTROL-REFACTOR-EVIDENCE.md)
 - [Flight and thrust tuning reference](development/TUNING-REFERENCE.md)

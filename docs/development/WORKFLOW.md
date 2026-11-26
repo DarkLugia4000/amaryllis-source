@@ -1,0 +1,139 @@
+# Development workflow
+
+Run the commands below from the repository root. For installation and the system
+overview, start with the [main README](../../README.md).
+
+## Development setup
+
+Use Python 3.12 for the dev environment.
+
+    python -m venv .venv
+    .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+    .\.venv\Scripts\python.exe project.py check
+    .\.venv\Scripts\python.exe project.py test --quick
+
+The test dependency is pinned to Lupa 2.6 with its Lua 5.2 engine. Test fixtures
+use synthetic computer assignments under .cache/fixtures, enabling tests to be run without a minecraft save or similar.
+
+## Authoritative source, installation disks and updates
+
+The maintained software is this repository. Edit Lua under `source/core/` and
+`source/library/`; shipped hover/level defaults live under `source/calibration/`.
+Five shared installer and console modules have one editing location in the builder's `assets/` folder:
+`core-progress.lua`, `core-media.lua`, `identity-watch.lua`, `panel-console.lua`
+and `remote-panel.lua`. Their installed paths are mapped by `source/baseline.json`.
+The migration fingerprints in that file are historical reference values.
+
+Shared auxiliary computer implementations live in `source/library/packages/common/`.
+The `sharedModules` mapping in `source/baseline.json` expands each implementation
+to its role destinations during collection. Edit the canonical file once; the
+build checks family membership and rejects conflicting destination copies.
+Role-specific configuration remains beside each role's package directory.
+
+### Windows interface
+
+Open `disk-builder/Start Builder.cmd`. **Project source** is
+selected automatically when maintained source is present. Select the project
+folder and choose:
+
+- **Build installer** to create a new commissioning disk package.
+- **Update existing ship…** to open the updater with maintained source selected.
+  Select the target save and an external backup folder. **Preview update** bundles
+  current source for review; **Apply update** installs that reviewed snapshot.
+
+Both actions read software from the project. A world folder is needed only as
+the update destination. Existing IDs, stored settings, PID configuration,
+learning and restart records are retained by the updater. Managed programs are
+overwritten and obsolete managed files are removed after an external backup.
+The world may stay open while applying: running computers keep their program until
+they reboot, and runtime files (`installer/install_status.json`, `avionics/data/`) are
+never touched.
+
+### Project commands
+
+    python project.py build
+    python project.py update --target "D:\Minecraft\saves\Amaryllis"
+    python project.py gui
+
+`build` creates a verified installer under `output/installers/`. `update` bundles
+current source in a temporary workspace and prints a preview; it leaves the target
+unchanged and removes the temporary payload when the command finishes.
+To apply that replacement with an external backup:
+
+    python project.py update --target "D:\Minecraft\saves\Amaryllis" --apply --backup "D:\Amaryllis Backups"
+
+Project builds read maintained inputs directly and use a temporary compatibility
+adapter for the existing packager. The adapter is removed after collection.
+Production builds do not use the test fixture cache. Installed program payloads
+remain five files on core and three on state and each auxiliary.
+
+### Release provenance
+
+Project releases record their source commit, whether the working tree contained
+uncommitted changes, and a fingerprint of the source and builder inputs. This
+record is included in `media/release.json`, the shared README and the local
+build report. The updater shows it in the preview and retains it in each
+computer's existing installation record. The floppy disk's installer also
+records it during fresh installation.
+
+The local build report lists individual input fingerprints and source paths;
+it remains outside the distributable installer ZIP. Source changes during a
+build prevent that output from being published as complete.
+
+Standalone Disk Builder ZIPs include a release snapshot of the maintained source
+and its revision record. They can build installers without a Minecraft save or
+Git. Their source snapshot represents that packaged release. Work on future
+software in this repository and create a new utility snapshot when distributing it.
+
+The builder's guarded compatibility transformations remain in place. Changes
+to guarded helper sections may require corresponding builder/asset updates.
+
+## Validation
+
+    .\.venv\Scripts\python.exe project.py test
+
+Run an individual maintained suite from the repository root with:
+
+    .\.venv\Scripts\python.exe -m unittest tests.test_displays
+
+The full suite covers builder failure paths, bundle installation and recovery,
+legacy source formats, navigator presentation, information/assembly behavior,
+persistent pilot modes and current-source packaging. Results are written to
+output/tests/. Quick checks include current-source compilation and bundle
+round trips.
+
+Cobalt is extracted from an explicitly selected CC:Tweaked mod JAR:
+
+    .\.venv\Scripts\python.exe project.py cobalt --cc-mod "<cc-tweaked.jar>" --java "<java.exe>"
+
+The pinned dependency is Cobalt 0.9.9, with its expected checksum in
+tests/fixtures/cobalt.json. The Java engine and Minecraft binaries stay outside
+Git. Upstream is https://codeberg.org/SquidDev/Cobalt.
+
+## Git workflow
+
+The main branch tracks origin/main at git@github.com:DarkLugia4000/amaryllis-source.git.
+
+    git status
+    git diff
+    git add <reviewed-files>
+    git commit -m "Describe the resulting change"
+
+Keep generated outputs and private ship data outside commits. Preserve shipped
+ZIPs as immutable releases. Git source history starts at this migration; the
+older narrative remains in docs/history/LEGACY-HISTORY.md.
+
+## Operating contracts
+
+Ordinary core restarts and recoverable faults preserve applied lift settings.
+Stop Systems and Kill Lift retain their deliberate operator-controlled shutdown
+paths. Selected pilot modes and values survive supported restarts and recovery.
+Assembly uncertainty continues checking and warns after five minutes.
+Computer names remain lowercase. Major functions receive concise purpose
+summaries, and source comments stay aligned with implemented behavior.
+
+See [the information plan](../plans/NAVIGATOR-INFORMATION-PLAN.md),
+[maintenance catalogue](../maintenance/Amaryllis-Maintenance-Catalogue.md) and
+[core responsibilities](../architecture/Amaryllis-Core-File-Responsibilities.md).
+
+See [migration details](../development/GIT-MIGRATION.md) for source provenance and scope.

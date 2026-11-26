@@ -2,7 +2,7 @@ local Mathx = require("avionics.mathx")
 -- Section: Debug recording | Removable-media capture and paced buffered writes.
 -- Optional removable-media diagnostics. Only the worker performs disk I/O.
 local Debug={};Debug.__index=Debug
-local BUILD="amaryllis-debug-disk-v145-lift-ack-priority"
+local BUILD="amaryllis-debug-disk-v148-rundown-write-trace"
 local columns={"epoch_ms","sample","sample_dt","ap_phase","ap_active","distance","cross_track","cross_speed",
  "selected_speed","cruise_speed","planned_speed","forward_speed","acceleration","sensor_age","sensor_at","speed_error","speed_integral",
  "speed_output","request_left","request_right","applied_left","applied_right","left_direction","right_direction",
@@ -53,6 +53,22 @@ local strafePositionColumns={"strafe_raw_x","strafe_raw_z","strafe_projected_x",
  "strafe_position_sample_s","strafe_position_projected_at_s","strafe_projection_velocity_sample_s",
  "strafe_position_evaluated_s","strafe_displacement_credited_blocks","strafe_travelled_blocks","strafe_displacement_skipped_turn"}
 for _,key in ipairs(strafePositionColumns) do columns[#columns+1]=key end
+local rundownColumns={"brake_release_loss_bps","brake_release_threshold_bps","brake_zero_coast",
+ "rundown_core_epoch_ms","rundown_core_start_magnitude","rundown_core_rate","rundown_core_direction"}
+local rundownNodeFields={"version","reason","evaluated_epoch_ms","profile_epoch_ms","target","envelope",
+ "readback_age_s","boot"}
+for _,side in ipairs({"left","right"}) do
+ for _,key in ipairs(rundownNodeFields) do rundownColumns[#rundownColumns+1]="rundown_"..side.."_"..key end
+end
+for _,key in ipairs(rundownColumns) do columns[#columns+1]=key end
+local rundownSequenceColumns={"rundown_left_evaluation_seq","rundown_left_received_seq",
+ "rundown_right_evaluation_seq","rundown_right_received_seq"}
+for _,key in ipairs(rundownSequenceColumns) do columns[#columns+1]=key end
+local rundownWriteFields={"attempts","completed","failed","result","attempt_epoch_ms","command_seq",
+ "level","profile_epoch_ms","confirmed_epoch_ms","confirmed_level"}
+for _,side in ipairs({"left","right"}) do
+ for _,key in ipairs(rundownWriteFields) do columns[#columns+1]="rundown_"..side.."_write_"..key end
+end
 local eventColumns={"epoch_ms","core_clock_s","event","quadrant","node_boot","command_seq","stage","status_seq",
  "received_seq","applied_seq","node_received_epoch_ms","node_applied_epoch_ms","status_sent_epoch_ms","send_succeeded",
  "core_receiver_epoch_ms","core_handler_epoch_ms","core_queue_wait_s","radio_priority",
@@ -336,6 +352,40 @@ function Debug:capture(snapshot,io,now,flight)
   strafe_displacement_credited_blocks=trace.credited,strafe_travelled_blocks=trace.travelled,
   strafe_displacement_skipped_turn=trace.turning}
  for _,key in ipairs(strafePositionColumns) do nextColumn=nextColumn+1;row[nextColumn]=positionData[key] end
+ -- Record endpoint evaluation time separately from readback/status age:
+ -- ACTIVE describes the last envelope evaluation, not proof of a write or
+ -- simultaneous left/right physical output. Missing version marks old code.
+ local profile=t.primaryRundown or {}
+ local rundownData={brake_release_loss_bps=speed.brakeReleaseLossBps,
+  brake_release_threshold_bps=speed.coastThresholdBps,brake_zero_coast=speed.zeroCoast,
+  rundown_core_epoch_ms=profile.epoch,rundown_core_start_magnitude=profile.magnitude,
+  rundown_core_rate=profile.rate,rundown_core_direction=profile.direction}
+ for _,side in ipairs({"left","right"}) do
+  local role=side=="left" and "thrust-ls" or "thrust-rs"
+  local node=(t.controllers or {})[role] or {};local status=node.status or {}
+  local prefix="rundown_"..side.."_"
+  rundownData[prefix.."version"]=status.primaryRundownVersion
+  rundownData[prefix.."reason"]=status.primaryRundownReason
+  rundownData[prefix.."evaluated_epoch_ms"]=status.primaryRundownAt
+  rundownData[prefix.."profile_epoch_ms"]=status.primaryRundownProfileEpoch
+  rundownData[prefix.."target"]=status.primaryRundownTarget
+  rundownData[prefix.."envelope"]=status.primaryRundownEnvelope
+  rundownData[prefix.."readback_age_s"]=status.readbackAgeSeconds
+  rundownData[prefix.."boot"]=node.boot
+  rundownData[prefix.."evaluation_seq"]=status.primaryRundownEvaluationSeq
+  rundownData[prefix.."received_seq"]=status.lastReceivedSeq
+ end
+ for _,key in ipairs(rundownColumns) do nextColumn=nextColumn+1;row[nextColumn]=rundownData[key] end
+ for _,key in ipairs(rundownSequenceColumns) do nextColumn=nextColumn+1;row[nextColumn]=rundownData[key] end
+ for _,side in ipairs({"left","right"}) do
+  local role=side=="left" and "thrust-ls" or "thrust-rs"
+  local status=((t.controllers or {})[role] or {}).status or {}
+  local trace=status.primaryRundownWrite or {}
+  local values={attempts=trace.attempts,completed=trace.completed,failed=trace.failed,result=trace.result,
+   attempt_epoch_ms=trace.at,command_seq=trace.seq,level=trace.level,profile_epoch_ms=trace.profileEpoch,
+   confirmed_epoch_ms=trace.confirmedAt,confirmed_level=trace.confirmedLevel}
+  for _,key in ipairs(rundownWriteFields) do nextColumn=nextColumn+1;row[nextColumn]=values[key] end
+ end
  local out={};for i=1,#columns do out[i]=cell(row[i]) end
  self.lastAt=now;self.lastSpeed=v.forwardSpeed
  if #self.queue>=self.maxQueue then self.dropped=self.dropped+1;return end

@@ -213,6 +213,9 @@ local function invalidate(state, reason, receivedSeq, accepted)
     state.pendingAppliedSeq = nil
     state.ackAccepted = accepted == true
     state.primaryDirectionReady = false
+    state.primaryRundown = nil
+    state.primaryRundownDiagnostic = nil
+    state.primaryRundownRampAt = nil
     if receivedSeq ~= nil then state.ackSeq = receivedSeq end
     state.reason = reason
     state.phase = "RAMPING TO ZERO"
@@ -352,7 +355,46 @@ function Thrust.processPacket(state, sender, message, protocol, now)
         invalidate(state, reason, message.seq, false)
         return false
     end
-    state.writerToken = state.writerToken + 1
+    local rundown=message.primaryRundown
+    local primary=state.role=="thrust-ls" and "primary-left" or
+        (state.role=="thrust-rs" and "primary-right" or nil)
+    if rundown~=nil then
+        local epoch=os.epoch and os.epoch("utc")
+        if not primary or type(rundown)~="table" or
+            not finite(epoch) or not finite(rundown.epoch) or rundown.epoch>epoch+250 or
+            epoch-rundown.epoch>60000 or not finite(rundown.magnitude) or
+            rundown.magnitude<0 or rundown.magnitude>1 or rundown.rate~=.08 or
+            (rundown.direction~=1 and rundown.direction~=-1) or
+            targets[primary]*rundown.direction<0 or math.abs(targets[primary])>rundown.magnitude then
+            invalidate(state,"INVALID PRIMARY RUNDOWN",message.seq,false)
+            return false
+        end
+    end
+    local previousRundown=state.primaryRundown
+    local sameProfile=(not previousRundown and not rundown) or
+        (previousRundown and rundown and previousRundown.epoch==rundown.epoch and
+        previousRundown.magnitude==rundown.magnitude and previousRundown.rate==rundown.rate and
+        previousRundown.direction==rundown.direction)
+    local sameDemand=true
+    for _,drive in ipairs(state.drives) do
+        if targets[drive]~=(state.desiredTargets or {})[drive] then sameDemand=false end
+    end
+    -- Only identical, live rundown renewals preserve a writer already inside
+    -- a peripheral call. Any drive change, permission change, expired lease
+    -- or new profile revokes the old writer token as before.
+    local renewWriter=rundown and sameProfile and sameDemand and state.hasCommand and
+        finite(state.leaseUntil) and now<=state.leaseUntil and
+        state.primaryDirectionReady==(message.primaryDirectionReady==true)
+    if not renewWriter then state.writerToken = state.writerToken + 1 end
+    state.primaryRundown=rundown and {epoch=rundown.epoch,magnitude=rundown.magnitude,
+        direction=rundown.direction,rate=rundown.rate} or nil
+    -- A renewal does not erase the last writer evaluation. Its timestamp and
+    -- command sequence remain historical until the writer evaluates again.
+    -- Replacing/removing a profile invalidates that previous profile's trace.
+    if not sameProfile then
+        state.primaryRundownDiagnostic=nil
+        state.primaryRundownRampAt=rundown and now or nil
+    end
     state.desiredTargets, state.requestedTargets = targets, copyMap(targets)
     state.leaseUntil, state.pendingAppliedSeq = now + ttl, message.seq
     state.ackSeq, state.ackAccepted = message.seq, true
@@ -367,6 +409,22 @@ function Thrust.targetsAt(state, now)
         state.leaseUntil = false -- one-shot expiry marker; no repeated token bumps
     end
     return state.leaseUntil and copyMap(state.desiredTargets) or zeroMap(state.drives)
+end
+
+-- Summary: Bound a primary's rundown by a shared UTC envelope and its current output, preserving lease and direction gates.
+function Thrust.primaryRundownTarget(state,drive,current,epoch,active)
+    local plan=state.primaryRundown
+    if not drive:match("^primary%-") then return nil,"NOT_PRIMARY" end
+    if not active then return nil,"LEASE_INACTIVE" end
+    if not plan then return nil,"NO_PROFILE" end
+    if state.directionVerified~=true or state.directionPhase~="READY" then return nil,"DIRECTION_NOT_READY" end
+    if state.direction~=plan.direction then return nil,"DIRECTION_MISMATCH" end
+    if state.desiredTargets[drive]*plan.direction<0 or
+        math.abs(state.desiredTargets[drive])>plan.magnitude then return nil,"DEMAND_CHANGED" end
+    if not finite(epoch) or epoch<plan.epoch then return nil,"CLOCK_INVALID" end
+    local envelope=math.max(0,plan.magnitude-plan.rate*(epoch-plan.epoch)/1000)
+    local target=math.min(current,math.max(math.abs(state.desiredTargets[drive]),envelope))
+    return target,"ACTIVE",envelope
 end
 
 local function settingMatches(definition, demand, shift)
@@ -694,10 +752,12 @@ local function controllerTick(state, config, hardwareBindings, now, dt)
     state.phase = state.phase or "READY"
     local liveTargets = Thrust.targetsAt(state, now)
     local token = state.writerToken
+    local evaluationSeq=state.lastReceivedSeq
     local function jobCurrent() return not state.stopping and state.writerToken == token end
     -- Reads change nothing, so a command that arrives mid-pass lets the pass finish:
     -- the readback age then stays current while commands arrive faster than a
-    -- full read-write-read pass. Writes stop as soon as a newer command arrives.
+    -- full read-write-read pass. Changed commands revoke writes; identical
+    -- live rundown renewals preserve the in-progress operation.
     local function running() return not state.stopping end
     local rawReadbacks = {}
     local hardwareFault
@@ -772,7 +832,23 @@ local function controllerTick(state, config, hardwareBindings, now, dt)
                 if state.hasCommand then invalidate(state, "TRANSMISSION MODE CHANGED; RAMPING TO ZERO", nil, false) end
             elseif raw.mode == "incremental" and integer(raw.level, 0, 256) then
                 local current = definition.maxLevel > 0 and clamp(raw.level / definition.maxLevel, 0, 1) or 0
-                local nextValue = Thrust.ramp(current, wanted, definition.rampPerSecond, dt)
+                local epoch=os.epoch and os.epoch("utc")
+                local coordinated,rundownReason,envelope=Thrust.primaryRundownTarget(state,drive,current,epoch,activeCommand)
+                if drive:match("^primary%-") then
+                    state.primaryRundownDiagnostic={epoch=epoch,reason=rundownReason,seq=evaluationSeq,
+                        target=coordinated,envelope=envelope,
+                        profileEpoch=state.primaryRundown and state.primaryRundown.epoch}
+                end
+                if coordinated~=nil then wanted=coordinated end
+                -- Account for time since the last successful rundown update.
+                -- Failed/cancelled passes retain their elapsed credit, capped
+                -- at one second to bound a delayed write. Ordinary ramps keep
+                -- their original per-pass dt and direction-change behavior.
+                local rampDt=dt
+                if coordinated~=nil and finite(state.primaryRundownRampAt) then
+                    rampDt=clamp(os.clock()-state.primaryRundownRampAt,0,1)
+                end
+                local nextValue = Thrust.ramp(current, wanted, definition.rampPerSecond, rampDt)
                 local nextLevel = nextValue and Hardware.expectedShift(nextValue, 0, definition.maxLevel)
                 if nextLevel ~= nil and nextLevel ~= raw.level then
                     local stillAuthorized = activeCommand and math.abs(wanted) > 0
@@ -780,13 +856,35 @@ local function controllerTick(state, config, hardwareBindings, now, dt)
                         return jobCurrent() and state.leaseUntil and state.leaseUntil ~= false and os.clock() <= state.leaseUntil
                     end or jobCurrent
                     local ok, reason
+                    local trace
+                    if coordinated~=nil then
+                        trace=state.primaryRundownWrite or {attempts=0,completed=0,failed=0}
+                        state.primaryRundownWrite=trace
+                        trace.attempts=trace.attempts+1
+                        trace.at=os.epoch and os.epoch("utc")
+                        trace.seq=evaluationSeq
+                        trace.level=nextLevel
+                        trace.profileEpoch=state.primaryRundown and state.primaryRundown.epoch
+                        trace.result="ATTEMPTING"
+                        trace.confirmedAt=nil;trace.confirmedLevel=nil
+                    end
                     if not stillAuthorized and nextLevel == 0 then
                         ok, reason = Hardware.writeShift(binding, 0, allowed)
                     else
                         ok, reason = Hardware.writeShift(binding, nextLevel, allowed)
                     end
+                    if trace then
+                        if ok then
+                            trace.completed=trace.completed+1;trace.result="SETTER_COMPLETED"
+                            if jobCurrent() then state.primaryRundownRampAt=os.clock() end
+                        else
+                            trace.failed=trace.failed+1
+                            trace.result=wireText(reason or "WRITE_FAILED",160)
+                        end
+                    end
                     if not ok then hardwareFault = hardwareFault or reason end
-                elseif nextLevel == nil then state.reason = "INVALID SHIFT LIMIT: " .. drive end
+                elseif nextLevel == nil then state.reason = "INVALID SHIFT LIMIT: " .. drive
+                elseif coordinated~=nil then state.primaryRundownRampAt=os.clock() end
             elseif raw.mode == "direct" and raw.level > 0 and state.hasCommand and wanted == 0 then
                 -- Direct-mode readback has different units. A zero command is
                 -- safe in either mode; no direct-mode intermediate is inferred.
@@ -808,6 +906,11 @@ local function controllerTick(state, config, hardwareBindings, now, dt)
         if binding then
             local level, _, mode = Hardware.readShift(binding, running)
             if level ~= nil then settled[drive] = { level = level, mode = mode } end
+            local trace=state.primaryRundownWrite
+            if drive:match("^primary%-") and trace and level==trace.level and mode=="incremental" then
+                trace.confirmedAt=os.epoch and os.epoch("utc")
+                trace.confirmedLevel=level
+            end
             if level == nil then completeReadback = false end
         else
             completeReadback = false
@@ -889,6 +992,19 @@ local function statusPacket(state, now)
         directionVerified = state.directionVerified == true,
         directionSignal = state.directionSignal,
         directionPhase = state.directionPhase,
+        primaryRundownVersion = 3,
+        primaryRundownReason = state.primaryRundownDiagnostic and state.primaryRundownDiagnostic.reason or "NOT_EVALUATED",
+        primaryRundownAt = state.primaryRundownDiagnostic and state.primaryRundownDiagnostic.epoch,
+        primaryRundownTarget = state.primaryRundownDiagnostic and state.primaryRundownDiagnostic.target,
+        primaryRundownEnvelope = state.primaryRundownDiagnostic and state.primaryRundownDiagnostic.envelope,
+        primaryRundownProfileEpoch = state.primaryRundownDiagnostic and state.primaryRundownDiagnostic.profileEpoch,
+        primaryRundownEvaluationSeq = state.primaryRundownDiagnostic and state.primaryRundownDiagnostic.seq,
+        primaryRundownWrite = state.primaryRundownWrite and {
+            attempts=state.primaryRundownWrite.attempts,completed=state.primaryRundownWrite.completed,
+            failed=state.primaryRundownWrite.failed,result=state.primaryRundownWrite.result,
+            at=state.primaryRundownWrite.at,seq=state.primaryRundownWrite.seq,
+            level=state.primaryRundownWrite.level,profileEpoch=state.primaryRundownWrite.profileEpoch,
+            confirmedAt=state.primaryRundownWrite.confirmedAt,confirmedLevel=state.primaryRundownWrite.confirmedLevel} or nil,
         requestedTargets = copyMap(state.requestedTargets), applied = applied,
         readbacks = readbacks, lastReceivedSeq = state.lastReceivedSeq,
         lastAppliedSeq = state.lastAppliedSeq, ackSeq = state.ackSeq, ackAccepted = state.ackAccepted,

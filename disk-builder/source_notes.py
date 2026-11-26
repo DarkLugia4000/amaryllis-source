@@ -145,7 +145,10 @@ def canonical(path):
     return re.sub(r"/(fl|fr|bl|br|left|right|main|lb|rb|ls|rs)/","/*/",path)
 
 PURPOSES={}
-SUMMARIES={}
+SUMMARIES={
+    'Thrust.primaryRundownTarget': 'Bound primary rundown by a shared UTC envelope and current output while preserving lease and direction gates.',
+    'Thrust.primaryBrakeReleaseLoss': 'Forecast residual speed loss from signed primary applied outputs; require both readbacks.'
+}
 
 SHORT_SUMMARIES = {'/avionics/common/console.lua#requestRegistry': 'Request fleet assignments from the selected core and boot '
                                                  'session.',

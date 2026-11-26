@@ -133,6 +133,8 @@ default) and a modem. The loader is published at
 [pastebin.com/bn1RbWtb](https://pastebin.com/bn1RbWtb); its source is
 `tools/pastebin/loader.lua`.
 
+Every computer is labeled with a sign specifying the role you need to select in the installer. 
+
 1. On core, run `pastebin run bn1RbWtb` and choose **1 Install core**. Core
    downloads its programs, installs, and opens its registration screen. Until
    the assignments are imported, core boots back into this screen.
@@ -160,10 +162,17 @@ Fixing mistakes:
   registration with every assignment cleared. Computers keep their programs
   and settings and register again with the same roles.
 - **U** on core's screen uninstalls core before import and deletes its files. Package objects stay on the `release` branch across releases,
-so an installed core keeps serving its own release. The floppy-disk route below
-still works and is kept as a fallback.
+so an installed core keeps serving its own release. Floppy-disk installation is
+largely deprecated; use the Pastebin installer for new installations. The legacy
+floppy-disk route below remains available as a fallback when web installation
+is unavailable.
 
-## Installer floppy disk
+## Installer floppy disk (deprecated)
+
+Floppy-disk installation is largely deprecated. Use the
+[Pastebin installer](#web-install-pastebin) for new installations. These
+instructions are retained for legacy installations and as a fallback when web
+installation is unavailable.
 
 Copy the **contents** of `media/` onto a writable ComputerCraft floppy disk.
 Its root contains `startup.lua`, `setup.lua`, `release.json`, `library.json`
