@@ -467,6 +467,7 @@ class ReadableSourceTests(unittest.TestCase):
 import importlib.util
 import sys
 import tempfile
+import re
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -489,6 +490,29 @@ class PythonBundleTests(unittest.TestCase):
             self.assertTrue(text.startswith("@echo off\r\nsetlocal\r\n"))
             self.assertNotIn("\n", text.replace("\r\n", ""))
         self.assertNotIn("--gui", builder.helper_launcher("cc_settings.py", True).decode())
+
+    def test_helpers_leave_out_the_builder_pinned_python(self):
+        for script, gui in (("cc_settings.py", True), ("updater.py", False)):
+            text = builder.helper_launcher(script, gui).decode()
+            self.assertNotIn("PIN_", text)
+            self.assertNotIn(":pin_", text)
+            self.assertNotIn("python-build-standalone", text)
+            self.assertNotIn("builder.py", text)
+
+    def test_builder_launcher_pins_one_checked_python(self):
+        text = (builder.HOME / "Start Builder.cmd").read_bytes().decode("ascii")
+        self.assertNotIn("\n", text.replace("\r\n", ""), "the launcher keeps Windows line endings")
+        values = dict(re.findall(r'^set "(PIN_[A-Z0-9]+)=(.*)"\r$', text, re.M))
+        version, build = values["PIN_VERSION"].split("+")
+        self.assertRegex(values["PIN_SHA256"], r"^[0-9a-f]{64}$")
+        self.assertEqual(values["PIN_URL"],
+                         f"https://github.com/astral-sh/python-build-standalone/releases/download/{build}/"
+                         f"cpython-{version}%%2B{build}-x86_64-pc-windows-msvc-install_only_stripped.tar.gz")
+        self.assertEqual(values["PIN_DIR"], f"%PIN_HOME%\\cpython-{version}-{build}")
+        self.assertIn("sys.version_info[:3] != (" + ", ".join(version.split(".")) + ")", text)
+        self.assertLess(text.index("PIN_DIR%\\python\\pythonw.exe"), text.index("where pyw.exe"),
+                        "the pinned Python is tried before the PC's own")
+        self.assertIn("/disk-builder/.python/", (project.ROOT / ".gitignore").read_text())
 
     def test_runtime_is_skipped_away_from_windows_python(self):
         with tempfile.TemporaryDirectory() as folder:

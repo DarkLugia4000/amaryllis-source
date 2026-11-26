@@ -30,6 +30,7 @@ __pycache__/
 /disk-builder/Backups/
 /disk-builder/Installers/
 /disk-builder/Logs/
+/disk-builder/.python/
 
 # Test leftovers
 /tests/.cache/

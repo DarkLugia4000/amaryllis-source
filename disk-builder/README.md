@@ -7,14 +7,21 @@ Release history is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Requirements
 
-- Python 3.11 or newer with Tcl/Tk.
+- Windows 10 or newer, with internet access the first time the builder starts.
 - A writable utility folder. Keep the extracted utility, `assets/` and any
   included `source/` directory together.
 - Access to the world's files when updating a ship.
 
-Double-click **Start Builder.cmd**. The launcher uses an available local Python
-runtime or the installed Windows Python launcher/PATH. The window title shows
-the utility version, and build logs identify the interpreter used.
+Double-click **Start Builder.cmd**. The builder runs on one pinned Python with
+Tcl/Tk: CPython 3.12.16 from python-build-standalone (release 20261124). On
+first start the launcher downloads it (about 22 MB), checks its SHA-256, checks
+that Tcl/Tk loads and keeps it in `.python/` next to the launcher, which git
+ignores. Later starts use that copy and need no internet. If the download or a
+check fails, the launcher says why and falls back to the Python installed on
+the PC (the Windows Python launcher, then PATH; 3.11 or newer with Tcl/Tk).
+Installers built on the pinned Python bundle that same Python for the Windows
+helpers. The window title shows the utility version, and build logs identify
+the interpreter used.
 
 ## Software source
 

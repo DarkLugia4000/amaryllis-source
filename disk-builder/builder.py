@@ -457,7 +457,12 @@ def bundle_python_runtime(destination, base=None, windows=None):
 # Section: Windows helpers | Bundled Python runtime for the settings and update tools.
 # Summary: Build a helper launcher that prefers the bundled Python and falls back to the standard search.
 def helper_launcher(script, remove_gui=False):
-    original = (HOME / "Start Builder.cmd").read_bytes().replace(b"builder.py", script.encode())
+    # The helpers take the builder launcher's standard Python search. Its pinned
+    # Python blocks belong to the Disk Builder: the helpers use the python folder
+    # the build bundles next to them.
+    original = re.sub(rb"rem BEGIN pinned Python[^\r\n]*\r\n.*?rem END pinned Python[^\r\n]*\r\n", b"",
+                      (HOME / "Start Builder.cmd").read_bytes(), flags=re.S)
+    original = original.replace(b"builder.py", script.encode())
     if remove_gui:
         original = original.replace(b" --gui", b"")
     lines = original.split(b"\r\n")
