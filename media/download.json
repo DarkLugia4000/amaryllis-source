@@ -251,7 +251,7 @@
       "path": "web-setup.lua"
     },
     {
-      "adler32": "6E74E736",
+      "adler32": "8F97E81C",
       "bytes": 12888,
       "path": "release.json"
     },
@@ -261,6 +261,6 @@
       "path": "startup.lua"
     }
   ],
-  "releaseId": "amaryllis-c74509b13897",
+  "releaseId": "amaryllis-69df07eac146",
   "schemaVersion": 1
 }
