@@ -71,7 +71,15 @@ In the existing `[execution]` section, set:
 computer_threads = 2
 ```
 
-Preserve the other settings.
+For web installation, ensure HTTP is enabled in the existing `[http]` section:
+
+```toml
+[http]
+enabled = true
+```
+
+This is the TOML form of `http.enabled`. Preserve the other HTTP rules and
+unrelated settings, and edit existing sections rather than duplicating them.
 
 Reopen Minecraft after saving. On a server, restart the server after the administrator applies its configuration.
 

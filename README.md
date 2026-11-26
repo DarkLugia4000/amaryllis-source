@@ -42,14 +42,50 @@ as a legacy fallback.
 - Use the Amaryllis vessel and its matching mod environment. The project is
   developed for Minecraft 1.21.1 / NeoForge, with CC: Tweaked, Create Aeronautics,
   Sable, CC: Sable, CC: Avionics and the vessel's other hardware integrations.
-- Make sure ComputerCraft HTTP is enabled (`http.enabled = true`) in the
-  world/server configuration. It is normally enabled by default.
+- Apply the ComputerCraft storage, execution-thread and HTTP settings below
+  before running the installer.
 - Have core and the registering computers able to communicate over wireless
   rednet. The state computer uses a wired connection to core during normal
   operation; see the [state wiring guide](docs/architecture/STATE_MODULE.md#wiring).
 - Match each computer to the role written on its sign. Each role must have a
   distinct ComputerCraft ID; copied computers sharing an ID must be corrected
   before registration.
+
+### Required ComputerCraft configuration
+
+With Minecraft and the server completely closed, back up the active
+`computercraft-server.toml`. Depending on the installation, it may be in the
+instance's `config/` folder or the save/server's `serverconfig/` folder. Establish
+which file the server actually uses when several copies exist.
+
+Edit the existing keys and sections in place:
+
+```toml
+computer_space_limit = 4000000
+floppy_space_limit = 4000000
+
+[execution]
+computer_threads = 2
+
+[http]
+enabled = true
+```
+
+- **Storage:** the values are bytes. Use at least **4,000,000 bytes** for each
+  capacity and retain any higher existing limits. If the generated installer's
+  README specifies a larger media requirement, use that larger value. Allow
+  additional disk space for debug recordings.
+- **Execution:** **2 computer threads** is the documented setup baseline. Keep
+  a deliberately configured higher worker count if appropriate for the server;
+  increasing it further is a separate performance-tuning decision.
+- **HTTP:** `[http] enabled = true` is the TOML form of `http.enabled`. Preserve
+  the other HTTP rules and unrelated settings. Do not duplicate existing tables.
+
+Restart Minecraft/server after saving. The builder's **ComputerCraft settings…**
+tool, or `windows-settings/Configure ComputerCraft.cmd` in a generated package,
+can preview these changes and create a backup. Select **2** execution threads
+when applying the baseline; the tool initially displays the existing count.
+See the [configuration helper guide](disk-builder/README.md#computercraft-settings).
 
 ### Install core, register the fleet, then import
 
@@ -66,10 +102,12 @@ pastebin run bn1RbWtb
    **2 Register this computer**. It finds core, loads core's release and lists
    the roles and their current holders. Select the role on the computer's sign.
    The computer installs its commissioning receiver, or the state reader's own
-   programs, and reboots.
+   programs, and reboots. Keep core on its registration screen while registering
+   the fleet. Connect the state reader to core with wired modems for operation.
 3. **Review all 16 assignments on core.** Correct any mistakes, then press
-   **Enter** to import them. Core restarts and distributes the auxiliary role
-   packages from its pinned release.
+   **Enter** and confirm **Import assignments and start core?** Core restarts
+   and distributes the 14 wireless auxiliary role packages from its pinned
+   release.
 
 The loader is published at [pastebin.com/bn1RbWtb](https://pastebin.com/bn1RbWtb).
 Its maintained source is [tools/pastebin/loader.lua](tools/pastebin/loader.lua).
