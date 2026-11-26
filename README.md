@@ -97,7 +97,7 @@ screens for menu choices.
 Computer IDs are assigned during installation. The role names describe what
 each computer does; they are not fixed numeric IDs.
 
-| Computers | Roles | Responsibility |
+| # of Computers | Roles | Responsibility |
 |---:|---|---|
 | 1 | `core` | Flight-control decisions, pilot selections, AP, anchor, stabilization and commands to the fleet. |
 | 1 | `state` | Vessel and cockpit sensor sampling, sent to core over the wired link. |
