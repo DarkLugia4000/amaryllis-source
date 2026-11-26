@@ -37,7 +37,7 @@ For the controls and display labels, see the [pilot reference](docs/installation
 It covers the required ComputerCraft configuration, computer identification,
 web installation, registration recovery, hardware checks and first flight.
 
-The in-game installer is launched with:
+Launch the in-game installer with:
 
 ```text
 pastebin run bn1RbWtb
