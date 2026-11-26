@@ -17,6 +17,12 @@ Version entries describe the changes recorded for each release. See the
 
 ## 3.1.0
 
+- Completed the owner's installation and first-flight guide around the web
+  installer, configuration requirements, role registration, commissioning,
+  updates, recovery and debug recording. Main README now links to that guide
+  instead of duplicating detailed setup steps. The former draft URL retains
+  a forwarding page for existing bookmarks.
+
 - Generalized Markdown documentation: removed named-save deployment reports,
   fixed computer-ID assignments and machine-specific path examples. Setup
   instructions use registered roles and configurable paths; historical notes

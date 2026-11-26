@@ -9,7 +9,7 @@
 
 ## Installation
 
-- [Owner installation and first flight guide, draft](installation/Amaryllis-Owner-Installation-and-First-Flight-DRAFT-v3.md)
+- [Owner installation and first-flight guide](installation/Amaryllis-Owner-Installation-and-First-Flight.md)
 - [Chamber hardware setup](installation/Amaryllis-chamber-hardware-setup.md)
 - [Split chamber and thrust installation](installation/Amaryllis-chamber-thrust-migration.md)
 - [Builder and updater instructions](../disk-builder/README.md)

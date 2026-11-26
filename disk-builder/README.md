@@ -289,5 +289,5 @@ py -3 updater.py --restore "<backup-folder>/Amaryllis-update-..."
 From the repository root, `python project.py build` builds current source and
 `python project.py update --target "<save-folder>"` builds
 and previews an update. See the [project README](https://github.com/DarkLugia4000/amaryllis-source/blob/main/README.md)
-for development commands and the [owner's guide draft](https://github.com/DarkLugia4000/amaryllis-source/blob/main/docs/installation/Amaryllis-Owner-Installation-and-First-Flight-DRAFT-v3.md)
+for development commands and the [owner's guide](https://github.com/DarkLugia4000/amaryllis-source/blob/main/docs/installation/Amaryllis-Owner-Installation-and-First-Flight.md)
 for vessel installation and operation.
