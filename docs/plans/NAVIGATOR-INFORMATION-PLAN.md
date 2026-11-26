@@ -72,7 +72,7 @@ Implementation requirements:
 
 - Preserve the existing actuator sequence, provider retention, trim and PID behaviour.
 - Introduce a presentation distinction where the current phase combines multiple portions of startup.
-- The existing settling interval was configured for 10 seconds in the inspected Trial Journeys installation; keep its configured duration.
+- Keep the configured settling interval; presentation changes must not alter its duration.
 - Settling-stage presentation takes precedence over an ascent-based label. The vessel can begin moving during settling.
 - ACQUIRING SEL ALT is exclusive to initial startup acquisition. End this presentation at normal capture completion or immediately when the user changes selected altitude, whichever occurs first; show READY. Once ended, further target changes, drift correction and recovery of that run must not restore the startup label.
 - A core-accepted user change to a different selected altitude ends the startup presentation only. Continue controlling toward the new selection through the existing control logic, without an added PID reset, gas-provider change or assumption that the new altitude has already been reached.
@@ -207,7 +207,7 @@ They now describe existing behaviour:
 - Verification-age expiry does not stop systems.
 - Explicit false blocks the gate until a later true reading.
 
-Validation confirmed that non-comment Lua content remained byte-identical and the replacements are idempotent. The live save and existing installer ZIPs were unchanged. Future builder exports contain the corrected comments.
+Validation confirmed that non-comment Lua content remained byte-identical and the replacements are idempotent. Existing installer ZIPs remain unchanged by source-comment corrections. Future builder exports contain the corrected comments.
 
 This comment-only correction did not implement the new verification sequence in section 7.
 

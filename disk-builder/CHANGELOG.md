@@ -5,6 +5,11 @@ Version entries describe the changes recorded for each release. See the
 
 ## 3.1.0
 
+- Generalized Markdown documentation: removed named-save deployment reports,
+  fixed computer-ID assignments and machine-specific path examples. Setup
+  instructions use registered roles and configurable paths; historical notes
+  retain technical findings without local installation identities.
+
 - Main README reorganized around the system overview, ship-specific scope,
   Pastebin installation and recovery, the 16 computer roles, and web/local
   update paths. Detailed development procedures are preserved in
@@ -88,7 +93,7 @@ Version entries describe the changes recorded for each release. See the
   and on again." The idle status now shows READY during active altitude control,
   replacing DISENGAGE ALTITUDE CONTROL FIRST. Updated the asset checksum.
 - Verification: all 168 flight/display tests and 18 focused probe, Core panel
-  and source-integrity tests passed. Live deployment and in-game validation pending.
+  and source-integrity tests passed. In-game validation remains required after loading the update.
 
 - `source/core/avionics/thrust.lua` (`Thrust.assistPrimaryTurn`): corrected
   primary differential assistance by removing the inverted yaw sign. Forward
@@ -243,7 +248,7 @@ Version entries describe the changes recorded for each release. See the
   `kp=0.20, ki=0.08`. The existing updater preserves installed gain settings.
 - Verification: 55 autopilot, control-stage and source-integrity tests passed, including MAN
   closed-loop simulation with a drive ramp, neutral capture and deliberate reverse. Replaying the
-  Ama Test 3 telemetry with both old and shipped gains yielded zero reverse requests in the full
+  Recorded validation telemetry with both old and shipped gains yielded zero reverse requests in the full
   forward and captured-neutral windows, down from 39 and 37 recorded left-side requests. Replay
   uses the recorded vessel response. In-game flight verification is pending.
 
@@ -437,7 +442,7 @@ Version entries describe the changes recorded for each release. See the
   on an existing ship is left in place and unused.
 - `updater.py`: the RL/RR to BL/BR chamber rename, the old-launcher replacement (`LEGACY_LAUNCHER_SHA256`,
   `current_launcher`) and the startup launcher repair (`preview_startup_repair`, **Preview startup repair**,
-  `--repair-startup`) are removed. The test world has neither the old launcher nor RL/RR chambers.
+  `--repair-startup`) are removed.
   `disk-builder/README.md`, the maintenance catalogue and `test_project_release` updated.
 - `docs/installation/Amaryllis-Owner-Installation-and-First-Flight-DRAFT.md` removed; links point to the v3 guide.
 
@@ -1037,7 +1042,7 @@ Tests:
 
 ### Message rewording and cockpit handover batch (tracked in the "Amaryllis message rewording tracker" doc)
 
-All items below are in source and tests; none is on the ship until the next live update. Every computer must update
+These changes require installing the updated programs. Every computer must update
 together because core, navigator and heading displays compare the renamed phase names.
 
 - Phase names: `BUILDING_LIFT` is now `MAIN_LIFT` and `CONTROL_START` is now `VENT_IGNITION` everywhere (flight.lua,
@@ -1201,7 +1206,7 @@ together because core, navigator and heading displays compare the renamed phase 
 
 ### Live ship updates (updater, command line and dialog)
 
-For the next agent: `disk-builder/updater.py` no longer needs the world closed. ComputerCraft
+`disk-builder/updater.py` no longer needs the world closed. ComputerCraft
 supports live file replacement and `atomic_write` swaps each file atomically.
 
 - `apply` and `restore` default to `world_lock=live_world`, which does nothing. The strict
@@ -1227,7 +1232,7 @@ supports live file replacement and `atomic_write` swaps each file atomically.
 - Startup self-heal (`source/library/packages/common/console.lua`, `refreshLiveUpdateStatus`, called from `receiptReady`):
   after a live update the still-running old installer rewrites `installer/status.json` with the OLD release
   (`installedVersion`, `installedManifestChecksum`), so the rebooted computer refused to start with
-  "installed package receipt is not committed" (seen on navigator #6). The new console now rewrites those release
+  "installed package receipt is not committed". The new console now rewrites those release
   fields (and `version`) from the committed receipt when every identity field already matches exactly (role,
   package, label, computer ID, core ID, install ID, client/server/core sessions), `hasInstalled` is true and no
   recovery or commit is pending. Anything else is still refused. A line is logged when it repairs. The core copy

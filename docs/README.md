@@ -43,7 +43,7 @@ Check their status sections and current source when assessing remaining work.
 - [Control refactoring evidence and measurements](development/CONTROL-REFACTOR-EVIDENCE.md)
 - [Flight and thrust tuning reference](development/TUNING-REFERENCE.md)
 - [Offline flight model](development/FLIGHT-MODEL.md)
-- [Claude session handoff, October 31](development/HANDOFF-CLAUDE.md)
+- [Maintenance implementation history, October 31](development/HANDOFF-CLAUDE.md)
 
 ## History
 

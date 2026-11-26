@@ -12,8 +12,7 @@ Completed 27 October 2026 in builder 2.2.0. The Windows utility now previews and
 replaces all 16 registered computers in place, retains stored settings and data,
 backs up outside the save and removes obsolete managed code and core's package
 library. It supports migration from loose files and later bundled updates.
-Future installer ZIPs include the standalone Windows updater. The live save has
-not been updated by this task.
+Installer ZIPs include the standalone Windows updater.
 
 - [Builder 2.2.0 ZIP](../../releases/builders/Amaryllis-Installer-Builder-v2.2.0.zip)
 - [Update validation report](../../diagnostics/2026-10-27/existing-install-update/README.md)
@@ -25,14 +24,13 @@ rerun after its visibility fix. Implementation 2 is recorded below.
 
 Follow-up: in-game startup exposed an auxiliary launcher environment defect.
 Builder 2.2.1 corrects it, adds targeted startup repair and handles older media.
-The 14 affected launchers in Trial Journeys were repaired with a verified external
-backup after Minecraft was closed. [Repair and regression report](../../diagnostics/2026-10-27/bundled-startup-fault/README.md).
+Historical repair verification covered 14 affected launchers with an external
+backup. [Repair and regression report](../../diagnostics/2026-10-27/bundled-startup-fault/README.md).
 
 ## Implementation 1: Systems dropdown and wording revamp
 
 Status: completed 27 October 2026 in builder 2.1.0. The exported bundled bridge
-UI includes this group. No live save was changed and no installer was built
-for distribution.
+UI includes this group.
 
 - [Updated builder ZIP](../../releases/builders/Amaryllis-Installer-Builder-v2.1.0.zip)
 - [Illustrated implementation report](../../diagnostics/2026-10-27/implementation-1/report.html)
@@ -137,7 +135,7 @@ Validation: 15 focused UI cases and 63 regression cases passed. Bundled startup
 integration passed 63 checks separately on Lua 5.2 and CC:Tweaked Cobalt. An
 update of a copied installation preserved configuration and persistent data.
 Screens use simulated telemetry rendered by the exported Lua code and original
-CC:Tweaked font. No live deployment has been performed for this UI change.
+CC:Tweaked font. Validate the UI change in game after loading it.
 
 Core uses an application host adapted in memory from the installed CraftOS
 multishell. The native per-process resume function, event filters and service
@@ -337,7 +335,7 @@ core Panel module changes; flight and PID sources are unchanged.
 
 Validation: 17 UI/adapter and 54 regression cases passed. Full bundled startup
 passed 65 checks for each of three raw host variants on both Lua 5.2 and Cobalt.
-The live save has not been modified by this repair.
+Reload updated programs before validating this repair in game.
 
 ## Relayed controller status: builder 2.4.2
 

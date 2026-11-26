@@ -1,20 +1,17 @@
 # Amaryllis core: file responsibilities
 
-Inspected 26 October 2026. Source: Amaryllis Trial Journeys, core computer #0.
-
-Source folder: `saves/Amaryllis Trial Journeys/computercraft/computer/0` in the Create Aeronautics instance.
-
-**146 files: 96 Lua programs/modules and 50 configuration, record and backup files.**
-
-The tables account for every file found in this core folder. Program descriptions follow the source code and launch paths. Saved records describe their stored purpose; file presence alone does not establish whether a particular task is currently running.
+This reference groups core programs and persistent records by responsibility.
+Maintained modules live under `source/core/`; installed bundles may combine
+modules, so file counts and storage layout vary by release. Stored data does
+not by itself establish which tasks are running.
 
 ## Execution and storage boundaries
 
 - `avionics/main.lua`, `flight.lua`, `io.lua` and `thrust.lua` coordinate the central runtime, lift, sensor/network boundary and propulsion.
-- Auxiliary package files are installation sources for other computers. This existing core also boots its shared console from `packages/common/console.lua`.
+- Auxiliary package files are installation sources for other computers. Older layouts booted the shared console from `packages/common/console.lua`.
 - `remote_client.lua` and `remote_ap_client.lua` are client programs held for provisioning remote computers. `state_reader.lua` is the STATE program retained among core sources.
 - `recorder.lua` is an older CSV recorder. The inspected current main runtime references `debug_recorder.lua`.
-- New installers exported by builder 1.7.1 place auxiliary package sources on removable media and install core's console under `avionics/common/console.lua`. The inventory here describes the existing ship.
+- New installers exported by builder 1.7.1 place auxiliary package sources on removable media and install core's console under `avionics/common/console.lua`. The tables retain historical loose-file names for reference.
 
 ## Boot and identity (3 files)
 

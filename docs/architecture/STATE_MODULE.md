@@ -2,13 +2,12 @@
 
 Amaryllis can use an optional dedicated state reader. Core remains the flight-control authority. The reader samples sensors and cockpit links, supplies source records with their original measurement times, and performs no actuator writes.
 
-## Current installation
+## Installation configuration
 
-New World has core **35 / ama-core** and reader **68 / ama-state**. The reader's files and core's compatible runtime are staged. Reboot ama-state first, then core, with Amaryllis supported and flight control stopped. Leave core's wireless modem attached for the workload test.
-
-New World (2) has compatible code but no reader assigned. It continues local sampling. No nonexistent state-computer ID has been added there.
-
-Live check on 2026-10-20: the operator loaded core and reader, then reconnected the missing cockpit bridge. Wired exchange, valid cockpit inputs and advancing sensor workers were verified. No reader timeouts occurred during observation. Core still intermittently selects fallback because primary readings arrive or are published late enough to exceed the two-second source preference window. The v126 receive-isolation change is loaded, but did not remove that remaining delay. See `diagnostics/2026-10-20/state-module-live-check.md` for evidence. This has not passed a flight test.
+Assign core and the state reader distinct computer IDs through the installer.
+Use the fleet registry and installed configuration for their identities; IDs
+and peripheral names depend on the installation. Reload updated programs on
+the affected computers before verifying communication.
 
 ## Wiring
 
@@ -36,7 +35,7 @@ Frame receipt does not renew any sensor timestamp. A running reader/transport ca
 3. Install/register the remaining auxiliaries as usual. Return the disk to core and import role assignments.
 4. Connect the wired core/state link and sensors, remove the installer disk, then boot the reader and core.
 
-IDs are taken from that deployment, not copied from New World. The state role is optional: leaving it unassigned preserves local core sampling. The setup menu retains its fresh-computer-only protection. Existing state readers do not yet have automatic package updates through the wired protocol; use the managed file-staging workflow for updates to this installation.
+IDs are assigned to the installation during registration. The state role can be left unassigned for local core sampling. Use the current web installer or managed updater for software updates; see the [installation guide](../../disk-builder/README.md).
 
 ## First verification
 

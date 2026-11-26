@@ -10,7 +10,7 @@ Implemented 2026-10-20, with reader-cycle corrections in v121. Installer: `relea
 4. Start a disk debug recording before the test. Use a writable recording disk visible to core, with the installer disk removed.
 5. During a controlled Sable interruption, check that heading, altitude and selected-speed control continue. If absolute X/Z disappears, AP/anchor should show PAUSED, retain the route/anchor point, hold heading and request braking toward zero speed. Restore telemetry and confirm position guidance resumes.
 
-The implementation has been staged on disk in both New World and New World (2). Running Lua code must reload to use it. No live flight test or actuator command was issued as part of this implementation.
+Reload affected computers after updating the source-selection software. Validate fallback behavior with a controlled telemetry interruption; file installation alone does not establish flight acceptance.
 
 ## Source selection
 

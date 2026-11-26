@@ -4,13 +4,15 @@
 
 | Corner | Chamber coordinator | Thrust controller |
 |---|---|---|
-| FL / left bow | chamber_fl, #50 | thrust-lb, #58 |
-| FR / right bow | chamber_fr, #45 | thrust-rb, #60 |
-| BL / left stern | chamber_bl, #51 | thrust-ls, #61 |
-| BR / right stern | chamber_br, #47 | thrust-rs, #62 |
+| FL / left bow | chamber_fl | thrust-lb |
+| FR / right bow | chamber_fr | thrust-rb |
+| BL / left stern | chamber_bl | thrust-ls |
+| BR / right stern | chamber_br | thrust-rs |
 
-Core remains #35, bridge #38, instrument computers #36/#37/#39, primary
-bearing-sensor computers #40/#43. Fleet registry now has fifteen roles.
+Keep the existing core, navigator, heading-display and primary-bearing roles.
+Assign computer IDs through installation; preserve existing role assignments
+when migrating. The historical split introduced four dedicated thrust roles;
+the complete current fleet also includes the state reader.
 
 ## Hardware
 
@@ -55,15 +57,15 @@ activation. Core still applies its existing flight recovery policy to lost data.
 
 ## Loading the change
 
-This update stages code and bootstrap files. It does not reboot any computer,
-enable propulsion, or write gas/transmission outputs from the host.
+Install the matching core, chamber and thrust packages before commissioning.
+Updating files does not reload programs already running on the computers.
 
 1. With the revamped vessel supported, restart core/bridge using the existing
    Restart Systems function to load the fleet and installer changes.
 2. Restart each chamber computer so it loads the updated installer client.
    The client needs its expanded package allowlist for the relay modules.
-3. Start or restart #58, #60, #61 and #62. Bootstrap files and assigned target
-   roles are already staged. They await their packages from core.
+3. Install/register and restart each dedicated thrust controller with its
+   assigned role. Allow it to receive its package from core.
 4. Allow the fleet installer to finish, then confirm installed receipts and
    running programs on all eight chamber/thrust computers.
 5. Check gas discovery on each chamber and transmissions/altitude on each thrust

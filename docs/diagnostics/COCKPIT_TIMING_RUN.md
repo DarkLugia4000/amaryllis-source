@@ -1,13 +1,13 @@
 # Cockpit timing investigation
 
 The operator must keep Amaryllis physically supported for this comparison.
-Keep the world, machinery, flight modes and game settings steady. The current
-supported deployment is Journeys, core #0, ama-state #1 and navigator #5.
+Keep machinery, flight modes and game settings steady. Identify core, state
+and navigator from the installation's fleet registry.
 
 ## Load and verify
 
-Stage the verified v143 core/state delta with backups and identity/hash guards.
-Reboot ama-state #1 first, then core #0. Leave navigator and other computers
+Install a verified core/state build with backups and identity/hash guards.
+Reboot the state reader first, then core. Leave navigator and other computers
 running. The first restarted installer will verify its fourteen bundles once;
 wait until all fourteen are cached and subsequent checks add hits without new
 misses. Verify both virtual traces and the installer's in-memory probe before
@@ -24,7 +24,7 @@ or frame-size increase is required.
 ## First comparison
 
 1. With cockpit controls neutral, record three minutes with the warm installer
-   active. The agent runs the collector; leave her untouched during this phase.
+   active. Run the collector without changing the vessel's controls during this phase.
 2. Create `/installer/paused` through core's shell. Confirm both the displayed
    PAUSED state and the live pause-check probe. Keep runtime running.
 3. Repeat the same three-minute untouched recording.

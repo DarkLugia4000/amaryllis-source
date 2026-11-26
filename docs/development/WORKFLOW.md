@@ -51,8 +51,10 @@ never touched.
 
 ### Project commands
 
+Replace bracketed path placeholders with the folders for the installation.
+
     python project.py build
-    python project.py update --target "D:\Minecraft\saves\Amaryllis"
+    python project.py update --target "<save-folder>"
     python project.py gui
 
 `build` creates a verified installer under `output/installers/`. `update` bundles
@@ -60,7 +62,7 @@ current source in a temporary workspace and prints a preview; it leaves the targ
 unchanged and removes the temporary payload when the command finishes.
 To apply that replacement with an external backup:
 
-    python project.py update --target "D:\Minecraft\saves\Amaryllis" --apply --backup "D:\Amaryllis Backups"
+    python project.py update --target "<save-folder>" --apply --backup "<backup-folder>"
 
 Project builds read maintained inputs directly and use a temporary compatibility
 adapter for the existing packager. The adapter is removed after collection.

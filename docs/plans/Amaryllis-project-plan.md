@@ -47,17 +47,16 @@ Software recovery cannot compensate for every destroyed or disconnected part.
 - Show the failed component, remaining capability and recovery state.
 - Treat deliberate shutdowns and kill latches separately from transient faults.
 
-## 2. Current baseline
+## 2. Implementation baseline
 
-v143 diagnostic delta is loaded in the supported Journeys deployment:
-`2026-10-23-v143-cockpit-timing`, release `amaryllis-2a05c59dd9c2`.
+Historical v143 diagnostic work, release `amaryllis-2a05c59dd9c2`,
+provides the following validation baseline.
 It adds per-sample state/core timing, first-consumption stamps, bounded
 mutation-cursor exports, independent scheduling-delay probes and an in-memory
 installer loop/pause probe. Twelve core/state files were staged with v142
 baseline hash guards and a permanent backup; fleet and application configs
 were preserved, served actuator/navigator packages are byte-identical to v142.
-No flight or reboot command was sent by the agent. The operator restarted
-ama-state #1 then core #0. Both virtual traces publish successfully; a twelve-
+Verification loaded the state reader before core. Both virtual traces publish successfully; a twelve-
 second smoke capture correlated 33 samples with no export errors, history gaps
 or negative stage deltas. Installer cache subsequently reached fourteen misses
 and a growing hit count. The comparison completed with 662 warm-active samples,
@@ -87,12 +86,11 @@ allowlist and writes evidence only to the workspace. Run procedure:
 | Portable release | v143, `2026-10-23-v143-cockpit-timing`; per-sample cockpit timing diagnostics on the v142 control baseline |
 | Final release ID | `amaryllis-2a05c59dd9c2` |
 | Flight software | Existing AP, anchor, altitude, heading and selected-speed control; v133 altitude refinements retained, with configurable selected-target input ramps in v134 |
-| Core/state split | Core #35; ama-state #68 collects vessel and cockpit readings over a wired link |
-| Active fresh deployment | Amaryllis Trial Journeys: v143 core #0/state #1, navigator #5 package v11; served wireless packages unchanged from verified v142 |
+| Core/state split | The assigned state reader collects vessel and cockpit readings for core over a wired link |
 | Recovery software | Running intent, output adoption, telemetry recovery and reader/worker fallback are present; comprehensive failure acceptance remains work |
 | Docked remote provisioning | Implemented on core Utilities; operator reported a working in-game installation |
 | New remote application | Paired status and SEND TO / disengage implemented; operator confirmed remote AP working in game; no caller-location SUMMON or engineering commands yet |
-| Existing pocket #63 | Legacy administration program and credentials preserved |
+| Legacy administration pocket | Legacy administration program and credentials preserved |
 | Motion warnings | v138: POSSIBLE IMPACT / POSSIBLE OBSTRUCTION on Flight, with diagnostic recording; offline verified, in-world threshold acceptance pending |
 | Engineering computer | Proposed; no engineering system implemented by this planning work |
 | Manual backup computer | Proposed; no backup controller or authority handover implemented yet |
@@ -121,12 +119,11 @@ Lua preemption. Diagnostics expose fast receipt/transport and consumed-input
 processing timestamps. Command deadlines use execution time, while telemetry
 retains original reception time. Priority tests: 54 passing; navigator requests:
 195; radio backlog equivalence, input tuning, remote AP, docking and pocket UI
-regressions pass. The operator confirmed physical support, then restarted
-ama-state #1/core #0 after a backed-up, hash-guarded code update. Navigator #5
-received its v11 package through the normal authenticated transaction and was
+regressions pass. Verification loaded the state reader and core after a backed-up, hash-guarded
+code update. Navigator received its v11 package through the normal authenticated transaction and was
 restarted afterward. All targeted core/state files match release objects; all
 14 wireless packages have matching receipts, identities and Lua files, with no
-pending commit journals or recovery flags. No agent control commands were sent.
+pending commit journals or recovery flags.
 The in-world commissioning disk remains unchanged by the delta deployment.
 
 Live comparison: the priority cockpit receiver is active, with no rejected fast
@@ -155,8 +152,7 @@ context-sensitive requests use 10 s, enforced again on core before execution.
 Unsent expiry is CANCELLED; sent but unacknowledged expiry remains NOT CONFIRMED
 until a matching result resolves it. UI no longer converts brief ACK delays
 into TIMED OUT. New core acknowledgements bind navigator boot as well as session
-and sequence. These changes were subsequently included in the supported v142
-Journeys deployment described above.
+and sequence. These changes were subsequently included in the v142 verification baseline described above.
 
 v141 targeted request tests: 195 passing. Input tuning (54), remote AP (78),
 docking (73), pocket radio/UI (29), installer workload (40), receipt/progress
@@ -167,10 +163,9 @@ under diagnostics/2026-10-23/v141-navigator-requests. The restart harness was
 updated to copy its current Lua dependencies rather than mixing old modules.
 
 Earlier prepared v140 candidate: `2026-10-23-v140-installer-workload`, final release ID
-`amaryllis-6fccd53f16cd`. Deployment was originally deferred while the operator
-reported the vessel airborne or unsupported. These changes were subsequently
-included in the supported v142 deployment above. Source changes are in the separate New World development
-tree, backed up under `Amaryllis-portable/repair-backups/before-v140-installer-workload`.
+`amaryllis-6fccd53f16cd`. These changes were subsequently
+included in the v142 verification baseline above. Preserve a verified source
+backup before applying these changes.
 
 The installer currently rereads and checksums full packages before determining
 that a client's installation is current. v140 adds a per-installer memory cache
@@ -210,18 +205,9 @@ checks; bootstrap guards and 449 portable-install checks passed. Original client
 fails the new core-ID regression as expected. Source/object/ZIP verification
 passed: 124 core entries, 3,671,547 payload bytes, 534,623-byte archive.
 
-Journeys corrections are #10 chamber_br, #11 chamber_bl, #12 thrust-ls and #13
-thrust-rs. Installer/bootstrap code was updated with backups; assignments,
-application settings and receipts were preserved. Temporary diagnostic changes
-on #7 were removed. Operator confirmed the progress screen is visible. Final
-live cached reports show all four chambers and thrust relays, three headings,
-state and both primary telemetry nodes online. Bridge receives reports and
-shows degraded only because the vessel is disassembled. A new core runtime
-session was observed during reload and the fleet recovered on it. No flight
-actuation or automated computer reboot was issued by the agent. The diagnostic
-host now uses Journeys' fleet path for this host process. The existing v138
-commissioning disk was not rewritten; use the separate v139 archive for future
-fresh installations. In-world flight/hardware commissioning remains outstanding.
+The chamber and thrust-relay installer corrections preserve assignments,
+application settings and receipts. Verification checks the complete fleet,
+bridge reports and recovery after a core session change. In-world flight/hardware commissioning remains outstanding.
 
 v132 passed 73 docked-remote checks, 72 remote-AP authority checks against the
 real Flight/AP/Controls modules, 29 radio/pocket checks and 434 portable-installer
@@ -467,9 +453,8 @@ v132 adds reviewed SEND TO and owner-only AP disengagement, plus explicit
 onboard per-pocket permission and per-boot remote enable. Commands run in the
 normal core supervisor with expiry, duplicate protection and pilot override.
 The offline tests use the actual Flight/AP/Controls modules and simulate lost
-acknowledgements and the pocket UI. The operator confirmed remote AP working in
-game on 22 October and declared the implementation task complete; detailed
-failure-case acceptance has not been recorded. Existing #63 administration
+acknowledgements and the pocket UI. Historical in-game observations confirmed remote AP operation; detailed
+failure-case acceptance was not recorded. Legacy pocket administration
 remains a separate preserved function.
 
 ### Proposed progression

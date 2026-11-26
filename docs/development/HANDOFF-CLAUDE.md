@@ -1,14 +1,14 @@
-# Handoff: work done by Claude (October 31, 2026)
+# Maintenance implementation history
 
-This records everything Claude changed in this repository during the October 31 session, in order, so another agent can continue from it. The delivery-level summary is in [MAINTENANCE-ROADMAP.md](MAINTENANCE-ROADMAP.md). The plan being followed is the six-delivery "Amaryllis Source Maintenance and Regression Plan" (persistence; guards, documentation and plant model; regression tools and CI; shared source; configuration registry; control refactoring).
+This historical record describes the October 31 maintenance changes in implementation order. The delivery-level summary is in [MAINTENANCE-ROADMAP.md](MAINTENANCE-ROADMAP.md). The plan being followed is the six-delivery "Amaryllis Source Maintenance and Regression Plan" (persistence; guards, documentation and plant model; regression tools and CI; shared source; configuration registry; control refactoring).
 
-Nothing has been committed, pushed or applied to a live world. All work was done on a copy of the working tree and the changed files were written back to `amaryllis-source`.
+The sections below describe source changes and their validation limits, rather than the state of any particular installation.
 
 ## Environment notes
 
 - Claude ran everything on Linux with Python 3.12 and Lupa 2.6, matching `requirements-dev.txt`. GUI tests ran under a virtual display (`Xvfb :99`, `DISPLAY=:99`).
-- Cobalt was not run. Its results in the roadmap come from the earlier agent.
-- The Windows shell on the owner's computer was unresponsive during this session, so no command was run there. Run `python project.py check` and `python project.py test` locally before building media.
+- This validation used Lupa; the roadmap separately records Cobalt results.
+- Run `python project.py check` and `python project.py test` on the build platform before producing media.
 
 ## 1. Baseline test run
 
@@ -16,10 +16,10 @@ Nothing has been committed, pushed or applied to a live world. All work was done
 
 ## 2. Picking up Delivery 4
 
-The earlier agent stopped after replacing every core `local function finite`/`clamp` with `local finite = Mathx.finite` and `local clamp = Mathx.clamp` from the new `avionics/mathx.lua`.
+The preceding refactor replaced every core `local function finite`/`clamp` with `local finite = Mathx.finite` and `local clamp = Mathx.clamp` from the new `avionics/mathx.lua`.
 
 - **Equivalence check.** Compared all helper bodies in the pre-maintenance source: 25 `finite` copies all test `type == "number"`, `v == v` and a finite magnitude; 6 `clamp` copies all use `math.max(low, math.min(high, value))`. The shared versions are identical in behavior. `remote_ap_client.lua` keeps its own copy because it runs on remote computers.
-- **Broken test harness.** The agent's patch to `tests/test_repository.py` never applied: its search string used `\n`, and the file uses CRLF. The propulsion endpoint harness therefore rejected `require("avionics.mathx")` and two tests failed. Applied the patch with CRLF. The same harness now also serves `avionics.config_registry` (Delivery 5).
+- **Broken test harness.** A patch to `tests/test_repository.py` never applied: its search string used `\n`, and the file uses CRLF. The propulsion endpoint harness therefore rejected `require("avionics.mathx")` and two tests failed. Applied the patch with CRLF. The same harness now also serves `avionics.config_registry` (Delivery 5).
 
 ## 3. Delivery 4 additions
 
@@ -113,7 +113,7 @@ These settings keep their inline fallbacks because the fallback has several valu
 - `project.SUITES` lists test modules explicitly; the new suite-registration test enforces it.
 - `source/core/avionics/common/console.lua` is generated; edit `source/library/packages/common/console.lua`.
 - Function summaries live in `disk-builder/source_notes.py`; comments written in source are replaced at build.
-- `docs/development/MAINTENANCE-ROADMAP.md` still shows Delivery 2 as "in progress" from the earlier agent's notes. The summary audit it mentions now holds at build time: `project.py check` runs `annotate(strict=True)`, which fails on any function of eight or more lines without a catalog summary. Claude did not review the remaining Delivery 2 scenario-coverage items.
+- `docs/development/MAINTENANCE-ROADMAP.md` still shows Delivery 2 as "in progress" from the preceding implementation notes. The summary audit it mentions now holds at build time: `project.py check` runs `annotate(strict=True)`, which fails on any function of eight or more lines without a catalog summary. Claude did not review the remaining Delivery 2 scenario-coverage items.
 
 ## 6a. Test runner progress
 
@@ -135,7 +135,7 @@ These settings keep their inline fallbacks because the fallback has several valu
 
 ## 6d. Core propulsion refusals are recorded (primaries stuck at WAIT)
 
-- Symptom: both primaries installed and running, but the core lists them as WAIT; `components/units/primary-left/discovered: NO` means the core never accepted a hello from #16. #17 held a session from the current core session but stopped receiving session refreshes after its first one. Core radio handling was not overloaded (receive average 0.2 ms).
+- Symptom: both primaries installed and running, but the core lists them as WAIT; `components/units/primary-left/discovered: NO` means the core never accepted a hello from the left primary reader. The right primary reader held a core session but stopped receiving session refreshes after its first one. Core radio handling was not overloaded (receive average 0.2 ms).
 - Cause not yet identified: every refusal path in `Thrust:acceptHello` and `Thrust:acceptStatus` returned `false` silently.
 - Change: each refusal now calls `Thrust:rejected(io, kind, role, sender, reason)`, which stores the latest refusal per role (`self.rejections`), logs it once through `io:logState("propulsion hello|status <role>", reason)`, and is exposed as `lastRejected` in unit and controller snapshots (visible under the role page's More details). An accepted message clears the logged state. Controller-status field checks share one reason, "CONTROLLER STATUS FAILED VALIDATION".
 - `processMessage` now returns `false, reason` for refusals; its only caller (`IO:processMessage`) uses the result in an `if`.
@@ -144,12 +144,12 @@ These settings keep their inline fallbacks because the fallback has several valu
 
 ## 6e. Root cause of the primaries' silence: rednet message-ID collisions
 
-- Found by reading the "Ama Test 2" world files directly: the core had the refusal-logging update, yet recorded no refusal for primary-left, so #16's hellos never arrived as rednet messages.
-- Cause: `bootToken()` in `primary-main.lua`, `thrust-controller.lua` and `chamber-thrust.lua` called `math.randomseed(epoch + computerID)`. rednet draws message IDs from the same global generator and silently drops IDs it has seen recently. Computers that boot a few milliseconds apart (as on world load) can get the same seed (for example #16 at T and #12 at T+4 ms), then emit identical ID sequences; the busier computer uses each ID first and every message from the other is discarded before any program sees it. This explains #16 never being heard and #17 being heard once.
+- Diagnostic finding: core had refusal logging but recorded no refusal for primary-left, indicating that its hellos never reached rednet delivery.
+- Cause: `bootToken()` in `primary-main.lua`, `thrust-controller.lua` and `chamber-thrust.lua` called `math.randomseed(epoch + computerID)`. rednet draws message IDs from the same global generator and silently drops IDs it has seen recently. Computers that boot a few milliseconds apart (as on world load) can get the same seed when the epoch and computer-ID terms coincide, then emit identical ID sequences; the busier computer uses each ID first and every message from the other is discarded before any program sees it. This explains readers being unheard or heard only once after startup.
 - Fix: removed the reseed; ComputerCraft seeds `math.random` per computer. The boot token format is unchanged.
 - Guard: `test_no_program_reseeds_the_shared_random_generator` in `tests/test_source_integrity.py` fails on any `math.randomseed(` call in maintained source or builder assets.
 
-## 7. Files changed by Claude in this session
+## 7. Files changed during the maintenance work
 
 - Modified: `disk-builder/builder.py`, `disk-builder/presentation.py`, `disk-builder/source_notes.py`, `project.py`, `source/core/avionics/anchor.lua`, `source/core/avionics/common/console.lua`, `source/core/avionics/flight.lua`, `source/core/avionics/remote_install.lua`, `source/core/avionics/storage.lua`, `source/core/avionics/thrust.lua`, `tests/test_project_release.py`, `tests/test_repository.py`, `tests/test_source_integrity.py`, `docs/development/MAINTENANCE-ROADMAP.md`, `docs/development/TUNING-REFERENCE.md`.
 - Also modified: `disk-builder/updater.py`, `README.md`, `disk-builder/README.md`.

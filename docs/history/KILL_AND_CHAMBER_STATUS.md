@@ -4,7 +4,7 @@ Release: **v117**, `amaryllis-6811e0c38e6c`.
 
 ## Load the update
 
-The Lua changes are staged in **New World** and **New World (2)**. Their computer identities, hardware assignments and configuration files were preserved.
+Apply the update while preserving the installation's computer identities, hardware assignments and configuration files.
 
 With Amaryllis safely parked, leave and reopen the world once. This loads the updated chamber and thrust computer programs as well as core and navigator. The existing Restart Systems action reloads core and navigator; it does not reload all chamber programs.
 
@@ -42,7 +42,7 @@ Passed:
 - Package, chamber hardware, relay, navigation display and console suites, including independent CMD/RDY/FAULT states.
 - Normal restart and bridge Start/Stop lifecycle checks, with the existing test mock updated to expose the current cockpit interface.
 - All **360 portable installer checks**.
-- Both worlds verified against the staged code: **126 Lua files**, with **32 fleet/configuration files** preserved byte-for-byte.
+- Historical code-staging verification covered **126 Lua files**, with **32 fleet/configuration files** preserved byte-for-byte.
 
 The broad legacy cockpit boundary tests still contain two earlier behavioral expectations that fail on both the pre-change and updated sources. The old propulsion cadence mock likewise uses the earlier cockpit interface. The full telemetry-recovery suite also contains another mock lacking the current `usable` method. These broad suites are not being reported as fully passing. No live actuator commands, in-game restart or flight test were issued during this update.
 

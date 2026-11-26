@@ -133,7 +133,7 @@ default) and a modem. The loader is published at
 [pastebin.com/bn1RbWtb](https://pastebin.com/bn1RbWtb); its source is
 `tools/pastebin/loader.lua`.
 
-Every computer is labeled with a sign specifying the role you need to select in the installer. 
+Every computer is labeled with a sign specifying the role you need to select in the installer.
 
 1. On core, run `pastebin run bn1RbWtb` and choose **1 Install core**. Core
    downloads its programs, installs, and opens its registration screen. Until
@@ -275,18 +275,19 @@ and in-game acceptance are separate project checks.
 
 ## Command-line use
 
-Run these commands from the utility directory. The output parent must exist.
+Run these commands from the utility directory. Replace the bracketed path
+placeholders with the folders for the installation. The output parent must exist.
 
 ```text
-py -3 builder.py --project "D:\Amaryllis Source" --output "D:\Amaryllis Installers"
-py -3 builder.py --project "D:\Amaryllis Source" --output "D:\Amaryllis Installers" --without-learning
-py -3 updater.py --source "D:\Minecraft\saves\My Amaryllis" --media "D:\New Installer\media"
-py -3 updater.py --source "D:\Minecraft\saves\My Amaryllis" --media "D:\New Installer\media" --apply --backup "D:\Amaryllis Backups"
-py -3 updater.py --restore "D:\Amaryllis Backups\Amaryllis-update-..."
+py -3 builder.py --project "<project-folder>" --output "<installer-output-folder>"
+py -3 builder.py --project "<project-folder>" --output "<installer-output-folder>" --without-learning
+py -3 updater.py --source "<save-folder>" --media "<installer-media-folder>"
+py -3 updater.py --source "<save-folder>" --media "<installer-media-folder>" --apply --backup "<backup-folder>"
+py -3 updater.py --restore "<backup-folder>/Amaryllis-update-..."
 ```
 
 From the repository root, `python project.py build` builds current source and
-`python project.py update --target "D:\Minecraft\saves\My Amaryllis"` builds
+`python project.py update --target "<save-folder>"` builds
 and previews an update. See the [project README](https://github.com/DarkLugia4000/amaryllis-source/blob/main/README.md)
 for development commands and the [owner's guide draft](https://github.com/DarkLugia4000/amaryllis-source/blob/main/docs/installation/Amaryllis-Owner-Installation-and-First-Flight-DRAFT-v3.md)
 for vessel installation and operation.

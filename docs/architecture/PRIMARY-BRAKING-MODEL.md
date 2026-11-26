@@ -6,7 +6,7 @@ change the AP approach envelope or braking toward nonzero selected speeds.
 
 ## Evidence and fitted estimates
 
-Source recording: `0-1795709962162.csv`, captured 26 November 2026. The
+Evidence: a baseline SEL-zero braking recording. The
 zero-speed request starts at sample 177 with measured speed 29.017 b/s.
 Forward travel stops about 19 seconds and 343 integrated blocks later;
 the subsequent reverse-speed peak is 1.373 b/s.
@@ -27,8 +27,8 @@ model across operating conditions.
 The runtime rounds gain to 8. Applied reverse-output release in this recording
 is roughly 0.08–0.09 normalized output per second; the forecast uses 0.08.
 A fixed 2.5 b/s allowance covers unmeasured residual response and reporting
-delay. Pass one used 1.5 b/s; the independent second recording
-`0-1795711265613.csv` still reached 0.877 b/s backward, so pass two adds a
+delay. Pass one used 1.5 b/s; an independent second braking recording still
+reached 0.877 b/s backward, so pass two adds a
 rounded 1 b/s release margin. This is a tuning correction, not an independently
 identified physical constant. These constants require
 validation on another braking run and are currently vessel-specific.

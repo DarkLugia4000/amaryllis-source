@@ -14,7 +14,7 @@ pins the two allowed data paths, schema, numerical bounds and checksums before
 any installation writes. Existing complete installations remain protected by
 the fresh-install gate. Live computers and the in-world disk were not changed.
 Core/controller code and configured gains are identical to the tested v145 build.
-The portable minimum selectable altitude remains 100 (Journeys uses 120).
+The portable minimum selectable altitude remains 100; installation-specific overrides are retained.
 
 Previous core build: **v145, 24 October 2026, pending lift-ACK queue priority and timing**.
 Cockpit input retains its dedicated fast receiver and checks before radio work.
@@ -29,7 +29,7 @@ priority in the existing bounded recording buffers. It adds no status messages,
 peripheral reads or disk writes in the control path. Original receipt time still
 governs telemetry freshness. PID settings, prediction, batch completion checks,
 lease durations and control cadence are unchanged for this comparison.
-Live deployment changes only core's main.lua, radio_inbox.lua, io.lua and
+The update changes only core's main.lua, radio_inbox.lua, io.lua and
 debug_recorder.lua. The portable state payload also receives the compatible
 optional IO timing arguments through its existing shared dependency; live state
 does not require an update. In-game timing improvement remains unverified.
@@ -45,7 +45,7 @@ The simulated failure reproduces on v143. Validation passes 48 focused checks,
 236 existing recovery checks and five real chamber-receiver fault-lifecycle checks.
 An invalid current altitude still blocks probe; a newly accepted valid probe
 clears the retained altitude/application fault. Cockpit and remote AP regressions
-also pass. In-game acceptance remains pending loading the staged core update.
+also pass. In-game acceptance remains pending a controlled in-game verification.
 
 Previous diagnostic build: **v143, 23 October 2026, per-sample cockpit timing**.
 Core and ama-state keep fixed-size 256-sample timing buffers, with bounded
@@ -71,10 +71,10 @@ vertical-speed feed-forward and its debug recording field. It also retains
 remote AP, docked remote provisioning and the optional ama-state reader.
 Packaging checks do not establish in-game acceptance of the latest PID tuning.
 
-Deployed in Amaryllis Trial Journeys: **v142, 23 October 2026**.
+Historical verification baseline: **v142, 23 October 2026**.
 This includes the v141 navigator queue and v140 installer workload changes
-below. With the operator confirming physical support, core #0 and ama-state #1
-were updated and restarted, then navigator #5 received a committed v11 package
+below. With the vessel physically supported, core and the state reader
+were updated and restarted, then navigator received a committed v11 package
 and was restarted. All fourteen wireless package receipts, identities, Lua files
 and cleared commit journals were verified. Core/state delta files match release
 objects. Fleet assignments and existing core/state settings were preserved.
@@ -85,7 +85,7 @@ input, and the installer warmed fourteen bundles (3,748,256 payload bytes) with
 hundreds of subsequent cache hits and no further misses at the final audit.
 Short samples still caught roughly two-second processing delays with the cache
 warm, so priority and caching have not eliminated the latency problem. Removing
-the pause marker did not advance the running PAUSED tab in this session; the
+the pause marker did not advance the running PAUSED tab during verification; the
 operator restarted only that installer tab to resume. The cause is unconfirmed.
 See diagnostics/2026-10-23/v142-live-deployment for the audit and timing samples.
 
