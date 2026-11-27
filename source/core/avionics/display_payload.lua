@@ -32,6 +32,14 @@ function Payload.heading(state)
     if type(state.thrust)=="table" and type(state.thrust.headingControl)=="table" then
         result.thrust={headingControl=pick(state.thrust.headingControl,{"measuredYawRate","targetYawRate"})}
     end
+    local thrust=type(state.thrust)=="table" and state.thrust or {}
+    local settings=type(state.settings)=="table" and state.settings.thrust or nil
+    result.propulsion=pick(thrust,{"mode"})
+    local request=pick(thrust.request,{"manualAcceleration","directRpm"})
+    result.propulsion.manualAcceleration=request.manualAcceleration
+    if type(settings)=="table" and (settings.directRpmVerified==true or settings.directRpmCalibrationAvailable==true) then
+        result.propulsion.directRpm=request.directRpm
+    end
     if type(state.autopilot)=="table" then
         local ap=state.autopilot
         result.autopilot=pick(ap,{"active","distance","crossTrack","cruiseSpeed","requestedSpeed","requestedHeading","state","reason",

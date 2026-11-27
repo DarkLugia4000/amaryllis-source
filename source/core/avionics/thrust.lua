@@ -1813,9 +1813,22 @@ function Thrust:makeTargets(io,now,controls,sideDemand)
     local yaw=self:headingDriveDemand(io,now,controls)
     if not finite(yaw) or math.abs(yaw)>1 then return nil,"YAW DEMAND OUT OF BOUNDS" end
     self.request.yawDemand=yaw
+    self.request.yawFeedbackDemand=yaw
+    self.request.strafeYawFeedForward=0
     if controls.lateral and not controls.anchorAuthority and not controls.routeLateralAuthority and sideDemand==nil then
         side=controls.lateral:evaluate(io,now,controls,yaw)
         self.request.sideDemand=side
+        -- Trial compensation follows commanded left translation. The recording
+        -- supports +4% yaw at full left demand; right translation awaits tuning.
+        -- Apply only with selected heading and pilot translation, so release
+        -- braking and manual heading retain their existing steering authority.
+        local lateral=controls.lateral
+        if controls.modes.heading=="SEL" and side<0 and lateral.state~="BRAKING" then
+            local correction=.04*math.abs(side)
+            self.request.strafeYawFeedForward=correction
+            yaw=clamp(yaw+correction,-1,1)
+            self.request.yawDemand=yaw
+        end
     end
     local mixer=c.mixer_verified==true and c.lateral_mixer or nil
     if (controls.anchorAuthority or controls.routeLateralAuthority or controls.lateral) and mixer then
@@ -1824,12 +1837,12 @@ function Thrust:makeTargets(io,now,controls,sideDemand)
         -- Anchor uses the same verified fixed-direction pairs for translation.
         for _,quad in ipairs(LATERAL_QUADS) do if mixer[quad] then mixer[quad].side_gain=1 end end
     end
-    -- The balance applies to every sideways source and runs before the route
+    -- The balance applies to every sideways source and runs before strafe
     -- authority reserves yaw capacity, so the reservation uses the balanced gains.
     if mixer then
         mixer=Thrust.balanceStrafe(mixer,Registry.number(c,"thrust.front_back_strafe_percent"))
     end
-    if controls.routeLateralAuthority and mixer then
+    if (controls.routeLateralAuthority or controls.lateral and not controls.anchorAuthority) and mixer then
         -- Reserve the differential yaw demand first. Translation receives only
         -- the remaining capacity, avoiding asymmetric clipping and unwanted yaw.
         local sideLimit=1

@@ -47,7 +47,14 @@ local throttleColumns={"throttle_mode","effective_throttle_mode","prop_forward_s
 for _,key in ipairs(throttleColumns) do columns[#columns+1]=key end
 local strafeColumns={"strafe_mode","strafe_state","strafe_offset_blocks","strafe_remaining_blocks",
  "strafe_sideways_speed_bps","strafe_reference_heading_deg","lateral_demand",
- "strafe_left_signal","strafe_right_signal"}
+ "strafe_left_signal","strafe_right_signal","yaw_feedback_demand","strafe_yaw_feed_forward"}
+-- Per-drive request and fresh applied readback retain normalized 0..1 units.
+for _,quad in ipairs({"lb","rb","ls","rs"}) do
+ for _,side in ipairs({"p","s"}) do
+  strafeColumns[#strafeColumns+1]="strafe_"..quad.."_"..side.."_requested"
+  strafeColumns[#strafeColumns+1]="strafe_"..quad.."_"..side.."_applied"
+ end
+end
 for _,key in ipairs(strafeColumns) do columns[#columns+1]=key end
 local strafePositionColumns={"strafe_raw_x","strafe_raw_z","strafe_projected_x","strafe_projected_z",
  "strafe_position_sample_s","strafe_position_projected_at_s","strafe_projection_velocity_sample_s",
@@ -171,6 +178,8 @@ function Debug:start(io)
    prop_signals="Fresh forward and reverse cockpit redstone inputs, each 0 through 15",
    pilot_drive_request_pct="Signed cockpit request after input gates, from -100 to 100 percent",
    lateral_demand="Signed normalized sideways drive request from -1 to 1, after yaw-priority limiting and before mixing; can include AP or anchor demand",
+   yaw_feedback_demand="Signed heading-controller yaw demand before strafe feed-forward, normalized from -1 to 1",
+   strafe_yaw_feed_forward="Additive normalized yaw correction for commanded strafe, before combined yaw clamping; trial full-left correction is +0.04",
    strafe_remaining_blocks="Signed selected offset minus projected sideways travel",
    strafe_position="Last strafe evaluation: world X/Z before and after projection, core-clock sample and evaluation times, signed displacement credited on that evaluation and cumulative travel before any reset",
    manual_turn_yaw_rate_deg_s="Absolute heading rate used by the MAN neutral turn pause, in degrees per second",
@@ -243,7 +252,7 @@ function Debug:capture(snapshot,io,now,flight)
   snapshot.vessel and snapshot.vessel.sampleAgeSeconds,v.at,speed.error,loop.integral,speed.output,
   t.requested and t.requested["primary-left"],t.requested and t.requested["primary-right"],applied.left,applied.right,
   left.direction,right.direction,left.commandAcknowledged,right.commandAcknowledged,left.statusAgeSeconds,right.statusAgeSeconds,
-  v.heading,heading.headingError,heading.measuredYawRate,heading.yawDemand,anchor.state,anchor.distance,anchor.horizontalSpeed,
+  v.heading,heading.headingError,heading.measuredYawRate,(t.request or {}).yawDemand,anchor.state,anchor.distance,anchor.horizontalSpeed,
   v.altitude,v.verticalSpeed,systems.phase,self.dropped,
   systems.reason,systems.abortReason,altitude.reason,propulsion.reason,self.faultChangedAt,
   le[1],le[2],le[3],le[4],le[5],re[1],re[2],re[3],re[4],re[5],
@@ -342,7 +351,19 @@ function Debug:capture(snapshot,io,now,flight)
  local strafeData={strafe_mode=(snapshot.modes or {}).lateral or strafe.mode,strafe_state=strafe.state,
   strafe_offset_blocks=strafe.offset,strafe_remaining_blocks=strafe.remaining,
   strafe_sideways_speed_bps=strafe.sidewaysSpeed,strafe_reference_heading_deg=strafe.referenceHeading,
-  lateral_demand=request.sideDemand,strafe_left_signal=raw.left_lift,strafe_right_signal=raw.right_lift}
+  lateral_demand=request.sideDemand,strafe_left_signal=raw.left_lift,strafe_right_signal=raw.right_lift,
+  yaw_feedback_demand=request.yawFeedbackDemand,strafe_yaw_feed_forward=request.strafeYawFeedForward}
+ -- Snapshot role readbacks already enforce readback freshness. Missing values
+ -- remain blank so offline hardware is distinguishable from an idle drive.
+ for _,quad in ipairs({"lb","rb","ls","rs"}) do
+  local role=roles["thrust-"..quad] or {}
+  for _,side in ipairs({"p","s"}) do
+   local drive="lateral-"..quad.."-"..side
+   local prefix="strafe_"..quad.."_"..side
+   strafeData[prefix.."_requested"]=(t.requested or {})[drive]
+   strafeData[prefix.."_applied"]=(role.applied or {})[drive]
+  end
+ end
  for _,key in ipairs(strafeColumns) do nextColumn=nextColumn+1;row[nextColumn]=strafeData[key] end
  local lateral=flight and flight.controls and flight.controls.lateral
  local trace=lateral and lateral.positionTrace or {}

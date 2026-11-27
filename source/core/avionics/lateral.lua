@@ -14,6 +14,7 @@ function Lateral:cancel()
  self.braking=false;self.output=0;self.integral=0;self.manual=0;self.hold=nil;self.waitNeutral=false
  self.settledAt=nil;self.lastAt=nil;self.turnQuietUntil=nil
  self.positionTrace=nil
+ self.manualEngaged=false;self.releaseBraking=false
 end
 -- Section: Sideways guidance | Selected displacement, braking and pilot handover.
 -- Summary: Validate the vessel observations used for sideways position guidance.
@@ -52,7 +53,7 @@ function Lateral:input(raw,at,dt)
  local c=self.config.cockpit or {}
  if self.mode=="MANUAL" then
   self.manual=direction==0 and 0 or (raw.right_lift-raw.left_lift)/15*(c.lateral_strength_percent or 50)/100
-  self.state="MANUAL";return
+  self.state=self.releaseBraking and self.manual==0 and "BRAKING" or "MANUAL";return
  end
  if direction==0 then self.hold=nil;return end
  local change=0
@@ -70,7 +71,45 @@ function Lateral:evaluate(io,now,controls,yaw)
  if controls.lateralStopLock or controls.available~=true or io.autopilot and io.autopilot.active or io.positionAnchor and io.positionAnchor.active then
   self:cancel();return 0
  end
- if self.mode=="MANUAL" and not self.braking then self.output=self.manual or 0;return self.output end
+ if self.mode=="MANUAL" and not self.braking then
+  -- Observe manual travel along the vessel's sideways axis. Observation loss
+  -- clears recorded measurements while pilot thrust remains available.
+  local observed,reason=self:telemetry(io,now)
+  self.speed=nil;self.referenceHeading=nil;self.remaining=nil;self.positionTrace=nil
+  self.reason=reason
+  if observed then
+   local angle=math.rad(observed.heading)
+   self.speed=observed.linearVelocity.x*math.cos(angle)+observed.linearVelocity.z*math.sin(angle)
+   self.referenceHeading=observed.heading
+   local observation=observed.positionObservation or {}
+   local raw=observation.raw or observed.position
+   self.positionTrace={rawX=raw.x,rawZ=raw.z,x=observed.position.x,z=observed.position.z,
+    sampleAt=observation.at,projectedAt=observation.projectedAt,
+    velocityAt=observation.projectionVelocityAt,evaluatedAt=now}
+  end
+  self.output=self.manual or 0
+  if self.output~=0 then
+   -- Pilot input takes ownership immediately, including reversal during braking.
+   self.manualEngaged=true
+   self.releaseBraking=false
+   self.state="MANUAL"
+  else
+   -- Arm release braking only after pilot translation. Fresh observations
+   -- start braking above 0.3 b/s and finish below 0.1 b/s to avoid chatter.
+   if self.manualEngaged then
+    self.releaseBraking=observed~=nil and math.abs(self.speed)>.3
+    self.manualEngaged=false
+   end
+   if not observed or math.abs(self.speed or 0)<=.1 then self.releaseBraking=false end
+   if self.releaseBraking then
+    self.output=clamp(-.8*self.speed,-1,1)
+    self.state="BRAKING"
+   else
+    self.state="MANUAL"
+   end
+  end
+  return self.output
+ end
  local v,reason=self:telemetry(io,now)
  if not v or self.uuid and v.uuid~=self.uuid then
   self:cancel();self.state="UNAVAILABLE";self.reason=reason or "VESSEL IDENTITY CHANGED";return 0
@@ -80,6 +119,8 @@ function Lateral:evaluate(io,now,controls,yaw)
  if not finite(heading) then self:cancel();return 0 end
  local angle=math.rad(heading);local nx,nz=math.cos(angle),math.sin(angle)
  local speed=v.linearVelocity.x*nx+v.linearVelocity.z*nz
+ -- Treat sub-centimetre-per-second readings as settled sensor noise.
+ if math.abs(speed)<.01 then speed=0 end
  local dt=self.lastAt and v.at-self.lastAt or 0
  local rate=self.lastHeading and dt>0 and math.abs(delta(v.heading,self.lastHeading))/dt or 0
  if dt>0 or not self.lastAt then self.lastAt=v.at;self.lastHeading=v.heading end
@@ -139,7 +180,16 @@ function Lateral:evaluate(io,now,controls,yaw)
  if self.braking or speed*velocityError<0 or integral*velocityError<0 then integral=0 end
  if not self.braking and not settled then integral=clamp(integral+.08*velocityError*dt,-.15,.15) end
  self.integral=integral
- local wanted=clamp(.4*velocityError+integral,-1,1)
+ -- Add up to 55 percentage points while selected travel accelerates toward
+ -- its target. At rest with a 0.5 b/s request this lifts the proportional
+ -- baseline from 20% to 75%, before integral correction and output slew.
+ -- Fade with velocity error, reaching zero at requested speed. Braking,
+ -- settling and turn pauses retain their existing output behavior.
+ local startingBias=0
+ if self.mode=="SEL" and not self.braking and not settled and desired*velocityError>0 then
+  startingBias=.55*clamp(math.abs(velocityError)/.5,0,1)*(velocityError>0 and 1 or -1)
+ end
+ local wanted=clamp(.4*velocityError+integral+startingBias,-1,1)
  -- Active braking is thrust against the current motion. Drag stops the vessel quickly
  -- below the configured speed, so that thrust is withheld and the drives stay idle.
  -- A selected approach that has passed its target by more than the settle tolerance
@@ -155,7 +205,7 @@ function Lateral:evaluate(io,now,controls,yaw)
 end
 function Lateral:snapshot()
  return {mode=self.mode,state=self.state,offset=self.offset,remaining=self.remaining,
-  sidewaysSpeed=self.speed,referenceHeading=self.referenceHeading,active=self.pending or self.braking or false,
+  sidewaysSpeed=self.speed,referenceHeading=self.referenceHeading,active=self.pending or self.braking or self.releaseBraking or false,
   waitingForNeutral=self.waitNeutral,reason=self.reason}
 end
 return Lateral

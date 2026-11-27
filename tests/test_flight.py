@@ -678,6 +678,118 @@ c.targets.heading=91;c.yaw=.1;sample(io,23,0,0,91,0,0)
 assert(lateral:evaluate(io,23,c,0)==0 and lateral.state=='TURNING')
 """)
 
+    def test_manual_strafe_refreshes_measurements_without_gating_pilot_output(self):
+        lua=self.runtime()
+        lua.execute(r"""
+local Lateral=require('avionics.lateral')
+local ap,io,c=fixture(90,0);io.autopilot=nil
+local lateral=Lateral.new(io.config);lateral.manual=-1
+sample(io,10,12,24,90,0,2)
+assert(lateral:evaluate(io,10,c,0)==-1)
+assert(math.abs(lateral:snapshot().sidewaysSpeed-2)<1e-9)
+assert(lateral.positionTrace.x==12 and lateral.positionTrace.z==24)
+sample(io,10.5,12,25,90,0,-.5)
+assert(lateral:evaluate(io,10.5,c,0)==-1)
+assert(math.abs(lateral.speed+.5)<1e-9 and lateral.positionTrace.z==25)
+assert(lateral:evaluate(io,100,c,0)==-1)
+assert(lateral.speed==nil and lateral.positionTrace==nil and lateral.reason)
+""")
+
+    def test_manual_and_selected_strafe_reserve_yaw_capacity(self):
+        lua=self.runtime()
+        lua.execute(r"""
+local Lateral=require('avionics.lateral')
+for _,mode in ipairs({'MANUAL','SEL'}) do
+ for _,side in ipairs({-1,1}) do
+  for _,yaw in ipairs({-.25,.25}) do
+   local ap,io,c,t=fixture(90,0);io.autopilot=nil
+   c.modes.heading='SEL'
+   c.lateral=Lateral.new(io.config);c.lateral.mode=mode
+   c.lateral.evaluate=function()return side end
+   t.headingDriveDemand=function()return yaw end
+   local targets,why=t:makeTargets(io,10,c);assert(targets,why)
+   assert(math.abs(t.request.sideDemand)<=1-math.abs(t.request.yawDemand)+1e-9)
+   assert(t.saturated==false,'yaw reservation prevents clipping')
+   local feed=side<0 and .04 or 0
+   assert(math.abs(t.request.yawFeedbackDemand-yaw)<1e-9)
+   assert(math.abs(t.request.strafeYawFeedForward-feed)<1e-9)
+   assert(math.abs(t.request.yawDemand-yaw-feed)<1e-9)
+  end
+ end
+end
+""")
+
+    def test_manual_release_braking_hysteresis_override_and_observation_loss(self):
+        lua=self.runtime()
+        lua.execute(r"""
+local Lateral=require('avionics.lateral')
+for _,direction in ipairs({-1,1}) do
+ local ap,io,c=fixture(90,0);io.autopilot=nil
+ local lateral=Lateral.new(io.config);lateral.manual=direction
+ sample(io,10,0,0,90,0,direction*1.4)
+ assert(lateral:evaluate(io,10,c,0)==direction)
+ lateral.manual=0
+ assert(math.abs(lateral:evaluate(io,10,c,0)+direction*1)<1e-9)
+ assert(lateral.state=='BRAKING')
+ sample(io,10.5,0,0,90,0,direction*.2)
+ assert(math.abs(lateral:evaluate(io,10.5,c,0)+direction*.16)<1e-9)
+ lateral.manual=-direction
+ assert(lateral:evaluate(io,10.5,c,0)==-direction and not lateral.releaseBraking)
+ lateral.manual=0
+ sample(io,11,0,0,90,0,direction*.2)
+ assert(lateral:evaluate(io,11,c,0)==0,'release below start threshold coasts')
+ lateral.manual=direction;lateral:evaluate(io,11,c,0);lateral.manual=0
+ sample(io,11.5,0,0,90,0,direction*1)
+ assert(lateral:evaluate(io,11.5,c,0)*direction<0)
+ sample(io,12,0,0,90,0,direction*.09)
+ assert(lateral:evaluate(io,12,c,0)==0 and not lateral.releaseBraking)
+ lateral.manual=direction;lateral:evaluate(io,12,c,0);lateral.manual=0
+ assert(lateral:evaluate(io,100,c,0)==0,'stale telemetry clears automatic braking')
+end
+""")
+
+    def test_selected_strafe_starting_bias_is_symmetric_and_fades_at_speed(self):
+        lua=self.runtime()
+        lua.execute("Lateral=require('avionics.lateral')")
+        lua.execute(r"""
+local function selected(direction,speed)
+ local ap,io,c=fixture(90,0);io.autopilot=nil
+ local lateral=Lateral.new(io.config);c.lateral=lateral
+ assert(lateral:select('SEL',io,10))
+ lateral.pending=true;lateral.offset=direction*10
+ sample(io,10,0,0,90,0,direction*speed);lateral:evaluate(io,10,c,0)
+ lateral.output=direction*(speed==0 and .75 or .1)
+ sample(io,10.5,0,0,90,0,direction*speed)
+ return lateral:evaluate(io,10.5,c,0)
+end
+-- A half-second sample adds 2% integral to the 75% starting baseline.
+assert(math.abs(selected(1,0)-.77)<1e-9)
+assert(math.abs(selected(-1,0)+.77)<1e-9)
+assert(math.abs(selected(1,.4)-.154)<1e-9,'bias fades as requested speed approaches')
+assert(math.abs(selected(-1,.4)+.154)<1e-9)
+assert(selected(1,.5)==0 and selected(-1,.5)==0,'starting bias disappears at requested speed')
+""")
+
+    def test_strafe_noise_and_release_braking_status(self):
+        lua=self.runtime()
+        lua.execute(r"""
+local Lateral=require('avionics.lateral')
+local ap,io,c=fixture(90,0);io.autopilot=nil
+local lateral=Lateral.new(io.config)
+assert(lateral:select('SEL',io,10))
+lateral.pending=true;lateral.offset=-10
+sample(io,10.5,0,0,90,0,7.5e-8)
+lateral:evaluate(io,10.5,c,0)
+assert(lateral.state=='MOVING' and lateral.speed==0)
+lateral:cancel();lateral.manual=-1
+sample(io,11,0,0,90,0,-1.4)
+lateral:evaluate(io,11,c,0)
+lateral:input({left_lift=0,right_lift=0},11.1,.1)
+assert(lateral:evaluate(io,11.1,c,0)==1 and lateral.state=='BRAKING')
+lateral:input({left_lift=0,right_lift=0},11.2,.1)
+assert(lateral.state=='BRAKING' and lateral:snapshot().active)
+""")
+
     def test_strafe_braking_is_withheld_below_the_minimum_speed(self):
         lua=self.runtime()
         lua.execute("Lateral=require('avionics.lateral')")
@@ -776,26 +888,26 @@ end
 ap.routeHeading=90;ap.headingBias=.4;ap.crossDemand=.125;ap.primaryIdle=true;ap.captureSettledSeconds=1.5
 recorder:capture({},io,10,{})
 assert(#recorder.queue==1)
-assert(legacy(recorder.queue[1]):match(',90,0%.4,0%.125,1,1%.5'..string.rep(',',32)..'\\n$'))
+assert(legacy(recorder.queue[1]):match(',90,0%.4,0%.125,1,1%.5'..string.rep(',',50)..'\\n$'))
 local snapshot={modes={throttle='MANUAL'},effectiveModes={throttle='MANUAL'},
  inputs={valid=true,raw={prop_forward=0,prop_reverse=0}},cockpitControl={propulsionRequestPercent=0},
  thrust={request={manualDriveOutput={left=.2,right=.2}},manualAcceleration={
   targetAcceleration=0,measuredAcceleration=-.25,holdingSpeed=5,state='HOLDING',turnYawRate=.125}}}
 recorder:capture(snapshot,io,10.5,{})
-assert(legacy(recorder.queue[2]):match(',MANUAL,MANUAL,0,0,0,0,%-0%.25,5,HOLDING,,,0%.125'..string.rep(',',20)..'\\n$'))
+assert(legacy(recorder.queue[2]):match(',MANUAL,MANUAL,0,0,0,0,%-0%.25,5,HOLDING,,,0%.125'..string.rep(',',38)..'\\n$'))
 snapshot.inputs.valid=false
 snapshot.effectiveModes.throttle='SEL'
 snapshot.thrust.request={throttleReason='PRIMARY ENGINES IDLE'}
 recorder:capture(snapshot,io,11,{})
-assert(legacy(recorder.queue[3]):match(',MANUAL,SEL,,,0'..string.rep(',',6)..'PRIMARY ENGINES IDLE'..string.rep(',',21)..'\\n$'))
+assert(legacy(recorder.queue[3]):match(',MANUAL,SEL,,,0'..string.rep(',',6)..'PRIMARY ENGINES IDLE'..string.rep(',',39)..'\\n$'))
 snapshot.inputs={valid=true,raw={left_lift=0,right_lift=15}}
 snapshot.modes.lateral='SEL'
 snapshot.lateralControl={state='MOVING',offset=2,remaining=-.25,sidewaysSpeed=.125,referenceHeading=57}
-snapshot.thrust.request={sideDemand=-.5}
+snapshot.thrust.request={sideDemand=-.5,yawFeedbackDemand=.06,strafeYawFeedForward=.02}
 local flight={controls={lateral={positionTrace={rawX=10,rawZ=20,x=11,z=19,
  sampleAt=11,projectedAt=11.5,velocityAt=10.9,evaluatedAt=11.5,credited=-.25,travelled=2.25,turning=false}}}}
 recorder:capture(snapshot,io,11.5,flight)
-assert(legacy(recorder.queue[4]):match(',SEL,MOVING,2,%-0%.25,0%.125,57,%-0%.5,0,15,10,20,11,19,11,11%.5,10%.9,11%.5,%-0%.25,2%.25,0\\n$'))
+assert(legacy(recorder.queue[4]):match(',SEL,MOVING,2,%-0%.25,0%.125,57,%-0%.5,0,15,0%.06,0%.02,,,,,,,,,,,,,,,,,10,20,11,19,11,11%.5,10%.9,11%.5,%-0%.25,2%.25,0\\n$'))
 io.thrust.speedControl={brakeReleaseLossBps=4,coastThresholdBps=5,zeroCoast=true}
 io.thrust.primaryRundown={epoch=10000,magnitude=.3,rate=.08,direction=-1}
 io.thrust.controllers={['thrust-ls']={boot='boot-left',status={primaryRundownVersion=2,

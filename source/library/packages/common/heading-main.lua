@@ -149,7 +149,7 @@ local function handleRestart(sender,message,receivedProtocol,context,sendAck,reb
 end
 
 -- The small local renderer keeps each heading computer self-contained. It
--- draws only local monitor text and never imports or executes core code.
+-- draws local monitor instruments and never imports or executes core code.
 local colorValues = {
     white = 1, red = 16384, gray = 128, cyan = 512, yellow = 16, green = 32, black = 32768,
 }
@@ -844,9 +844,571 @@ local function drawPlainRow(monitor, row, y)
         first = last + 1
     end
 end
--- Summary: Write the prepared character frame to the configured monitor.
+-- Section: Pixel graphics | Optional CC: Graphics backend for the cached instruments.
+-- Each glyph occupies a 4 by 6 logical pixel cell. Lowercase uses the same
+-- shapes as uppercase; delta and degree retain their instrument meanings.
+local PIXEL_FONT = {
+    A="010101111101101", B="110101110101110", C="011100100100011",
+    D="110101101101110", E="111100110100111", F="111100110100100",
+    G="011100101101011", H="101101111101101", I="111010010010111",
+    J="001001001101010", K="101101110101101", L="100100100100111",
+    M="101111111101101", N="101111111111101", O="010101101101010",
+    P="110101110100100", Q="010101101111011", R="110101110101101",
+    S="011100010001110", T="111010010010010", U="101101101101111",
+    V="101101101101010", W="101101111111101", X="101101010101101",
+    Y="101101010010010", Z="111001010100111",
+    ["0"]="111101101101111", ["1"]="010110010010111",
+    ["2"]="110001010100111", ["3"]="110001010001110",
+    ["4"]="101101111001001", ["5"]="111100110001110",
+    ["6"]="011100111101111", ["7"]="111001010010010",
+    ["8"]="111101111101111", ["9"]="111101111001110",
+    [" "]="000000000000000", ["."]="000000000000010",
+    [","]="000000000010100", [":"]="000010000010000",
+    [";"]="000010000010100", ["-"]="000000111000000",
+    ["+"]="000010111010000", ["/"]="001001010100100",
+    ["\\"]="100100010001001", ["|"]="010010010010010",
+    ["<"]="001010100010001", [">"]="100010001010100",
+    ["="]="000111000111000", ["_"]="000000000000111",
+    ["["]="110100100100110", ["]"]="011001001001011",
+    ["("]="010100100100010", [")"]="010001001001010",
+    ["!"]="010010010000010", ["?"]="110001010000010",
+    ["%"]="101001010100101", ["'"]="010010000000000",
+    ["\""]="101101000000000", ["*"]="000101010101000",
+    ["#"]="101111101111101", ["^"]="010101000000000",
+    ["~"]="000011110000000", ["@"]="111101111100111",
+    ["&"]="010101010101011", ["$"]="011110011110010",
+    ["`"]="100010000000000", ["{"]="011010110010011",
+    ["}"]="110010011010110",
+    ["\206\148"]="010010101101111", ["\194\176"]="010101010000000",
+}
+
+-- Section: Native instruments | Pixel coordinates independent of the text grid.
+local Pixel = {}
+-- Seven-row instrument type keeps open counters and distinct digit shapes.
+-- Slash-separated rows are unpacked once; status-frame rasterization retains
+-- its original cell font for compatibility with small monitors.
+Pixel.font = {
+    A="01110/10001/10001/11111/10001/10001/10001",
+    B="11110/10001/10001/11110/10001/10001/11110",
+    C="01111/10000/10000/10000/10000/10000/01111",
+    D="11110/10001/10001/10001/10001/10001/11110",
+    E="11111/10000/10000/11110/10000/10000/11111",
+    F="11111/10000/10000/11110/10000/10000/10000",
+    G="01111/10000/10000/10111/10001/10001/01111",
+    H="10001/10001/10001/11111/10001/10001/10001",
+    I="01110/00100/00100/00100/00100/00100/01110",
+    J="00111/00010/00010/00010/10010/10010/01100",
+    K="10001/10010/10100/11000/10100/10010/10001",
+    L="10000/10000/10000/10000/10000/10000/11111",
+    M="10001/11011/10101/10101/10001/10001/10001",
+    N="10001/11001/11001/10101/10011/10011/10001",
+    O="01110/10001/10001/10001/10001/10001/01110",
+    P="11110/10001/10001/11110/10000/10000/10000",
+    Q="01110/10001/10001/10001/10101/10010/01101",
+    R="11110/10001/10001/11110/10100/10010/10001",
+    S="01111/10000/10000/01110/00001/00001/11110",
+    T="11111/00100/00100/00100/00100/00100/00100",
+    U="10001/10001/10001/10001/10001/10001/01110",
+    V="10001/10001/10001/10001/10001/01010/00100",
+    W="10001/10001/10001/10101/10101/10101/01010",
+    X="10001/10001/01010/00100/01010/10001/10001",
+    Y="10001/10001/01010/00100/00100/00100/00100",
+    Z="11111/00001/00010/00100/01000/10000/11111",
+    ["0"]="01110/10001/10011/10101/11001/10001/01110",
+    ["1"]="00100/01100/00100/00100/00100/00100/01110",
+    ["2"]="01110/10001/00001/00010/00100/01000/11111",
+    ["3"]="11110/00001/00001/01110/00001/00001/11110",
+    ["4"]="00010/00110/01010/10010/11111/00010/00010",
+    ["5"]="11111/10000/10000/11110/00001/00001/11110",
+    ["6"]="01110/10000/10000/11110/10001/10001/01110",
+    ["7"]="11111/00001/00010/00100/01000/01000/01000",
+    ["8"]="01110/10001/10001/01110/10001/10001/01110",
+    ["9"]="01110/10001/10001/01111/00001/00001/01110",
+    [" "]="00000/00000/00000/00000/00000/00000/00000",
+    ["."]="00000/00000/00000/00000/00000/00110/00110",
+    ["-"]="00000/00000/00000/11111/00000/00000/00000",
+    ["+"]="00000/00100/00100/11111/00100/00100/00000",
+    ["/"]="00001/00010/00010/00100/01000/01000/10000",
+    ["?"]="01110/10001/00001/00010/00100/00000/00100",
+    [":"]="00000/00110/00110/00000/00110/00110/00000",
+    ["("]="00010/00100/01000/01000/01000/00100/00010",
+    [")"]="01000/00100/00010/00010/00010/00100/01000",
+}
+for glyph, rows in pairs(Pixel.font) do Pixel.font[glyph] = rows:gsub("/", "") end
+
+-- Summary: Allocate a black byte framebuffer. Drawing helpers clip to its
+-- bounds; rows are converted to strings only after the whole frame is built.
+function Pixel.new(width, height)
+    local image = { width = width, height = height, rows = {} }
+    for y = 1, height do
+        local row = {}
+        for x = 1, width do row[x] = string.char(15) end
+        image.rows[y] = row
+    end
+    return image
+end
+
+-- Summary: Fill an integer pixel rectangle, clipped to the framebuffer.
+-- Write the supplied palette-index byte into each covered framebuffer cell.
+function Pixel.rect(image, x, y, width, height, index)
+    local left, top = math.max(0, math.floor(x)), math.max(0, math.floor(y))
+    local right = math.min(image.width - 1, math.floor(x + width - 1))
+    local bottom = math.min(image.height - 1, math.floor(y + height - 1))
+    local byte = string.char(index)
+    for py = top, bottom do
+        for px = left, right do image.rows[py + 1][px + 1] = byte end
+    end
+end
+
+-- Summary: Draw bitmap text with integer enlargement and optional alignment.
+-- Limit the glyph count to the supplied pixel width before touching the frame.
+function Pixel.text(image, x, y, value, index, scale, align, available)
+    local cells = GLYPH.cells(safeText(value))
+    local limit = math.floor((available or image.width) / (6 * scale))
+    while #cells > limit do table.remove(cells) end
+    local width = math.max(0, #cells * 6 * scale - scale)
+    if align == "center" then x = x - width / 2 end
+    if align == "right" then x = x - width end
+    x, y = math.floor(x), math.floor(y)
+    for i, cell in ipairs(cells) do
+        local glyph = Pixel.font[string.upper(cell)] or Pixel.font["?"]
+        for gy = 0, 6 do
+            for gx = 0, 4 do
+                if glyph:sub(gy * 5 + gx + 1, gy * 5 + gx + 1) == "1" then
+                    Pixel.rect(image, x + (i - 1) * 6 * scale + gx * scale,
+                        y + gy * scale, scale, scale, index)
+                end
+            end
+        end
+    end
+end
+
+-- Summary: Draw a filled instrument triangle at an integer pixel position.
+-- Direction identifies its tip; index supplies a mode-1 palette slot.
+function Pixel.triangle(image, x, y, size, direction, index)
+    x, y = math.floor(x), math.floor(y)
+    for n = 0, size - 1 do
+        if direction == "up" or direction == "down" then
+            local py = direction == "up" and y + n or y - n
+            Pixel.rect(image, x - n, py, 2 * n + 1, 1, index)
+        else
+            local px = direction == "left" and x + n or x - n
+            Pixel.rect(image, px, y - n, 1, 2 * n + 1, index)
+        end
+    end
+end
+
+-- Summary: Draw an integer line between two pixel coordinates.
+-- Step along the longer axis and clip each point through the rectangle helper.
+function Pixel.stroke(image, x1, y1, x2, y2, index)
+    local steps = math.max(1, math.ceil(math.max(math.abs(x2 - x1), math.abs(y2 - y1))))
+    for step = 0, steps do
+        local fraction = step / steps
+        local x = math.floor(x1 + (x2 - x1) * fraction + 0.5)
+        local y = math.floor(y1 + (y2 - y1) * fraction + 0.5)
+        Pixel.rect(image, x, y, 1, 1, index)
+    end
+end
+
+-- Summary: Draw measured forward-speed magnitude on a 0..40 b/s dial.
+-- The scale is presentation range, with actual signed speed retained below.
+-- An amber rim mark shows requested magnitude; unavailable data hides its needle.
+function Pixel.speedometer(image, left, right, height, small, actual, requested, selector, unit, targetIndex)
+    targetIndex = targetIndex or 4
+    local centreX = math.floor((left + right) / 2)
+    local centreY = math.floor(height * 0.49)
+    local radius = math.floor(math.min((right - left - 12 * small) / 2, height * 0.26))
+    -- Map zero at lower-left clockwise across the upper arc to 40 at lower-right.
+    local function radians(speed)
+        return (135 + math.max(0, math.min(40, math.abs(speed))) * 270 / 40) * math.pi / 180
+    end
+    for speed = 0, 40, 0.25 do
+        local angle = radians(speed)
+        Pixel.rect(image, centreX + math.cos(angle) * radius,
+            centreY + math.sin(angle) * radius, 1, 1, 7)
+    end
+    for speed = 0, 40, 2 do
+        local angle = radians(speed)
+        local major = speed % 10 == 0
+        local inner = radius - (major and 4 or 2) * small
+        Pixel.stroke(image, centreX + math.cos(angle) * inner, centreY + math.sin(angle) * inner,
+            centreX + math.cos(angle) * radius, centreY + math.sin(angle) * radius, major and 0 or 7)
+        if major then
+            local labelRadius = radius - 10 * small
+            Pixel.text(image, centreX + math.cos(angle) * labelRadius,
+                centreY + math.sin(angle) * labelRadius - 3 * small,
+                tostring(speed), 7, small, "center")
+        end
+    end
+    if finiteDisplay(requested) then
+        local angle = radians(requested)
+        Pixel.stroke(image, centreX + math.cos(angle) * (radius + small),
+            centreY + math.sin(angle) * (radius + small),
+            centreX + math.cos(angle) * (radius + 4 * small),
+            centreY + math.sin(angle) * (radius + 4 * small), targetIndex)
+    end
+    if finiteDisplay(actual) then
+        local angle = radians(actual)
+        Pixel.stroke(image, centreX, centreY, centreX + math.cos(angle) * (radius - 6 * small),
+            centreY + math.sin(angle) * (radius - 6 * small), 0)
+        Pixel.rect(image, centreX - small, centreY - small, 3 * small, 3 * small, 0)
+    end
+    Pixel.text(image, centreX, height - 29 * small, shown(actual, 1, false), 0, small, "center")
+    local decimals = unit == "RPM" and 0 or (unit == "b/s2" and 2 or 1)
+    Pixel.text(image, centreX, height - 20 * small, shown(selector, decimals, unit == "b/s2"), targetIndex, small, "center")
+    Pixel.text(image, centreX, height - 7 * small, unit or "b/s", 7, small, "center")
+end
+
+-- Summary: Paint a six-petal, 48-pixel emblem using the existing purple,
+-- magenta, pink and yellow palette slots, preserving the shared monitor palette.
+function Pixel.flower(image, x, y, scale)
+    for petal = 0, 5 do
+        local angle = -math.pi / 2 + petal * math.pi / 3
+        local cosine, sine = math.cos(angle), math.sin(angle)
+        for py = 2, 45 do
+            for px = 2, 45 do
+                local dx, dy = px - 23.5, py - 23.5
+                local radial = dx * cosine + dy * sine
+                local across = -dx * sine + dy * cosine
+                local fraction = math.max(0, math.min(1, (radial + 1) / 23))
+                local halfWidth = 6.8 * math.sin(math.pi * fraction) ^ 0.8
+                if radial >= 0 and radial <= 21 and math.abs(across) <= halfWidth then
+                    local index = 10
+                    if halfWidth - math.abs(across) >= 1.1 then
+                        if math.abs(across) < 1.15 and radial < 17 then index = 6
+                        elseif across < 0 then index = 2 end
+                    end
+                    Pixel.rect(image, x + px * scale, y + py * scale, scale, scale, index)
+                end
+            end
+        end
+    end
+    Pixel.rect(image, x + 21 * scale, y + 21 * scale, 6 * scale, 6 * scale, 6)
+    Pixel.rect(image, x + 22 * scale, y + 22 * scale, 4 * scale, 4 * scale, 0)
+    Pixel.rect(image, x + 23 * scale, y + 23 * scale, 2 * scale, 2 * scale, 4)
+end
+
+-- Summary: Draw a shared +/-10 block lateral scale and an exact-value footer.
+-- Negative displacement is left, positive is right. Off-scale arrows preserve
+-- direction; unavailable displacement retains the scale with an empty marker.
+function Pixel.deviation(image, left, right, middle, height, small, displacement, index, detail)
+    local scaleY = height - 16 * small
+    local scaleLeft, scaleRight = left + 10 * small, right - 10 * small
+    Pixel.rect(image, scaleLeft, scaleY, scaleRight - scaleLeft + 1, 1, 7)
+    for tick = -2, 2 do
+        local x = middle + tick * (scaleRight - scaleLeft) / 4
+        Pixel.rect(image, x, scaleY - 2 * small, 1, 5 * small, tick == 0 and 9 or 7)
+    end
+    Pixel.text(image, left, scaleY - 3 * small, "L", 7, small)
+    Pixel.text(image, right, scaleY - 3 * small, "R", 7, small, "right")
+    if finiteDisplay(displacement) then
+        local x = middle + math.max(-10, math.min(10, displacement)) * (scaleRight - scaleLeft) / 20
+        Pixel.triangle(image, x, scaleY - 3 * small, 2 * small,
+            math.abs(displacement) <= 10 and "down" or (displacement < 0 and "left" or "right"), index)
+    end
+    Pixel.text(image, middle, height - 7 * small, detail, index, small, "center", right - left)
+end
+
+-- Summary: Build the approved tapes or disassembled emblem from a validated
+-- snapshot. Return nil for smaller monitors and blocked/error states so their
+-- existing wrapped messages remain available through the raster backend.
+function Pixel.frame(snapshot, display, columns, lines, width, height)
+    if width < 240 or height < 80 then return nil end
+    local issue, assembly = displayIssue(snapshot, display, columns, lines)
+    if issue and not (assembly and assembly.state == "DISASSEMBLED") then return nil end
+    local image = Pixel.new(width, height)
+    local small = math.max(1, math.floor(math.min(width / 340, height / 100)))
+    local margin = 5 * small
+    if assembly then
+        local scale = math.max(1, math.floor((height - 28 * small) / 48))
+        local total = 48 * scale + 24 * small
+        local top = math.floor((height - total) / 2)
+        Pixel.flower(image, math.floor((width - 48 * scale) / 2), top, scale)
+        Pixel.text(image, width / 2, top + 48 * scale + 5 * small,
+            "VESSEL DISASSEMBLED", 0, small, "center")
+        Pixel.text(image, width / 2, top + 48 * scale + 16 * small,
+            "A.E.V. AMARYLLIS", 7, small, "center")
+        return image
+    end
+    local vessel, targets = snapshot.vessel or {}, snapshot.targets or {}
+    local modes = snapshot.effectiveModes or snapshot.modes or {}
+    local ap = type(snapshot.autopilot) == "table" and snapshot.autopilot.active and snapshot.autopilot or nil
+    local commandIndex = ap and 10 or 4
+    local recovering = ap and (ap.state == "RECOVERING" or
+        (type(ap.state) == "string" and ap.state:match("^RETRYING %(%d+%)$") ~= nil))
+    local heading = not recovering and sensorValid(vessel, "heading") and angle(vessel.heading) or nil
+    local target = not recovering and (ap or modes.heading == "SEL") and
+        angle(ap and ap.requestedHeading or targets.heading) or nil
+    local speedColumn = width >= 300
+    local propulsion = type(snapshot.propulsion) == "table" and snapshot.propulsion or {}
+    local throttleMode = propulsion.mode or modes.throttle
+    local throttleTitle = throttleMode == "DIRECT" and "DIR RPM" or
+        (throttleMode == "SEL" and "SEL SPD" or "MAN THR")
+    local split = math.floor(width * (speedColumn and 0.60 or 0.72))
+    local speedLeft = speedColumn and math.floor(width * 0.80) or width
+    local left, right = margin, split - 10 * small
+    local middle = math.floor((left + right) / 2)
+    local title = ap and ("AP - " .. safeText(ap.state or "ACTIVE")) or
+        (modes.heading == "SEL" and "SEL HDG" or "")
+    Pixel.text(image, margin, 2 * small, title, recovering and 4 or 9, small, nil, split - 2 * margin)
+    Pixel.rect(image, margin, 11 * small, width - 2 * margin, 1, 7)
+    Pixel.rect(image, split, 15 * small, 1, height - 28 * small, 7)
+    if speedColumn then
+        Pixel.rect(image, speedLeft, 15 * small, 1, height - 28 * small, 7)
+        Pixel.text(image, (speedLeft + width) / 2, 2 * small, throttleTitle, 9, small, "center")
+    end
+    local big = math.max(small, math.floor(math.min(height / 44, (right - left) / 48)))
+    -- Instrument values share the smaller integer font step to preserve
+    -- space around the heading markers and within the altitude column.
+    local headingScale = math.max(small, big - 1)
+    local baseline = math.floor(height * 0.40)
+    local curveDepth = math.max(1, math.floor(height * 0.18))
+    -- Lower the tape ends into a pronounced compass arc. Tick, label and target
+    -- positions share this curve so they keep their bearing relationship.
+    local function tapeY(x)
+        local relative = (x - middle) / math.max(1, (right - left) / 2)
+        return math.floor(baseline + curveDepth * relative * relative + 0.5)
+    end
+    local above = math.max(15 * small, math.floor(height * 0.20) - 3 * small)
+    Pixel.text(image, middle, above, heading and string.format("%05.1f", heading) or "--.-", 0, headingScale, "center")
+    Pixel.triangle(image, middle, baseline - 5 * small, 2 * small, "down", 0)
+    for x = left, right do Pixel.rect(image, x, tapeY(x), 1, 1, 7) end
+    if heading then
+        local perDegree = (right - left) / 120
+        for bearing = math.ceil((heading - 60) / 5) * 5, heading + 60, 5 do
+            local x = math.floor(middle + (bearing - heading) * perDegree + 0.5)
+            if x >= left and x <= right then
+                local major = bearing % 30 == 0
+                local y = tapeY(x)
+                Pixel.rect(image, x, y - (major and 5 or 3) * small,
+                    1, (major and 5 or 3) * small, 7)
+                if major and x > left + 10 * small and x < right - 10 * small then
+                    Pixel.text(image, x, y + 5 * small,
+                        string.format("%03d", bearing % 360), 7, small, "center")
+                end
+            end
+        end
+        if target then
+            local difference = shortestDelta(heading, target)
+            local x = math.max(left, math.min(right, middle + difference * perDegree))
+            -- Keep the edge selector and its value above the detail/footer
+            -- region even where the curved tape reaches its lowest point.
+            local markerY = math.min(tapeY(x) + 15 * small,
+                height - 24 * small - 7 * headingScale)
+            Pixel.triangle(image, x, markerY, 2 * small,
+                math.abs(difference) <= 60 and "up" or (difference < 0 and "left" or "right"), commandIndex)
+            local halfLabel = 15 * headingScale
+            local valueX = math.max(left + halfLabel, math.min(right - halfLabel, x))
+            Pixel.text(image, valueX, markerY + 5 * small, string.format("%05.1f", target), commandIndex, headingScale, "center")
+        end
+    end
+    local detailY = height - 20 * small
+    if recovering then
+        Pixel.text(image, middle, detailY, "WAITING FOR TELEMETRY", 4, small, "center", right - left)
+    elseif ap then
+        local deviation = finiteDisplay(ap.crossTrack) and ap.crossTrack or nil
+        local side = deviation and (deviation < 0 and " L" or (deviation > 0 and " R" or "")) or ""
+        local detail = "DEV " .. shown(deviation and math.abs(deviation), 1, false) .. side ..
+            "  DIST " .. shown(ap.distance, 0, false) .. " b"
+        Pixel.deviation(image, left, right, middle, height, small, deviation, 0, detail)
+    else
+        local lateral = type(snapshot.lateralControl) == "table" and snapshot.lateralControl or {}
+        if lateral.mode == "SEL" and lateral.active then
+            local remaining = finiteDisplay(lateral.remaining) and lateral.remaining or nil
+            local side = remaining and (remaining < 0 and " L" or (remaining > 0 and " R" or "")) or ""
+            local detail = "STRAFE " .. shown(remaining and math.abs(remaining), 1, false) .. "b" .. side ..
+                " " .. safeText(lateral.state or "MOVING")
+            Pixel.deviation(image, left, right, middle, height, small, remaining, 4, detail)
+        end
+    end
+    local actual = sensorValid(vessel, "altitude") and vessel.altitude or nil
+    local altitudeTarget = targetValid(targets, "altitude") and targets.altitude or nil
+    local hold, holdTone = altitudeHoldIndicator(snapshot, false)
+    local targetIndex = ap and commandIndex or ((hold == "ABORTED" or hold == "ALT OFFLINE") and 7 or 4)
+    local axis = split + 21 * small
+    local altitudeRight = speedLeft - margin
+    local altitudeMiddle = math.floor((split + speedLeft) / 2)
+    Pixel.text(image, altitudeMiddle, 2 * small, hold or "ALTITUDE",
+        tonumber(colorDigits[color(holdTone or "gray")] or "7", 16), small, "center", width - split - margin)
+    -- Fixed readouts mirror the original instrument: measured altitude above
+    -- the tape and the entered target below it; only the tape marker moves.
+    Pixel.text(image, altitudeMiddle, 15 * small, shown(actual, 1, false), 0, headingScale, "center")
+    local top, bottom = math.floor(height * 0.34), height - 26 * small
+    local midY = math.floor((top + bottom) / 2)
+    local perBlock = (bottom - top) / 40
+    Pixel.rect(image, axis, top, 1, bottom - top + 1, 7)
+    if actual then
+        local ceiling = altitudeCeiling(snapshot)
+        for level = math.ceil((actual - 20) / 5) * 5, actual + 20, 5 do
+            local y = math.floor(midY - (level - actual) * perBlock + 0.5)
+            if y >= top and y <= bottom and (not ceiling or level <= ceiling) then
+                local index = level >= 290 and 14 or 7
+                Pixel.rect(image, axis, y, 3 * small, 1, index)
+                if level % 10 == 0 then Pixel.text(image, axis - 3 * small, y - 3 * small,
+                    tostring(level), index, small, "right", 18 * small) end
+            end
+        end
+        if altitudeTarget then
+            local rawY = midY - (altitudeTarget - actual) * perBlock
+            local y = math.max(top, math.min(bottom, rawY))
+            Pixel.triangle(image, axis, y, 3 * small,
+                rawY < top and "up" or (rawY > bottom and "down" or "right"), targetIndex)
+        end
+    end
+    Pixel.triangle(image, axis + 6 * small, midY, 3 * small, "left", 0)
+    Pixel.text(image, altitudeMiddle, height - 20 * small, shown(altitudeTarget, 1, false),
+        targetIndex, headingScale, "center", width - split - margin)
+    local footerY = height - 7 * small
+    Pixel.rect(image, margin, height - 11 * small, width - 2 * margin, 1, 7)
+    local requested = ap and ap.requestedSpeed or (modes.throttle == "SEL" and targets.speed or nil)
+    if speedColumn then
+        local actualSpeed = sensorValid(vessel, "forwardSpeed") and vessel.forwardSpeed or nil
+        local selector, unit = propulsion.manualAcceleration, "b/s2"
+        if throttleMode == "DIRECT" then selector, unit = propulsion.directRpm, "RPM"
+        elseif throttleMode == "SEL" then selector, unit = requested, "b/s" end
+        Pixel.speedometer(image, speedLeft, width, height, small, actualSpeed,
+            throttleMode == "SEL" and requested or nil, selector, unit, commandIndex)
+    end
+    local anchored = snapshot.anchor == "BRAKING" or snapshot.anchor == "ANCHORED"
+    if anchored then Pixel.text(image, margin, footerY, "ANCHORED", 4, small) end
+    if not speedColumn then
+        Pixel.text(image, split - margin, footerY, "SPD " .. shownSensor(vessel, "forwardSpeed", 1, false, false) .. " b/s",
+            0, small, "right")
+    end
+    Pixel.text(image, altitudeRight, footerY, "V/S " .. shownSensor(vessel, "verticalSpeed", 2, true, false),
+        0, small, "right", width - split - margin)
+    if speedColumn then
+        -- Move the completed speed column ahead of the heading and altitude
+        -- columns. Each instrument keeps its own geometry and readout spacing.
+        local speedWidth = width - speedLeft
+        for y, row in ipairs(image.rows) do
+            local reordered = {}
+            for x = speedLeft + 1, width do reordered[#reordered + 1] = row[x] end
+            for x = 1, speedLeft do reordered[#reordered + 1] = row[x] end
+            image.rows[y] = reordered
+        end
+        -- The speed column's former left divider is now the outer edge;
+        -- place its divider between speed and heading at the new boundary.
+        Pixel.rect(image, 0, 15 * small, 1, height - 28 * small, 15)
+        Pixel.rect(image, speedWidth, 15 * small, 1, height - 28 * small, 7)
+        Pixel.rect(image, 0, 11 * small, width, 1, 7)
+        Pixel.rect(image, 0, height - 11 * small, width, 1, 7)
+    end
+    if ap then
+        -- AP owns the complete header while active; clear the individual mode
+        -- labels after column placement and retain the continuous divider.
+        Pixel.rect(image, 0, 0, width, 11 * small, 15)
+        Pixel.text(image, width / 2, 2 * small, "AP - " .. safeText(ap.state or "ACTIVE"),
+            commandIndex, small, "center", width - 2 * margin)
+    end
+    -- Open only the heading section's lower divider for route deviation.
+    -- The speed and altitude footer bars remain in place.
+    local headingStart = speedColumn and (width - speedLeft) or 0
+    Pixel.rect(image, headingStart + 1, height - 11 * small, split - 1, 1, 15)
+    return image
+end
+
+-- Summary: Seal a completed framebuffer into mode-1 byte rows for batching.
+function Pixel.seal(image)
+    local rows = {}
+    for y, row in ipairs(image.rows) do rows[y] = table.concat(row) end
+    return rows
+end
+
+-- Summary: Restore text mode after graphics failure or termination. Clear the
+-- pixel cache so the next successful draw repaints the complete display.
+local function leaveGraphics(displayObject)
+    local monitor = displayObject.monitor
+    if type(monitor.setFrozen) == "function" then pcall(monitor.setFrozen, false) end
+    if type(monitor.setGraphicsMode) == "function" then
+        local ok, reason = pcall(monitor.setGraphicsMode, 0)
+        if not ok then return false, reason end
+    end
+    displayObject.pixelRows = nil
+    displayObject.previous = nil
+    return true
+end
+
+-- Summary: Build native instruments or rasterize a wrapped status frame into
+-- byte rows, using queried pixel dimensions and zero-based graphics offsets.
+-- Cache only completed frames; failed writes are retried through text mode.
+local function drawGraphics(displayObject, surface, snapshot)
+    local monitor = displayObject.monitor
+    local width, height = monitor.getSize(1)
+    if not finite(width) or not finite(height) or width < surface.width * 4 or
+        height < surface.height * 6 or width > 8192 or height > 8192 or
+        width * height > 2000000 then
+        error("unsupported graphics dimensions")
+    end
+    width, height = math.floor(width), math.floor(height)
+    local cellWidth = math.floor(width / surface.width)
+    local cellHeight = math.floor(height / surface.height)
+    local scale = math.max(1, math.floor(math.min(cellWidth / 4, cellHeight / 6)))
+    local left = math.floor((cellWidth - 3 * scale) / 2)
+    local top = math.floor((cellHeight - 5 * scale) / 2)
+    local native = Pixel.frame(snapshot, displayObject.display, surface.width, surface.height, width, height)
+    local rows = native and Pixel.seal(native) or {}
+    if not native then
+        for y = 1, surface.height do
+            local row = surface.rows[y]
+            for py = 0, cellHeight - 1 do
+                local parts = {}
+                local gy = math.floor((py - top) / scale)
+                for x = 1, surface.width do
+                    local glyph = PIXEL_FONT[string.upper(row.chars[x])] or PIXEL_FONT["?"]
+                    local fg = tonumber(colorDigits[row.fg[x]] or "0", 16)
+                    local bg = tonumber(colorDigits[row.bg[x]] or "f", 16)
+                    local pixels = {}
+                    for px = 0, cellWidth - 1 do
+                        local gx = math.floor((px - left) / scale)
+                        local lit = gx >= 0 and gx < 3 and gy >= 0 and gy < 5 and
+                            glyph:sub(gy * 3 + gx + 1, gy * 3 + gx + 1) == "1"
+                        pixels[#pixels + 1] = string.char(lit and fg or bg)
+                    end
+                    parts[#parts + 1] = table.concat(pixels)
+                end
+                parts[#parts + 1] = string.rep(string.char(15), width - surface.width * cellWidth)
+                rows[#rows + 1] = table.concat(parts)
+            end
+        end
+        while #rows < height do rows[#rows + 1] = string.rep(string.char(15), width) end
+    end
+    if not displayObject.pixelRows then monitor.setGraphicsMode(1) end
+    if type(monitor.setFrozen) == "function" then monitor.setFrozen(true) end
+    local old = displayObject.pixelRows
+    local first = 1
+    while first <= height do
+        if old and old[first] == rows[first] then
+            first = first + 1
+        else
+            local last = first
+            while last < height and (not old or old[last + 1] ~= rows[last + 1]) do
+                last = last + 1
+            end
+            local changed = {}
+            for y = first, last do changed[#changed + 1] = rows[y] end
+            monitor.drawPixels(0, first - 1, changed)
+            first = last + 1
+        end
+    end
+    if type(monitor.setFrozen) == "function" then monitor.setFrozen(false) end
+    displayObject.pixelRows = rows
+end
+
+-- Summary: Write the prepared frame using graphics when supported. A graphics
+-- failure disables that backend until reattachment and repaints in text mode.
 local function drawToMonitor(displayObject, snapshot)
     local surface, issue = render(displayObject.monitor, snapshot, displayObject.display)
+    local monitor = displayObject.monitor
+    if config.graphicsMode ~= "text" and not displayObject.graphicsFailed and
+        type(monitor.setGraphicsMode) == "function" and type(monitor.drawPixels) == "function" then
+        local ok, reason = pcall(drawGraphics, displayObject, surface, snapshot)
+        if ok then return issue end
+        displayObject.graphicsFailed = tostring(reason)
+        local restored, restoreReason = leaveGraphics(displayObject)
+        if not restored then error("cannot restore text mode: " .. tostring(restoreReason)) end
+        print("Amaryllis heading graphics unavailable; using text: " .. tostring(reason))
+    end
     local resized = not displayObject.previous or
         displayObject.previous.width ~= surface.width or displayObject.previous.height ~= surface.height
     if resized then
@@ -883,6 +1445,7 @@ end
 
 -- Summary: Render the current display error using the available monitor methods.
 local function bestEffortErrorFrame(displayObject)
+    leaveGraphics(displayObject)
     local monitor = displayObject.monitor
     local okSize, width, height = pcall(monitor.getSize)
     if not okSize or not finite(width) or not finite(height) or width < 1 or height < 1 then
@@ -1014,6 +1577,15 @@ local function attachMonitor()
         return false
     end
     renderer = { monitor = object, display = config.display, previous = nil }
+    -- A previous program may have left the physical monitor in graphics mode.
+    -- Reset before either backend draws, including an explicit text override.
+    local restored, restoreReason = leaveGraphics(renderer)
+    if not restored then
+        renderer, monitorName = nil, nil
+        lastMonitorError = "could not restore monitor text mode: " .. tostring(restoreReason)
+        say(lastMonitorError)
+        return false
+    end
     monitorName, lastMonitorError = name, nil
     return true
 end
@@ -1071,6 +1643,12 @@ end
 -- Summary: Validate and bound the received vessel/display snapshot.
 local function sanitizeSnapshot(state)
     local result = { vessel = {}, targets = {} }
+    local propulsion=type(state.propulsion)=="table" and state.propulsion or {}
+    result.propulsion={manualAcceleration=cleanNumber(propulsion.manualAcceleration),
+        directRpm=cleanNumber(propulsion.directRpm)}
+    if propulsion.mode=="MANUAL" or propulsion.mode=="SEL" or propulsion.mode=="DIRECT" then
+        result.propulsion.mode=propulsion.mode
+    end
     local thrust=type(state.thrust)=="table" and state.thrust or {}
     if type(thrust.headingControl)=="table" then
         result.headingControl={targetYawRate=cleanNumber(thrust.headingControl.targetYawRate)}
@@ -1338,6 +1916,10 @@ local function run()
         elseif event == "monitor_resize" then
             if first == monitorName then draw() end
         elseif event == "terminate" then
+            if renderer then
+                renderer.graphicsFailed = "terminated"
+                leaveGraphics(renderer)
+            end
             draw(true)
             return
         end

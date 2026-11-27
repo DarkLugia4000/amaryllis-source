@@ -3,6 +3,59 @@
 Version entries describe the changes recorded for each release. See the
 [README](README.md) for current usage.
 
+## Unreleased
+
+- Raised the selected-strafe trial baseline to 75% at rest with a 0.5 b/s
+  request, reaching 90% with integral before yaw reservation. Release braking
+  now uses 80% demand per b/s, capped at 100%. Readings below 0.01 b/s are
+  treated as zero during selected guidance to suppress false braking states.
+- Kept release-braking status through neutral input updates. Debug recordings
+  now report combined yaw demand and each lateral drive's requested output
+  and fresh applied readback; feedback and feed-forward remain separate.
+
+- Manual strafe release starts proportional opposing thrust above 0.3 b/s,
+  capped at 100%, and finishes below 0.1 b/s. Pilot input immediately overrides
+  braking; observation loss clears it. The separate selected-handover braking
+  threshold retains its configured value.
+- Selected-heading strafe adds a trial +4% yaw feed-forward at full left demand,
+  scaled with translation and disabled during braking. Right compensation
+  remains zero. Recordings separate heading feedback and strafe feed-forward.
+
+- Manual and selected strafe reserve lateral-drive capacity for the existing
+  yaw controller before mixing translation, matching route strafe's priority.
+  Manual strafe now refreshes sideways velocity and position recording; stale
+  observations clear those measurements while pilot thrust stays available.
+
+- Trial selected-strafe starting bias adds up to 55 percentage points while
+  accelerating toward the target, lifting the at-rest 0.5 b/s proportional
+  baseline from 20% to 75% before integral and slew. It fades to zero at
+  requested speed; manual strafe and braking retain their existing behavior.
+
+- Shared the graphical lateral scale between AP route deviation and active
+  selected strafe. Selected strafe uses a yellow remaining-distance marker,
+  a centred zero and edge arrows beyond +/-10 blocks. AP retains priority.
+
+- Added a left-hand speedometer with throttle-mode header and a yellow
+  acceleration/speed/RPM selector, replacing the separate REQ indicator.
+  Core's compact heading packet carries the required propulsion requests;
+  unverified RPM stays unavailable. Divider bars span the complete display.
+
+- Improved graphical instrument readability with a 5-by-7 bitmap font,
+  distinct letter/digit shapes and spacing adjusted for the wider glyphs.
+  Heading values and markers use a smaller scale, with clear gaps between
+  header/status labels and their horizontal dividers.
+
+- Added native graphical heading and altitude tapes with marker-attached heading
+  readouts, amber targets, black backgrounds and off-scale arrows. Fresh vessel
+  disassembly shows a static purple flower emblem. Existing status gates and
+  text fallback remain in use; the navigator is unchanged.
+
+- Prepared the three heading displays for optional CC: Graphics pixel output,
+  with batched changed-row updates, a bundled bitmap font and automatic text
+  recovery. Existing instrument layout and warning selection are preserved.
+  The navigator remains on its existing renderer. Added backend regression
+  checks and setup notes; in-game graphics validation remains pending.
+
 ## 3.1.1
 
 - Core retries a failed package download three times, closes failed HTTP

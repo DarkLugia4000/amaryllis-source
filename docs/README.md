@@ -37,6 +37,7 @@ Check their status sections and current source when assessing remaining work.
 
 ## Development
 
+- [CC: Graphics display preparation](development/CC-GRAPHICS.md)
 - [Git migration and verification](development/GIT-MIGRATION.md)
 - [Development workflow](development/WORKFLOW.md)
 - [Maintenance delivery record](development/MAINTENANCE-ROADMAP.md)
