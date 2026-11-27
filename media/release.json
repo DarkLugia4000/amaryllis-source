@@ -46,9 +46,9 @@
       "path": "/avionics/config.json"
     },
     {
-      "adler32": "EBA08E69",
-      "bytes": 1552193,
-      "object": "e649130ab3d848e01d7ae4fb708ad79a1c856e85ca451377cda931e9ce2e8f44",
+      "adler32": "CFF756B4",
+      "bytes": 1561017,
+      "object": "54205baca5ed8a9cd602a0d190bbb6e9b74ad4d57730cd78e746388e89251671",
       "path": "/avionics/main.lua"
     },
     {
@@ -58,9 +58,9 @@
       "path": "/installer/config.json"
     },
     {
-      "adler32": "EAB0F139",
+      "adler32": "AE8DF12F",
       "bytes": 9828,
-      "object": "731c54e03e388b66ccd898041ca8516699cc0c7474b2f9a72d1a04362aad1647",
+      "object": "4d433b8138c7a72990a2956aae0b3a8e6fb40d92b2b2fa9abdfc2f5cfd237963",
       "path": "/installer/library.json"
     },
     {
@@ -214,15 +214,15 @@
       "path": "/packages/navigation/config.json"
     },
     {
-      "adler32": "1607737C",
-      "bytes": 307149,
-      "object": "619651f7f3921f54c91439bfb1efddb9c32937703c8f9a439440c581886b5d84",
+      "adler32": "A8156177",
+      "bytes": 221100,
+      "object": "4341712dd7670d435679a50d2590b047ad7a30f37aeeae10f323aa4c5337b453",
       "path": "/packages/navigation/main.lua"
     },
     {
-      "adler32": "94A3A505",
-      "bytes": 555,
-      "object": "112d752e50974e32eebc59920b07b072caae454bc9008af5af3ebb888a72e223",
+      "adler32": "BB6FAE00",
+      "bytes": 585,
+      "object": "7582f049ab9776190edccf8e0931c5f30949491c1b9afce66c61bae0db9f0e61",
       "path": "/packages/navigation/manifest.json"
     },
     {
@@ -334,9 +334,9 @@
       "path": "/packages/thrust/rs/manifest.json"
     }
   ],
-  "libraryId": "2fba9342cbb020a5d77eebf42d4fc947004e7da34619aa36883de0d6da8a406c",
+  "libraryId": "a2627dbdf30c768c643388e9ba7a1748dd17f7b75c39be420759c83bbb76e25f",
   "minimumComputerSpaceBytes": 4000000,
-  "releaseId": "amaryllis-72b387360d6b",
+  "releaseId": "amaryllis-49410d3c07ef",
   "roleOrder": [
     "navigator",
     "heading-left",
@@ -406,10 +406,10 @@
   },
   "schemaVersion": 1,
   "source": {
-    "commit": "c097d2a469239da9326d129fc49e36c69c3632dc",
+    "commit": "d6bc6c2e05c1d1c4326033b6269f7b5577e570f3",
     "dirty": false,
     "kind": "project-source",
-    "sourceTreeSHA256": "3f4e6c7ecab808fb73b13d9670858972af4cc16425ebd0598d2427eb3d3331c8"
+    "sourceTreeSHA256": "ba9876ede21c29308ab9de48ae001c6d4fd1b4186f10d8870c9fc254d7442486"
   },
   "state": [
     {

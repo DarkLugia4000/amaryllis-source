@@ -139,15 +139,15 @@
       "path": "/packages/navigation/config.json"
     },
     {
-      "adler32": "1607737C",
-      "bytes": 307149,
-      "object": "619651f7f3921f54c91439bfb1efddb9c32937703c8f9a439440c581886b5d84",
+      "adler32": "A8156177",
+      "bytes": 221100,
+      "object": "4341712dd7670d435679a50d2590b047ad7a30f37aeeae10f323aa4c5337b453",
       "path": "/packages/navigation/main.lua"
     },
     {
-      "adler32": "94A3A505",
-      "bytes": 555,
-      "object": "112d752e50974e32eebc59920b07b072caae454bc9008af5af3ebb888a72e223",
+      "adler32": "BB6FAE00",
+      "bytes": 585,
+      "object": "7582f049ab9776190edccf8e0931c5f30949491c1b9afce66c61bae0db9f0e61",
       "path": "/packages/navigation/manifest.json"
     },
     {
@@ -259,7 +259,7 @@
       "path": "/packages/thrust/rs/manifest.json"
     }
   ],
-  "libraryId": "2fba9342cbb020a5d77eebf42d4fc947004e7da34619aa36883de0d6da8a406c",
+  "libraryId": "a2627dbdf30c768c643388e9ba7a1748dd17f7b75c39be420759c83bbb76e25f",
   "roles": {
     "chamber_bl": {
       "packageId": "amaryllis.chamber.bl",
@@ -291,7 +291,7 @@
     },
     "navigator": {
       "packageId": "amaryllis.navigator",
-      "version": 13
+      "version": 14
     },
     "primary_l": {
       "packageId": "amaryllis.primary.l",
