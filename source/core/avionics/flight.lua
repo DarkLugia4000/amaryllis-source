@@ -1856,17 +1856,37 @@ function Flight:request(io,action,now)
         if io.autopilot then io.autopilot:cancel(io,self.controls,"DISENGAGED; SELECTED MODES RETAINED") end
         return true,"AUTOPILOT DISENGAGED; SELECTED MODES RETAINED"
     end
-    if action.type=="ap_engage" or action.type=="ap_edit" or action.type=="ap_current" or action.type:match("^destination_") then
+    if action.type=="ap_saved_engage" then
         local ap=self:ensureAutopilot(io)
-        if action.type=="ap_engage" then
+        local ok,why=ap:edit(io,self.controls,{type='destination_select',index=action.index},now)
+        if not ok then return false,why end
+        return self:request(io,{type='ap_engage'},now)
+    end
+    if action.type=="ap_engage" or action.type=="ap_edit" or action.type=="ap_current" or action.type:match("^ap_route_") or action.type:match("^destination_") then
+        local ap=self:ensureAutopilot(io)
+        if action.type=="ap_engage" or action.type=="ap_route_engage" then
             if self.emergencyLiftLatched or self.shutdownJob or self.tuningRun or self.maintenanceJob or
                 (self.restart and (self.restart.job or self.restart.saved)) then return false,"SYSTEMS OPERATION IN PROGRESS" end
             if not self.enabled or (self.systemsRun and self.systemsRun.phase~="READY") then return false,"ESTABLISH ALTITUDE HOLD BEFORE ENGAGING AUTOPILOT" end
-            local ok,why=ap:engage(io,self.controls,now)
+            local ok,why=ap:engage(io,self.controls,now,action.type=="ap_route_engage")
             if not ok then logOperationIssue(self,"flight","autopilot engage",why) end
             return ok,why
+        elseif action.type:match("^ap_route_") then
+            return ap:editPlaylist(io,self.controls,action)
+        elseif action.type=="destination_edit" then
+            ap.library:refresh()
+            local selected=ap.library.entries[action.index]
+            if not selected then return false,'SELECT A SAVED DESTINATION' end
+            local entry={}
+            for key,value in pairs(selected) do entry[key]=value end
+            entry.altitude=entry.altitude or ap.draft.altitude or self.controls.targets.altitude
+            entry.cruiseSpeed=entry.cruiseSpeed or ap.draft.cruiseSpeed
+            if not ({name=true,x=true,z=true,altitude=true,cruiseSpeed=true})[action.key] then return false,'UNKNOWN DESTINATION FIELD' end
+            entry[action.key]=action.value
+            if not ap:validDraft(entry) then return false,'DESTINATION VALUES INVALID' end
+            return ap.library:change('edit',action.index,entry)
         elseif action.type=="destination_save" or action.type=="destination_rename" or action.type=="destination_delete" then
-            local entry={name=action.name or ap.label(ap.draft),x=ap.draft.x,z=ap.draft.z}
+            local entry={name=action.name or ap.label(ap.draft),x=ap.draft.x,z=ap.draft.z,altitude=ap.draft.altitude,cruiseSpeed=ap.draft.cruiseSpeed}
             local operation=action.type:sub(13)
             local ok,why=ap.library:change(operation,action.index,entry)
             if not ok then logOperationIssue(self,"flight","destination library",why) end

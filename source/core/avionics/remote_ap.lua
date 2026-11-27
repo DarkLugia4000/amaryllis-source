@@ -29,7 +29,7 @@ end
 -- Summary: Identify local pilot activity that supersedes a queued remote operation.
 function Ops:pilotAction(action)
     local kind=type(action)=="table" and action.type
-    if kind and ({ap_engage=true,ap_disengage=true,anchor_engage=true,anchor_cancel=true,cockpit_mode=true,
+    if kind and ({ap_engage=true,ap_saved_engage=true,ap_route_engage=true,ap_disengage=true,anchor_engage=true,anchor_cancel=true,cockpit_mode=true,
         systems_stop=true,systems_stop_confirm=true,restart_systems=true,emergency_kill_lift=true,
         kill_lift=true,altitude_disengage=true,altitude_engage=true})[kind] then
         self.pilotRevision=(self.pilotRevision or 0)+1

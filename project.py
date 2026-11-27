@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent
 HOME = ROOT / "disk-builder"
 SUITES = ("tests.test_builder", "tests.test_state", "tests.test_displays", "tests.test_flight",
           "tests.test_installer", "tests.test_release")
-QUICK_SUITES = ("tests.test_displays.InformationTests", "tests.test_displays.InformationUiTests",
+QUICK_SUITES = ("tests.test_displays.InformationTests", "tests.test_displays.NavigatorGraphicsTests",
                 "tests.test_builder.QuotingTests", "tests.test_builder.ReadableSourceTests",
                 "tests.test_release.RepositoryTests")
 

@@ -8,7 +8,6 @@ import unittest
 
 import project
 from tests.test_builder import LuaRuntime, table, python_value, native_runtime
-from tests.test_displays import HARNESS as UI_HARNESS
 
 ROOT = project.ROOT
 REPORT = ROOT / "output/tests/ap-route-capture"
@@ -558,61 +557,56 @@ assert(settings.ensure(c) and c.navigation.autopilot.capture_position_tolerance=
 c.navigation.autopilot.drift_heading_rate=1;assert(not settings.ensure(c))
 """)
 
+    def test_waypoint_playlist_starts_first_and_copies_active_route(self):
+        self.runtime().execute("""
+local ap,io,c=fixture(90,0)
+ap.active=false;ap.playlist={{name='ONE',x=50,z=0,cruiseSpeed=3,altitude=170},{name='TWO',x=100,z=0,cruiseSpeed=5,altitude=180}}
+assert(ap:engage(io,c,10,true));assert(ap.route.index==1 and ap.route.entries[1].name=='ONE')
+assert(ap.cruiseSpeed==3 and c.targets.altitude==170)
+ap.playlist[1].x=999;assert(ap.route.entries[1].x==50,'active copy is isolated')
+""")
+
+    def test_waypoint_arrival_advances_then_anchors_only_at_end(self):
+        self.runtime().execute("""
+local ap,io,c=fixture(90,0)
+ap.active=false;ap.playlist={{name='ONE',x=20,z=0,cruiseSpeed=3,altitude=170},{name='TWO',x=100,z=0,cruiseSpeed=5,altitude=180}}
+assert(ap:engage(io,c,10,true))
+sample(io,11,20,0,90,0,0);ap:update(io,11,c)
+assert(ap.active and ap.route.index==2 and ap.state=='ACQ')
+assert(not io.positionAnchor or not io.positionAnchor.active)
+assert(ap.cruiseSpeed==5 and c.targets.altitude==180)
+sample(io,12,100,0,90,0,0);ap:update(io,12,c)
+assert(not ap.active and ap.state=='ARRIVED' and io.positionAnchor.active)
+""")
+
+    def test_waypoint_reorder_validation_and_persistence_failure(self):
+        self.runtime().execute("""
+local ap,io,c=fixture(90,0)
+ap.active=false;ap.playlist={{name='ONE',x=20,z=0,cruiseSpeed=3,altitude=170},{name='TWO',x=100,z=0,cruiseSpeed=5,altitude=180}}
+assert(ap:editPlaylist(io,c,{type='ap_route_move',index=2,direction=-1}))
+assert(ap.playlist[1].name=='TWO')
+assert(not ap:editPlaylist(io,c,{type='ap_route_edit',index=1,key='x',value=0/0}))
+ap.storage={writeJson=function()return false,'DISK FULL'end}
+assert(not ap:editPlaylist(io,c,{type='ap_route_remove',index=1}))
+assert(#ap.playlist==2 and ap.playlist[1].name=='TWO')
+assert(not ap:validPlaylist({[2]=ap.playlist[1]}))
+""")
+
+    def test_waypoint_checkpoint_restores_current_index(self):
+        self.runtime().execute("""
+local ap,io,c=fixture(90,0)
+ap.active=false;ap.playlist={{name='ONE',x=20,z=0,cruiseSpeed=3,altitude=170},{name='TWO',x=100,z=0,cruiseSpeed=5,altitude=180}}
+assert(ap:engage(io,c,10,true));sample(io,11,20,0,90,0,0);ap:update(io,11,c)
+local state=ap:checkpoint();local restored=require('avionics.autopilot').new(io.config)
+assert(restored:restore(state) and restored.route.index==2 and restored.route.entries[2].name=='TWO')
+state.route.index=0;assert(not restored:restore(state))
+""")
+
     def test_bundled_navigator_pages_and_transport(self):
-        lua, _ = native_runtime()
-        bundle = self.packed['library']['/packages/navigation/main.lua'].decode()
-        lua.globals().UI = lua.execute(bundle, self.builder.bundling.MAGIC, '/avionics/ui.lua')
-        lua.globals().CAPTURES = lua.table()
-        lua.execute(UI_HARNESS)
-        lua.execute("""
-local selectors
-for _,stage in ipairs({'ACQ','CAPTURE','CRUISE','RETRYING (2)'}) do
-    local ui,s,draw,open,choose,region,capture=fixture(57,24,'NAV')
-    ui.navView='AUTOPILOT'
-    s.ap='ACTIVE';s.authorityReady=true
-    s.vessel.heading=stage=='ACQ' and 57.7 or 90.3
-    s.vessel.forwardSpeed=stage=='CRUISE' and 3 or 2.3
-    s.modes.heading='MANUAL';s.modes.throttle='DIRECT'
-    s.effectiveModes={heading='SEL',throttle=(stage=='ACQ' or stage=='CAPTURE') and 'DIRECT' or 'SEL'}
-    s.thrust={available=true,roles={},units={},manualAcceleration={available=true,mode='DIRECT'},
-        headingControl={available=true,mode='SEL'},speedControl={available=true,state='ACTIVE',controlStatus='ACTIVE'}}
-    for _,role in ipairs({'thrust-lb','thrust-rb','thrust-ls','thrust-rs'}) do
-        s.thrust.roles[role]={online=true,available=true,statusFresh=true,thrustControlState='RDY'}
-    end
-    for _,role in ipairs({'primary-left','primary-right'}) do
-        s.thrust.units[role]={online=true,available=true,statusFresh=true}
-    end
-    s.autopilot={active=true,state=stage,headingBias=.4,primaryIdle=stage=='ACQ' or stage=='CAPTURE',
-        destination={name='Saved draft'},route={index=1,entries={{name='Remote CMD'}}},
-        requestedHeading=90.4,requestedSpeed=stage=='CRUISE' and 3 or 0,crossTrack=-.3,
-        distance=150,captureSettledSeconds=1.5,captureSettleSeconds=3,
-        reason=stage=='RETRYING (2)' and 'VESSEL TELEMETRY STALE' or nil}
-    draw();local lines={};for _,row in ipairs(ui.previous.rows) do lines[#lines+1]=row.text end
-    local signature=ui.previous.rows[3].text..ui.previous.rows[3].background
-    if selectors then check(signature==selectors,'automatic stages keep selected mode buttons') end
-    selectors=signature
-    local text=table.concat(lines,'\\n')
-    check(text:find('Remote CMD',1,true) and not text:find('Saved draft',1,true),'active route name')
-    check(text:find('HDG BIAS +0.4 DEG',1,true),'signed bias')
-    if stage=='ACQ' then check(text:find('ACQUIRING HEADING',1,true),'acquisition label') end
-    if stage=='CAPTURE' then check(text:find('CAPTURING ROUTE',1,true),'capture label') end
-    check(not text:find('PRIMARY REQUEST',1,true),'primary request readout removed')
-    check(not text:find('PRIMARY ENGINES IDLE',1,true),'idle footer removed')
-    check(not text:find('SETTLED',1,true),'capture settling readout removed')
-    if stage=='RETRYING (2)' then check(text:find('VESSEL TELEMETRY STALE',1,true),'recovery reason') end
-    capture(stage:gsub('[^%w]','-'))
-end
-""")
-        self.captures.update(python_value(lua.globals().CAPTURES))
-        runtime = self.runtime()
-        runtime.execute("""
-local Payload=require('avionics.display_payload')
-local result=Payload.heading({modes={heading='MANUAL',throttle='DIRECT'},
-    effectiveModes={heading='SEL',throttle='SEL'},autopilot={active=true,state='CAPTURE',routeHeading=90,headingBias=.4,
-    primaryIdle=true,captureSettledSeconds=1,captureSettleSeconds=3}})
-assert(result.autopilot.primaryIdle and result.autopilot.headingBias==.4 and result.autopilot.captureSettleSeconds==3)
-assert(result.modes.heading=='MANUAL' and result.effectiveModes.heading=='SEL')
-""")
+        from tests.test_displays import NavigatorGraphicsTests
+        case=NavigatorGraphicsTests()
+        case.setUpClass()
+        case.test_current_and_next_waypoint_and_chevrons()
 
     def test_current_decorator_keeps_selectors_and_reports_effective_modes(self):
         from tests.test_state import fixture_source
@@ -788,6 +782,38 @@ lateral:input({left_lift=0,right_lift=0},11.1,.1)
 assert(lateral:evaluate(io,11.1,c,0)==1 and lateral.state=='BRAKING')
 lateral:input({left_lift=0,right_lift=0},11.2,.1)
 assert(lateral.state=='BRAKING' and lateral:snapshot().active)
+""")
+
+    def test_strafe_selector_accelerates_like_altitude_and_resets(self):
+        lua=self.runtime()
+        lua.execute(r"""
+local Lateral=require('avionics.lateral')
+local ap,io,c=fixture(90,0);io.autopilot=nil
+io.config.cockpit.altitude_rate_slow=1
+io.config.cockpit.altitude_rate_medium=5
+io.config.cockpit.altitude_rate_fast=10
+io.config.cockpit.altitude_medium_after_seconds=2
+io.config.cockpit.altitude_fast_after_seconds=5
+local left={left_lift=15,right_lift=0}
+local right={left_lift=0,right_lift=15}
+local neutral={left_lift=0,right_lift=0}
+for _,direction in ipairs({-1,1}) do
+ local lateral=Lateral.new(io.config);assert(lateral:select('SEL',io,10))
+ local raw=direction==1 and right or left
+ lateral:input(raw,10,.1)
+ assert(lateral.offset==direction*.5,'precise tap')
+ for i=1,60 do lateral:input(raw,10+i*.1,.1) end
+ assert(math.abs(lateral.offset-direction*27)<1e-8,'integrated three-stage hold')
+ lateral:input(neutral,16.1,.1);local before=lateral.offset
+ lateral:input(raw,16.2,.1)
+ assert(math.abs(lateral.offset-before-direction*.5)<1e-8,'release resets ramp')
+ before=lateral.offset
+ lateral:input(direction==1 and left or right,16.3,.1)
+ assert(math.abs(lateral.offset-before+direction*.5)<1e-8,'reversal resets ramp')
+ lateral.offset=direction*99.9;lateral.hold={direction=direction,start=0}
+ lateral:input(raw,20,.25)
+ assert(lateral.offset==direction*100,'bounded target')
+end
 """)
 
     def test_strafe_braking_is_withheld_below_the_minimum_speed(self):

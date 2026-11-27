@@ -5,6 +5,21 @@ Version entries describe the changes recorded for each release. See the
 
 ## Unreleased
 
+- Replaced the navigator's character renderer with CC: Graphics pages for Flight,
+  Navigation, Ship and Settings. Added envelope diagrams, shaft-driven propeller
+  icons, shared status headers, centered Systems actions, pixel editors and the
+  timed Kill Lift confirmation. Removed the old navigator renderer and Recover
+  Lift control. Navigator requires at least 342 by 216 pixels.
+- Added saved-destination editing and an ordered waypoint playlist. Routes start
+  at entry one, copy the list at engagement, advance through each leg and anchor
+  at the final destination. Navigation becomes a dedicated AP progress display
+  while active, including phase chevrons, current and next waypoint data.
+
+- Selected-strafe target adjustment now shares altitude's slow/medium/fast
+  hold rates and thresholds (defaults 1, 5 and 10 blocks/s, at 2 and 5 seconds).
+  Strafe retains its 0.5-block tap, repeat delay and +/-100-block limit;
+  release and reversal reset the hold acceleration.
+
 - Raised the selected-strafe trial baseline to 75% at rest with a 0.5 b/s
   request, reaching 90% with integral before yaw reservation. Release braking
   now uses 80% demand per b/s, capped at 100%. Readings below 0.01 b/s are

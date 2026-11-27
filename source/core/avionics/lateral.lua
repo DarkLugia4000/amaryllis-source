@@ -61,8 +61,20 @@ function Lateral:input(raw,at,dt)
   self.hold={direction=direction,start=at};change=direction*(c.lateral_offset_step_blocks or .5)
  else
   local delay=c.lateral_hold_delay_seconds or .5
-  local elapsed=math.max(0,at-self.hold.start-delay)-math.max(0,at-math.min(dt,.25)-self.hold.start-delay)
-  change=direction*elapsed*(c.lateral_adjustment_blocks_per_second or 1)
+  -- Share altitude's slow/medium/fast hold rates and thresholds. Integrate
+  -- each rate interval across at most 0.25 s of fresh input, including a
+  -- threshold crossed within that sample. Tap size remains strafe-specific.
+  local held=math.max(0,at-self.hold.start)
+  local previous=math.max(delay,held-clamp(dt,0,.25))
+  local medium=c.altitude_medium_after_seconds or 2
+  local fast=c.altitude_fast_after_seconds or 5
+  local slowRate=c.altitude_rate_slow or 1
+  local mediumRate=c.altitude_rate_medium or 5
+  local fastRate=c.altitude_rate_fast or 10
+  local slowSeconds=math.max(0,math.min(held,medium)-previous)
+  local mediumSeconds=math.max(0,math.min(held,fast)-math.max(previous,medium))
+  local fastSeconds=math.max(0,held-math.max(previous,fast))
+  change=direction*(slowSeconds*slowRate+mediumSeconds*mediumRate+fastSeconds*fastRate)
  end
  if change~=0 then self.offset=clamp(self.offset+change,-100,100);self.pending=true;self.settledAt=nil end
 end

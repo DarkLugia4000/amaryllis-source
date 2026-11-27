@@ -1,8 +1,7 @@
 local Mathx = require("avionics.mathx")
 -- Section: Route guidance | Destination acquisition, cruise and arrival control.
 -- Navigator information AP retry revision v1
--- Single-entry route execution; storage, guidance and arrival action are
--- separate so ordered waypoint routes can extend this without changing I/O.
+-- Ordered route execution uses an immutable flight copy of the saved playlist.
 local Anchor=require("avionics.anchor")
 local Library=require("avionics.destinations")
 local AP={}
@@ -30,11 +29,12 @@ end
 function AP.new(config,storage,deps)
     deps=deps or {}
     local self=setmetatable({config=config,storage=storage,deps=deps,library=Library.new(deps),
-        active=false,state="OFF",draft={cruiseSpeed=3},route=nil},{__index=AP})
+        active=false,state="OFF",draft={cruiseSpeed=3},playlist={},route=nil},{__index=AP})
     if storage then
         local ok,value,_,status=pcall(storage.readJson,"/avionics/data/navigation.json",deps)
         if ok and type(value)=="table" and value.schemaVersion==1 and self:validDraft(value.destination,false) then
             self.draft=copy(value.destination)
+            if type(value.playlist)=="table" and self:validPlaylist(value.playlist) then self.playlist=copy(value.playlist) end
             -- "Destination" was the earlier default name; such drafts are unnamed and use their coordinates.
             if self.draft.name=="Destination" then self.draft.name=nil end
         elseif status~="missing" then self.reason="SAVED NAVIGATION SETTINGS INVALID";log(self,self.reason) end
@@ -66,10 +66,57 @@ end
 function AP:saveDraft(candidate)
     if not self:validDraft(candidate,false) then return false,"DESTINATION / SPEED / ALTITUDE INVALID" end
     if self.storage then
-        local ok,why=self.storage.writeJson("/avionics/data/navigation.json",{schemaVersion=1,destination=candidate},self.deps)
+        local ok,why=self.storage.writeJson("/avionics/data/navigation.json",{schemaVersion=1,destination=candidate,playlist=self.playlist},self.deps)
         if not ok then return false,"NAVIGATION SETTINGS NOT SAVED: "..tostring(why) end
     end
     self.draft=copy(candidate);return true,"DESTINATION UPDATED"
+end
+-- Summary: Validate a dense, bounded playlist before persistence or engagement.
+-- Reads full destination entries; accepts an empty editable list and up to 64 legs.
+function AP:validPlaylist(entries)
+    if type(entries)~="table" or #entries>64 then return false end
+    local count=0
+    for key,entry in pairs(entries) do
+        count=count+1
+        if not finite(key) or key%1~=0 or key<1 or key>#entries or not self:validDraft(entry) then return false end
+    end
+    return count==#entries
+end
+-- Summary: Edit the saved playlist without changing an active route copy.
+-- Add copies a saved destination, move swaps adjacent entries, and edit validates
+-- a complete destination. Persistence succeeds before the new list is published.
+function AP:editPlaylist(io,controls,action)
+    local entries=copy(self.playlist)
+    local index=action.index
+    if action.type=="ap_route_add" then
+        self.library:refresh()
+        local saved=self.library.entries[action.destinationIndex]
+        if not saved or #entries>=64 then return false,"SELECT A SAVED DESTINATION / ROUTE FULL" end
+        local entry=copy(saved)
+        entry.cruiseSpeed=entry.cruiseSpeed or self.draft.cruiseSpeed
+        entry.altitude=entry.altitude or self.draft.altitude or controls.targets.altitude
+        entries[#entries+1]=entry
+    else
+        if not finite(index) or index%1~=0 or not entries[index] then return false,"SELECT A WAYPOINT" end
+        if action.type=="ap_route_remove" then table.remove(entries,index)
+        elseif action.type=="ap_route_move" then
+            if action.direction~=-1 and action.direction~=1 then return false,"INVALID WAYPOINT MOVE" end
+            local target=index+action.direction
+            if not entries[target] then return false,"WAYPOINT ORDER LIMIT" end
+            entries[index],entries[target]=entries[target],entries[index]
+        elseif action.type=="ap_route_edit" then
+            if not ({name=true,x=true,z=true,altitude=true,cruiseSpeed=true})[action.key] then return false,"UNKNOWN WAYPOINT FIELD" end
+            entries[index][action.key]=action.value
+            if action.key=="name" and action.value=="" then entries[index].name=nil end
+        else return false,"UNKNOWN WAYPOINT ACTION" end
+    end
+    if not self:validPlaylist(entries) then return false,"WAYPOINT VALUES INVALID" end
+    if self.storage then
+        local ok,why=self.storage.writeJson("/avionics/data/navigation.json",{schemaVersion=1,destination=self.draft,playlist=entries},self.deps)
+        if not ok then return false,"ROUTE NOT SAVED: "..tostring(why) end
+    end
+    self.playlist=entries
+    return true,"ROUTE UPDATED"
 end
 -- Summary: Apply a permitted destination edit or saved-destination selection.
 function AP:edit(io,controls,action,now)
@@ -91,6 +138,8 @@ function AP:edit(io,controls,action,now)
         self.library:refresh();local selected=self.library.entries[action.index]
         if not selected then return false,self.library.reason or "SELECT A SAVED DESTINATION" end
         candidate.name=selected.name;candidate.x=selected.x;candidate.z=selected.z
+        if finite(selected.altitude) then candidate.altitude=selected.altitude end
+        if finite(selected.cruiseSpeed) then candidate.cruiseSpeed=selected.cruiseSpeed end
     else return false,"UNKNOWN NAVIGATION ACTION" end
     -- A destination altitude above the altitude ceiling is set to the ceiling.
     local ceiling=Controls.altitudeCeiling(self.config.altitude_control)
@@ -110,19 +159,23 @@ function AP:ready(io,controls,now,destination,allowAnchorRelease)
     return true
 end
 -- Summary: Capture route-start observations and initialize heading/speed acquisition.
-function AP:engage(io,controls,now)
+function AP:engage(io,controls,now,usePlaylist)
     if self.active then return false,"AUTOPILOT ALREADY ACTIVE" end
-    local ready,why=self:ready(io,controls,now);if not ready then return false,why end
+    if usePlaylist and (not self:validPlaylist(self.playlist) or #self.playlist==0) then return false,"ADD A WAYPOINT FIRST" end
+    local destination=usePlaylist and self.playlist[1] or self.draft
+    local ready,why=self:ready(io,controls,now,destination);if not ready then return false,why end
     if io.positionAnchor and io.positionAnchor.active then return false,"RELEASE ANCHOR BEFORE ENGAGING AUTOPILOT" end
-    self.route={entries={{name=AP.label(self.draft),x=self.draft.x,z=self.draft.z,arrival="anchor"}},index=1}
+    local entries=usePlaylist and copy(self.playlist) or {copy(destination)}
+    for _,entry in ipairs(entries) do entry.name=AP.label(entry);entry.arrival="anchor" end
+    self.route={entries=entries,index=1,kind=usePlaylist and "waypoints" or "single"}
     self.remoteOwner=nil
-    self.cruiseSpeed=self.draft.cruiseSpeed;self.uuid=io.vessel.uuid
+    self.cruiseSpeed=destination.cruiseSpeed;self.uuid=io.vessel.uuid
     self.start={x=io.vessel.position.x,z=io.vessel.position.z};self.active=true;self.state="ACQ"
     self.engagedAt=now;self.updatedAt=nil
     -- Impacts measured before engagement do not stop this route.
     self.impactSeqAtEngage=AP.impactSeq(io)
     do
-        local tx,tz=self.draft.x-self.start.x,self.draft.z-self.start.z
+        local tx,tz=destination.x-self.start.x,destination.z-self.start.z
         self.distance=math.sqrt(tx*tx+tz*tz);self.crossTrack=0
         self.headingTarget=self.distance>.01 and bearing(tx,tz) or io.vessel.heading
     end
@@ -133,9 +186,9 @@ function AP:engage(io,controls,now)
     self.acqDetail=nil
     self:resetGuidance("ACQ")
     local ceiling=Controls.altitudeCeiling(self.config.altitude_control)
-    controls.targets.altitude=finite(ceiling) and math.min(self.draft.altitude,ceiling) or self.draft.altitude
+    controls.targets.altitude=finite(ceiling) and math.min(destination.altitude,ceiling) or destination.altitude
     io.thrust:resetSpeedLoop();io.thrust:resetHeadingLoop()
-    log(self,"ENGAGED: "..AP.label(self.draft));return true,"AUTOPILOT ENGAGED"
+    log(self,"ENGAGED: "..AP.label(destination));return true,"AUTOPILOT ENGAGED"
 end
 -- Summary: Set a SEL heading target to the autopilot's heading, so she keeps that heading after the handover.
 function AP:handHeadingToPilot(io,controls)
@@ -333,6 +386,9 @@ function AP:update(io,now,controls)
     end
     self.since=nil;self.reason=nil;self.recoveryAttempts=0
     local entry=self.route.entries[self.route.index]
+    if finite(entry.altitude) then
+        controls.targets.altitude=math.min(entry.altitude,Controls.altitudeCeiling(self.config.altitude_control) or entry.altitude)
+    end
     local dx,dz=entry.x-v.position.x,entry.z-v.position.z
     self.distance=math.sqrt(dx*dx+dz*dz)
     local tx,tz=entry.x-self.start.x,entry.z-self.start.z
@@ -373,6 +429,21 @@ function AP:update(io,now,controls)
     -- Arrival is a handover: the autopilot disengages and the digital anchor,
     -- engaged at the destination, takes over braking and positioning.
     if self.distance<=tuning.arrival_radius+math.max(0,closing)*2 or along<=0 then
+        local nextEntry=self.route.entries[self.route.index+1]
+        if nextEntry then
+            self.route.index=self.route.index+1
+            self.cruiseSpeed=nextEntry.cruiseSpeed
+            self.start={x=v.position.x,z=v.position.z}
+            local ceiling=Controls.altitudeCeiling(self.config.altitude_control)
+            controls.targets.altitude=math.min(nextEntry.altitude,ceiling or nextEntry.altitude)
+            self.headingBias=0;self.distance=nil;self.headingTarget=nil
+            self:resetGuidance("ACQ");self.acqSince=now
+            io.thrust:resetSpeedLoop();io.thrust:resetHeadingLoop()
+            -- Re-evaluate the next leg on the following fresh guidance tick.
+            self.headingTarget=bearing(nextEntry.x-v.position.x,nextEntry.z-v.position.z)
+            self.speedTarget=0;self.primaryIdle=true
+            return self:guidanceControls(controls)
+        end
         io.positionAnchor=io.positionAnchor or Anchor.new(self.config)
         if not io.positionAnchor.active then
             local ok,issue=io.positionAnchor:engage(io,now,entry)
@@ -469,12 +540,19 @@ end
 -- Summary: Validate and restore the retained route into its recovery phase.
 function AP:restore(state)
     local entry=type(state)=="table" and type(state.route)=="table" and type(state.route.entries)=="table" and state.route.entries[1]
-    if not Library.validEntry(entry) or state.route.index~=1 or entry.arrival~="anchor" or
+    if not Library.validEntry(entry) or not finite(state.route.index) or state.route.index%1~=0 or
+        not state.route.entries[state.route.index] or entry.arrival~="anchor" or
         not finite(state.cruiseSpeed) or state.cruiseSpeed<.1 or
         state.cruiseSpeed>math.min(30,(self.config.cockpit or {}).maximum_selected_speed or 30) or
         type(state.uuid)~="string" or state.uuid=="" or type(state.start)~="table" or
         not finite(state.start.x) or not finite(state.start.z) or math.abs(state.start.x)>30000000 or math.abs(state.start.z)>30000000 or
-        #state.route.entries~=1 or (state.headingTarget~=nil and not finite(state.headingTarget)) then return false end
+        #state.route.entries>64 or (state.headingTarget~=nil and not finite(state.headingTarget)) then return false end
+    local kind=state.route.kind
+    if kind~=nil and kind~="single" and kind~="waypoints" then return false end
+    if kind~="waypoints" and (#state.route.entries~=1 or state.route.index~=1) then return false end
+    if kind=="waypoints" then
+        if not self:validPlaylist(state.route.entries) then return false end
+    end
     local tuning=NavigationSettings.values(self.config,"autopilot")
     local bias=state.headingBias==nil and 0 or state.headingBias
     if not finite(bias) or math.abs(bias)>tuning.drift_heading_limit then return false end
@@ -513,7 +591,7 @@ function AP:snapshot(io,controls,now)
     local draft=copy(self.draft);draft.altitude=draft.altitude or controls.targets.altitude
     draft.label=AP.label(draft)
     return {active=self.active,state=self.state,reason=reason,available=ready and not self.active,
-        engageReason=why,destination=draft,route=copy(self.route),distance=self.distance,
+        engageReason=why,destination=draft,playlist=copy(self.playlist),route=copy(self.route),distance=self.distance,
         cruiseSpeed=self.cruiseSpeed,requestedSpeed=self.speedTarget,requestedHeading=self.headingTarget,
         crossTrack=self.crossTrack,crossSpeed=self.crossSpeed,sidewaysDemand=self.sideways,
         routeHeading=self.routeHeading,headingBias=self.headingBias or 0,primaryIdle=self.primaryIdle==true,

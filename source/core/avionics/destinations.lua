@@ -7,7 +7,9 @@ local function copy(v) if type(v)~="table" then return v end;local r={};for k,x 
 function Library.validEntry(e)
     return type(e)=="table" and type(e.name)=="string" and #e.name>=1 and #e.name<=40 and
         e.name:match("%S")~=nil and not e.name:find("[%c]") and finite(e.x) and finite(e.z) and
-        math.abs(e.x)<=30000000 and math.abs(e.z)<=30000000
+        math.abs(e.x)<=30000000 and math.abs(e.z)<=30000000 and
+        (e.altitude==nil or (finite(e.altitude) and e.altitude>=-2048 and e.altitude<=2048)) and
+        (e.cruiseSpeed==nil or (finite(e.cruiseSpeed) and e.cruiseSpeed>=.1 and e.cruiseSpeed<=30))
 end
 -- Section: Destination library | Mounted-media validation, listing and accepted edits.
 -- Summary: Validate a saved destination document and its entries.
@@ -94,6 +96,7 @@ function Library:change(operation,index,entry)
     if operation=="save" then nextEntries[#nextEntries+1]=copy(entry)
     elseif type(index)~="number" or index%1~=0 or not nextEntries[index] then return false,"SELECT A SAVED DESTINATION"
     elseif operation=="rename" then nextEntries[index].name=entry.name
+    elseif operation=="edit" then nextEntries[index]=copy(entry)
     elseif operation=="delete" then table.remove(nextEntries,index)
     else return false,"UNKNOWN LIBRARY ACTION" end
     local value=copy(self.document or {schemaVersion=1});value.destinations=nextEntries

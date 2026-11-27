@@ -967,44 +967,72 @@ from tests import test_builder as support
 class SettingsNavigationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.ui = (project.ROOT / "source/library/packages/navigation/ui.lua").read_text(encoding="utf-8")
-        core = "".join((project.ROOT / "source/core/avionics" / name).read_text(encoding="utf-8")
-                       for name in ("flight.lua", "input_tuning.lua"))
-        block = re.search(r"local SETTINGS_PAGES=\{.*?\} -- end SETTINGS_PAGES", cls.ui, re.S).group(0)
-        lua, _ = support.native_runtime()
-        lua.execute(block.replace("local SETTINGS_PAGES", "SETTINGS_PAGES"))
-        table = lua.globals().SETTINGS_PAGES
-        cls.pages = {key: dict(value.items()) for key, value in table.items()}
-        cls.views = set(re.findall(r'view\("([A-Z ]+)"\)', cls.ui))
-        cls.groups = set(re.findall(r'field\("([A-Z ]+)"', core)) | {"PROPULSION"}
+        from tests.test_displays import NavigatorGraphicsTests
+        cls.case=NavigatorGraphicsTests()
+        cls.case.setUpClass()
 
-    def parent(self, page):
-        return self.pages.get(page, {}).get("parent", "GENERAL")
+    def runtime(self):
+        """Traverse actual graphics menu regions to collect reachable settings views."""
+        lua=self.case.runtime()
+        lua.execute("""
+u,s=navFixture(342,216,'SETTINGS')
+VIEWS={GENERAL=true};QUEUE={'GENERAL'}
+local cursor=1
+while cursor<=#QUEUE do
+ local view=QUEUE[cursor];cursor=cursor+1
+ u.settingsView=view;assert(u:draw(s))
+ for _,r in ipairs(u.regions) do
+  if r.action.localAction=='settings' and not VIEWS[r.action.view] then
+   VIEWS[r.action.view]=true;QUEUE[#QUEUE+1]=r.action.view
+  end
+ end
+end
+function goBack(view)
+ u.settingsView=view;assert(u:draw(s))
+ for _,r in ipairs(u.regions) do
+  if r.x==5 and r.y==175 and r.action.localAction=='settings' then
+   u:activate(r.action,s);return u.settingsView
+  end
+ end
+ error('missing Back control: '..view)
+end
+""")
+        return lua
 
     def test_every_page_returns_to_general_without_loops(self):
-        for page in sorted(self.views | self.groups | set(self.pages)):
-            seen, current = [], page
-            while current != "GENERAL":
-                self.assertNotIn(current, seen, f"BACK loop from {page}: {seen}")
-                seen.append(current)
-                current = self.parent(current)
-            self.assertLessEqual(len(seen), 4, f"{page} takes {len(seen)} BACK presses")
+        self.runtime().execute("""
+for view in pairs(VIEWS) do
+ local seen={};local depth=0
+ while view~='GENERAL' do
+  assert(not seen[view],'Back loop: '..view);seen[view]=true
+  view=goBack(view);depth=depth+1;assert(depth<=4)
+ end
+end
+""")
 
     def test_parents_are_real_pages(self):
-        for page, info in self.pages.items():
-            parent = info.get("parent")
-            self.assertTrue(parent == "GENERAL" or parent in self.views, f"{page} has unknown parent {parent}")
+        self.runtime().execute("""
+for view in pairs(VIEWS) do
+ if view~='GENERAL' then assert(VIEWS[goBack(view)],'unknown parent for '..view) end
+end
+""")
 
     def test_cockpit_input_pages_return_to_cockpit_inputs(self):
-        for group in ("SEL HEADING", "SEL THROTTLE", "INPUT ALTITUDE", "STRAFE SETTINGS"):
-            self.assertIn(group, self.groups)
-            self.assertIn(group, self.views)
-            self.assertEqual(self.parent(group), "TARGET")
+        self.runtime().execute("""
+for _,view in ipairs({'SEL HEADING','SEL THROTTLE','INPUT ALTITUDE','STRAFE SETTINGS','GENERAL LIMITS'}) do
+ assert(VIEWS[view],view..' unreachable');assert(goBack(view)=='TARGET')
+end
+""")
 
-    def test_back_uses_the_table(self):
-        self.assertIn('view((SETTINGS_PAGES[sub] or {}).parent or "GENERAL")', self.ui)
-        self.assertNotIn('sub:match("^INPUT")', self.ui)
-        self.assertNotIn('sub:match("^PROP")', self.ui)
+    def test_all_core_setting_groups_are_reachable(self):
+        lua=self.runtime()
+        core=''.join((project.ROOT/'source/core/avionics'/name).read_text(encoding='utf-8')
+                     for name in ('flight.lua','input_tuning.lua'))
+        groups=set(re.findall(r'field\("([A-Z ]+)"',core)) | {'VS PID','PROP SPEED PID','PROP ACCEL PID','PROP YAW PID'}
+        for group in groups:
+            view='GENERAL LIMITS' if group=='GENERAL' else group
+            self.assertTrue(lua.globals().VIEWS[view],f'{group} has no settings menu path')
+
 
 
 if __name__ == "__main__":

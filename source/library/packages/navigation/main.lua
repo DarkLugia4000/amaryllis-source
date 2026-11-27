@@ -138,7 +138,7 @@ local priority={emergency_kill_lift=true,systems_stop=true,systems_stop_confirm=
 local shortLife={emergency_kill_lift=true,disarm_lift_kill=true,restart_systems=true,
     start_systems=true,recover_systems=true,level_reset=true,systems_stop=true,systems_stop_confirm=true,
     maintenance_confirm=true,maintenance_override=true,tuning_confirm=true,altitude_engage=true,
-    anchor_engage=true,ap_engage=true,propulsion_enable=true,ap_current=true,destination_save=true}
+    anchor_engage=true,ap_engage=true,ap_saved_engage=true,ap_route_engage=true,propulsion_enable=true,ap_current=true,destination_save=true}
 local function coalesceKey(action)
     if action.type=="setting_update" and type(action.key)=="string" then return "setting:"..action.key end
     if action.type=="cockpit_mode" and type(action.axis)=="string" then return "mode:"..action.axis end
@@ -285,6 +285,7 @@ local restartContext={coreId=config.core_id,targetLabel=os.getComputerLabel(),no
     end,seen={},order={}}
 -- Summary: Resolve the current monitor or network attachment for the role.
 local function bind()
+    if renderer then renderer:close() end
     renderer,monitorName=nil,nil
     local monitors={}
     for _,name in ipairs(peripheral.getNames()) do
@@ -300,7 +301,12 @@ local function bind()
     if config.hardware.main_monitor~="" then
         for _,name in ipairs(monitors) do if name==config.hardware.main_monitor then monitorName=name end end
     elseif #monitors==1 then monitorName=monitors[1] end
-    if monitorName then renderer=UI.new(peripheral.wrap(monitorName),config) end
+    if monitorName then
+        local attached,reason=UI.new(peripheral.wrap(monitorName),config)
+        renderer=attached
+        if reason and reason~=lastIssue then print("Bridge display: "..reason) end
+        if reason then lastIssue=reason end
+    end
 end
 -- Summary: Render the current view into its configured terminal or monitor.
 local function draw()
@@ -315,7 +321,7 @@ local function draw()
         local fault=(not ok and tostring(result)) or (result==false and tostring(reason)) or nil
         if fault and fault~=lastIssue then print("Bridge display: "..fault) end
         lastIssue=fault
-        if fault then renderer=nil end
+        if fault then renderer:close();renderer=nil end
     end
 end
 -- Summary: Validate and dispatch received packets for the current role and session.
@@ -346,7 +352,7 @@ syncRegistry();pcall(bind); print("Amaryllis navigator waiting for current core 
 local timer=os.startTimer(0.2)
 while true do
     local event,a,b,c=os.pullEventRaw()
-    if event=="terminate" then return
+    if event=="terminate" then if renderer and renderer.close then renderer:close() end;return
     elseif event=="rednet_message" then
         restartContext.session=restartContext.getSession()
         if Console.acceptRegistry(a,b,c,config.role,os.getComputerID(),config.core_id) then

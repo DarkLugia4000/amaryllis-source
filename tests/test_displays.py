@@ -13,218 +13,8 @@ from tests import test_builder as support
 ROOT = Path(__file__).resolve().parents[1]
 REPORT = ROOT / 'output/tests/bridge-presentation'
 
-HARNESS = r'''
-NOW=1;os.clock=function()return NOW end;keys={escape=1}
-function check(ok,why)assert(ok,why)end
-function clone(t)if type(t)~='table'then return t end;local r={};for k,v in pairs(t)do r[k]=clone(v)end;return r end
-function fixture(width,height,page)
- local m={getSize=function()return width or 57,height or 24 end,setCursorPos=function()end,
-  blit=function(a,b,c)assert(#a==#b and #b==#c)end,setTextScale=function()end}
- local ui=assert(UI.new(m,{role='main'}));ui.page=page or 'FLIGHT'
- local s={updatedAt=1,dataFresh=true,displayStale=false,stale=false,
-  assembly={state='ASSEMBLED'},fleetBoot={ready=true},
-  vessel={valid=true,uuid='ship',altitude=160,verticalSpeed=.02,heading=57.7,pitch=0,roll=0,
-   mass=200000,forwardSpeed=0,geometryVerified=true,velocityFrameVerified=true},
-  modes={heading='MANUAL',throttle='MANUAL',lateral='MANUAL'},targets={altitude=160,speed=0},
-  cockpitControl={available=true},inputs={valid=true,raw={}},
-  altitudeControl={enabled=false,available=true},systemsStartup={available=true,active=false,phase='IDLE'},
-  systemsRestart={available=false,reason='START SYSTEMS FIRST'},emergencyLift={latched=false},
-  settings={entries={}},nodes={},debugMode={enabled=false,state='IDLE'}}
- for _,q in ipairs({'FL','FR','BL','BR'})do s.nodes[q]={online=true,thrustControlState='RDY',liftControlState='CMD',providers={},
-  balloon={hasBalloon=true,hasBalloonValid=true,gasMixValid=true,gasMix={steam=33333},lift=50000,liftValid=true}}end
- local function draw()
-  s.page=ui.page;local ok,why=ui:draw(s);assert(ok,why);return ui.previous
- end
- local function open()
-  draw();assert(ui:touch(width or 57,3,s)==nil,'opening Options must not issue a command');assert(ui.systemsMenu)
-  return draw()
- end
- local function region(kind)
-  for _,r in ipairs(ui.systemsMenuRegions or {})do if r.action.type==kind then return r end end
-  error('missing menu action '..kind)
- end
- local function choose(kind)
-  local r=region(kind);return ui:touch(r.x1,r.y1,s)
- end
- local function capture(name)
-  draw();local rows,fg,bg={},{},{}
-  for y,row in ipairs(ui.previous.rows)do rows[y]=row.text;fg[y]=row.foreground;bg[y]=row.background end
-  CAPTURES[name]={text=rows,foreground=fg,background=bg,width=width or 57,height=height or 24,
-   page=ui.page,phase=s.systemsStartup.phase,simulatedSeconds=NOW}
- end
- return ui,s,draw,open,choose,region,capture
-end
-function running(s)
- s.systemsStartup={available=false,active=true,phase='READY',target=160}
- s.systemsRestart={available=true};s.altitudeControl.enabled=true
-end
-'''
 
 
-class BridgePresentationTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.source = support.bundled_builder.collect_project(support.SOURCE)
-        cls.ui_source = cls.source['library']['/packages/navigation/ui.lua']
-        # Packing in memory tests the same production loader/file layout, without
-        # creating a distributable installer or writing any live computer files.
-        cls.source = support.bundle.prepare(cls.source, support.bundled_builder.FOLDERS)
-        cls.bundle = cls.source['library']['/packages/navigation/main.lua'].decode()
-        cls.captures = {}
-
-    def setUp(self):
-        self.lua, _ = support.native_runtime()
-        self.lua.globals().UI = self.lua.execute(self.bundle, support.bundle.MAGIC, '/avionics/ui.lua')
-        self.lua.globals().CAPTURES = self.lua.table()
-        self.lua.execute(HARNESS)
-
-    def run_lua(self, source):
-        self.lua.execute(source)
-
-    def test_idle_menu_start_and_header(self):
-        self.run_lua('''
-local ui,s,draw,open,choose,r,capture=fixture()
-draw();check(ui.previous.rows[2].text:find('SYSTEMS',1,true),'Systems header')
-check(not ui.previous.rows[2].text:find('ALTITUDE TARGET',1,true),'old header removed')
-check(not ui.previous.rows[4].text:find('KILL LIFT',1,true),'old kill button removed')
-check(ui:touch(1,4,s)==nil and ui.killReview==nil,'old kill location has no action')
-capture('01-options-closed');open();capture('02-options-idle')
-check(r('start_systems').enabled and not r('systems_stop').enabled,'idle availability')
-local a=choose('start_systems');check(a and a.type=='start_systems' and not ui.systemsMenu,'start action')
-''')
-
-    def test_running_menu_stop_restart_and_disabled_start(self):
-        self.run_lua('''
-local ui,s,draw,open,choose,r,capture=fixture();running(s);open();capture('03-options-running')
-check(not r('start_systems').enabled and r('systems_stop').enabled and r('restart_systems').enabled,'running availability')
-check(choose('start_systems')==nil and ui.systemsMenu and ui.systemsMenuNotice,'disabled action explains reason')
-local a=choose('systems_stop');check(a and a.type=='systems_stop','stop requests existing confirmation')
-open();a=choose('restart_systems');check(a and a.type=='restart_systems','restart action')
-''')
-
-    def test_starting_menu_availability(self):
-        self.run_lua('''
-local ui,s,draw,open,choose,r,capture=fixture();s.systemsStartup={active=true,available=false,phase='PROBING'}
-open();capture('04-options-starting')
-check(not r('start_systems').enabled and r('systems_stop').enabled and not r('restart_systems').enabled,'starting availability')
-''')
-
-    def test_outside_touch_dismissed_without_click_through(self):
-        self.run_lua('''
-local ui,s,draw,open=fixture();open();local nav=ui.tabs[2]
-check(ui:touch(nav.x1,nav.y1,s)==nil and not ui.systemsMenu,'outside tap consumed')
-local a=ui:touch(nav.x1,nav.y1,s);check(a and a.type=='page' and a.page=='NAV','second tap navigates')
-open();check(ui:touch(57,3,s)==nil and not ui.systemsMenu,'trigger closes menu')
-''')
-
-    def test_raw_touch_snapshot_revalidates_stale_and_changed_state(self):
-        self.run_lua('''
-local ui,s,draw,open,choose,r,capture=fixture();open()
-s.dataFresh=false;s.displayStale=true;s.stale=true
-check(choose('start_systems')==nil and ui.systemsMenuNotice:find('FRESH',1,true),'stale selection rejected without redraw')
-draw();capture('05-options-stale')
-for _,entry in ipairs(ui.systemsMenuRegions)do check(not entry.enabled,'all stale commands disabled')end
-s.dataFresh=true;s.displayStale=false;s.stale=false;s.systemsStartup.available=false;s.systemsStartup.active=true
-check(choose('start_systems')==nil,'new active state rejects previously drawn start')
-''')
-
-    def test_fleet_and_assembly_preserve_stop_and_kill(self):
-        self.run_lua('''
-for _,gate in ipairs({'fleet','assembly'})do
- local ui,s,draw,open,choose,r=fixture();running(s)
- if gate=='fleet'then s.fleetBoot.ready=false else s.assembly.state='UNKNOWN' end
- open();check(not r('start_systems').enabled and not r('restart_systems').enabled,'authority gates retained')
- check(r('systems_stop').enabled and r('emergency_kill_lift').enabled,'stop and kill remain accessible')
-end
-''')
-
-    def test_kill_confirmation_cancel_confirm_stale_timeout_on_all_pages(self):
-        self.run_lua('''
-for _,page in ipairs({'FLIGHT','NAV','SHIP','SETTINGS'})do
- local ui,s,draw,open,choose,r,capture=fixture(57,24,page);running(s);open()
- check(choose('emergency_kill_lift')==nil and ui.killReview and not ui.systemsMenu,'kill selection only opens review')
- draw();if page=='FLIGHT'then capture('06-kill-confirmation')end
- for y=6,20 do check(ui.previous.rows[y].text:sub(1,1)==' ','confirmation clears old edge glyphs')end
- local cancel,confirm
- for _,button in ipairs(ui.killRegions)do if button.confirm then confirm=button else cancel=button end end
- check(ui:touch(cancel.x1,cancel.y1,s)==nil and not ui.killReview,'kill cancellation')
- open();choose('emergency_kill_lift');draw();local a=ui:touch(confirm.x1,confirm.y1,s)
- check(a and a.type=='emergency_kill_lift','explicit confirmation emits original kill command')
- open();choose('emergency_kill_lift');draw();s.dataFresh=false;s.displayStale=true;s.stale=true
- check(ui:touch(confirm.x1,confirm.y1,s)==nil,'stale confirm cannot issue kill')
- s.dataFresh=true;s.displayStale=false;s.stale=false
- open();choose('emergency_kill_lift');NOW=12;draw();check(not ui.killReview,'confirmation expires');NOW=1
-end
-''')
-
-    def test_latched_disarm_and_pending_kill_states(self):
-        self.run_lua('''
-local ui,s,draw,open,choose,r,capture=fixture();s.emergencyLift={latched=true,complete=true,phase='KILL CONFIRMED'}
-open();capture('07-options-kill-latched')
-check(not r('start_systems').enabled and r('disarm_lift_kill').enabled,'kill latch blocks start and exposes disarm')
-local a=choose('disarm_lift_kill');check(a and a.type=='disarm_lift_kill','existing disarm action preserved')
-s.emergencyLift={latched=true,disarming=true};open();check(not r('disarm_lift_kill').enabled,'pending disarm cannot duplicate')
-for _,phase in ipairs({'KILLING','KILL INCOMPLETE'})do
- ui.systemsMenu=nil;s.emergencyLift={phase=phase,pending=phase=='KILLING'};open()
- check(r('emergency_kill_lift').enabled==(phase=='KILL INCOMPLETE'),'pending blocked, incomplete kill retryable')
-end
-''')
-
-    def test_stop_and_kill_dialogs_have_priority(self):
-        self.run_lua('''
-local ui,s,draw,open,choose,r,capture=fixture();running(s);open();s.systemsStopReview={token='test-review'}
-draw();capture('08-stop-confirmation');check(not ui.systemsMenu,'stop review closes menu')
-check(ui:touch(57,3,s)==nil and not ui.systemsMenu,'Options cannot bypass stop review')
-for _,button in ipairs(ui.stopRegions)do
- local a=ui:touch(button.x1,button.y1,s)
- check(a and a.type==button.action.type and a.token=='test-review','stop dialog preserves confirmation token')
-end
-s.systemsStopReview=nil;open();choose('emergency_kill_lift');draw()
-check(ui:touch(57,3,s)==nil and ui.killReview and not ui.systemsMenu,'Options cannot bypass kill review')
-''')
-
-    def test_escape_small_screen_and_resize(self):
-        self.run_lua('''
-local ui,s,draw,open=fixture();open();ui:input('key',keys.escape);check(not ui.systemsMenu,'Escape dismisses')
-open();ui.monitor.getSize=function()return 56,23 end;draw();check(not ui.systemsMenu,'small-screen reset')
-ui.monitor.getSize=function()return 80,30 end;draw();ui:touch(80,3,s);draw()
-check(ui.systemsMenuRegions[1].x2==79,'resize updates menu bounds')
-''')
-
-    def test_wording_and_wrapped_debug_text(self):
-        self.run_lua('''
-local ui,s,draw,open,choose,r,capture=fixture();draw()
-check(ui.previous.rows[14].text:find('V/S +0.02 b/s',1,true),'V/S label and measured value')
-check(ui.previous.rows[6].text:find('^ BOW ^',1,true),'orientation label')
-ui.page='SETTINGS';ui.settingsView='DEBUG';draw();capture('09-debug-wording')
-local text='';for _,row in ipairs(ui.previous.rows)do text=text..' '..row.text end;text=text:gsub('%s+',' ')
-check(text:find("Use an empty disk in one of core's disk drives.",1,true),'disk instruction')
-check(text:find('Logs are located under /amaryllis-logs/ directory on the disk.',1,true),'full wrapped log location')
-check(not text:find('Installer disks are refused.',1,true),'old instruction removed')
-ui.settingsView='DISPLAY';draw();capture('10-display-wording')
-for _,row in ipairs(ui.previous.rows)do check(not row.text:find('fixed 57 x 24',1,true),'layout specification removed')end
-''')
-
-    def test_menu_layout_across_pages_and_monitor_sizes(self):
-        self.run_lua('''
-for _,size in ipairs({{57,24},{80,30},{100,36}})do for _,page in ipairs({'FLIGHT','NAV','SHIP','SETTINGS'})do
- local ui,s,draw,open=fixture(size[1],size[2],page);open()
- for _,r in ipairs(ui.systemsMenuRegions)do check(r.x1>=1 and r.x2<=size[1] and r.y1>=1 and r.y2<=size[2],'menu bounds')end
- for _,row in ipairs(ui.previous.rows)do check(#row.text==size[1] and #row.foreground==size[1] and #row.background==size[1],'complete surface')end
-end end
-''')
-
-    def tearDown(self):
-        self.captures.update(support.python_value(self.lua.globals().CAPTURES))
-
-    @classmethod
-    def tearDownClass(cls):
-        REPORT.mkdir(parents=True,exist_ok=True)
-        (REPORT/'screens.json').write_text(json.dumps(cls.captures,indent=2)+'\n')
-        (REPORT/'bridge-ui.lua').write_bytes(cls.ui_source)
-        (REPORT/'identity.json').write_text(json.dumps({'builderVersion':support.bundled_builder.VERSION,
-            'uiSHA256':hashlib.sha256(cls.ui_source).hexdigest(),'liveSaveModified':False,
-            'installerBuiltForDistribution':False,'bridgePackageVersion':cls.source['versions']['navigator']},indent=2)+'\n')
 
 
 # ======================================================================
@@ -478,248 +268,6 @@ check(value.systemsStartup.displayPhase=="READY","heading receives display phase
         self.assertTrue(all(x["summarized"]==x["majorFunctions"] for x in source["sourceDocumentation"]))
 
 
-class InformationUiTests(unittest.TestCase):
-    def test_lift_maintenance_probe_reset_dispatches_core_action(self):
-        self.run_lua("""
-local ui,s,draw=fixture(57,24,"SETTINGS");healthy(s)
-ui.settingsView="MAINTENANCE"
-draw()
-local row=ui.previous.rows[12]
-local label=assert(row.text:find("PROBE RESET",1,true))
-assert(row.background:sub(label,label)=="0","enabled button is white")
-local action=ui:touch(10,12,s)
-assert(action and action.type=="maintenance_probe_cycle" and action.scope=="ALL")
-s.systemsStartup.active=true
-draw()
-assert(ui:touch(10,12,s).type=="maintenance_probe_cycle","reset remains clickable during an active lift run")
-s.fleetBoot.ready=false;s.dataFresh=false;s.displayStale=true
-draw()
-assert(ui:touch(10,12,s).type=="maintenance_probe_cycle","reset still submits with stale fleet status")
-""")
-
-    def test_disabled_propulsion_warns_only_on_fresh_throttle_input(self):
-        self.run_lua("""
-local ui,s,draw=fixture();healthy(s)
-s.thrust.enabled=false;s.thrust.available=false
-s.faults={"PROPULSION DISABLED IN CONFIG"}
-local function warning()
- draw()
- for _,item in ipairs(ui.currentIssues) do
-  assert(not item.text:find("DISABLED IN CONFIG",1,true))
-  if item.text=="PROPULSION DISABLED IN SETTINGS" then return item.tone end
- end
-end
-assert(warning()==nil)
-assert(ui.previous.rows[19].text:find("PROP UNAVAIL; CHECK SETTINGS",1,true))
-s.inputs.raw.prop_forward=15;assert(warning()=="red")
-s.inputs.raw.prop_forward=0;s.inputs.raw.prop_reverse=15;assert(warning()=="red")
-s.inputs.valid=false;assert(warning()==nil)
-s.inputs.valid=true;s.thrust.enabled=true;assert(warning()==nil)
-""")
-
-    def setUp(self):
-        self.lua=runtime()
-        self.lua.globals().UI=self.lua.execute(collected()['library']['/packages/navigation/ui.lua'].decode())
-        self.lua.globals().CAPTURES=self.lua.table()
-        self.lua.execute(HARNESS)
-        self.lua.execute(HEALTHY)
-
-
-    def run_lua(self,source):return self.lua.execute(source)
-
-    def test_kill_colours_specific_progress(self):
-        self.run_lua('''
-local ui,s,draw=fixture()
-local states={
- {phase="KILLING",pending=true,latched=true,want="KILL LIFT PENDING",color="4"},
- {phase="KILL INCOMPLETE",latched=true,want="KILL LIFT INCOMPLETE",color="4"},
- {phase="KILL CONFIRMED",latched=true,complete=true,want="KILL LIFT ARMED; DISARM BEFORE START",color="e"},
- {phase="DISARMING",latched=true,disarming=true,want="DISARMING KILL; SYSTEMS STOPPED",color="4"}}
-for _,v in ipairs(states)do
- s.emergencyLift=v;draw();local row=ui.previous.rows[21]
- check(row.text:find(v.want,1,true),v.want);check(row.foreground:sub(2,2)==v.color,"kill colour")
-end
-''')
-
-    def test_warning_rotation_click_and_parent_back(self):
-        self.run_lua('''
-local ui,s,draw=fixture()
-s.bridgeRequest={status="QUEUED",queuedCount=2}
-s.assembly.warning="ASSEMBLY UNVERIFIED; OPERATOR CHECK REQUIRED"
-draw();local seen={}
-for n=1,8 do NOW=NOW+3;draw();seen[ui.warningRegion.id]=true end
-check(seen["assembly-unverified"] and seen["command"],"equal warnings rotate")
-local touched=ui.warningRegion.id
-check(ui:touch(3,21,s)==nil and ui.issuesOpen,"plain text opens locally")
-draw();check(ui.issueFocus==touched,"focus drawn issue")
-check(ui.previous.rows[5].text:find("CURRENT ISSUES",1,true),"issues title")
-ui:touch(3,5,s);check(not ui.issuesOpen and ui.page=="FLIGHT","Back returns to Flight")
-ui.page="SETTINGS";ui.settingsView="GENERAL";draw()
-check(ui:touch(3,16,s)==nil and ui.issuesOpen,"Settings issues entry")
-ui:touch(3,5,s);check(ui.page=="SETTINGS" and ui.settingsView=="GENERAL","Back returns to Settings")
-''')
-
-    def test_severity_preemption_and_resolved_issue_removal(self):
-        self.run_lua('''
-local ui,s,draw=fixture();s.bridgeRequest={status="QUEUED"}
-s.emergencyLift={latched=true,complete=true};draw()
-check(ui.warningRegion.id=="kill","red preempts")
-NOW=10;draw();check(ui.warningRegion.id=="kill","yellow does not replace red")
-s.emergencyLift={};draw()
-for _,item in ipairs(ui.currentIssues)do check(item.id~="kill","resolved removed")end
-''')
-
-    def test_assembly_retry_not_visible_and_overflow_navigation(self):
-        self.run_lua('''
-local ui,s,draw=fixture()
-s.assembly.unverifiedSeconds=299;draw()
-for _,item in ipairs(ui.currentIssues)do check(item.id~="assembly-unverified","routine uncertainty hidden")end
-s.assembly.warning="ASSEMBLY UNVERIFIED; OPERATOR CHECK REQUIRED";draw()
-for _,item in ipairs(ui.currentIssues)do if item.id=="assembly-unverified"then check(item.tone=="yellow","operator warning yellow")end end
-''')
-
-    def test_startup_labels_and_alt_offline(self):
-        self.run_lua('''
-local ui,s,draw=fixture();running(s)
-for _,phase in ipairs({"OPENING STEAM VENTS","STATIC INFLATION","CAPTURING PITCH ZERO","ACQUIRING SEL ALT"})do
- s.systemsStartup.phase="MAIN_LIFT";s.systemsStartup.displayPhase=phase;draw()
- check(ui.previous.rows[20].text:find(phase,1,true),"startup "..phase)
-end
-''')
-
-
-    def test_issue_pagination_and_empty_state(self):
-        self.run_lua('''
-local ui,s,draw=fixture()
-s.faults={"ISSUE ONE","ISSUE TWO","ISSUE THREE","ISSUE FOUR","ISSUE FIVE","ISSUE SIX"}
-draw();ui:touch(3,21,s);draw()
-check(ui.previous.rows[20].text:find("/2",1,true),"multiple issue pages")
-ui:touch(40,19,s);draw();check(ui.issuesOffset==4,"next page")
-check(ui.previous.rows[6].text:find("ISSUE FIVE",1,true),"fifth issue visible")
-ui:touch(20,19,s);draw();check(ui.issuesOffset==0,"previous page")
-s.faults={};healthy(s);draw()
-check(ui.previous.rows[10].text:find("NO CURRENT ISSUES",1,true),"empty state")
-''')
-
-
-    def test_issue_identity_survives_reordered_fault_list(self):
-        self.run_lua("""
-local ui,s,draw=fixture();healthy(s);s.faults={"FIRST FAULT","SECOND FAULT"};draw()
-local id=ui.warningRegion.id
-NOW=3;s.faults={"SECOND FAULT","FIRST FAULT"};draw()
-check(ui.warningRegion.id==id,"same issue survives list reordering")
-check(ui.issueAges[id]==1,"issue age retained")
-ui:touch(3,21,s);draw()
-local found=false
-for _,item in ipairs(ui.currentIssues)do
- if item.id==ui.issueFocus then check(item.text=="FIRST FAULT","focus follows displayed warning");found=true end
-end
-check(found,"focused issue remains in list")
-""")
-
-    def test_disassembled_vessel_shows_only_that_issue(self):
-        self.run_lua("""
-local ui,s,draw=fixture();healthy(s)
-local message="VESSEL DISASSEMBLED: physics_assembler_1.isAssembled() = false"
-s.assembly={state="DISASSEMBLED",assembled=false,message=message,reason="physics_assembler_1.isAssembled() = false"}
-s.assembly.retainedGasM3={FL=12400,BL=0}
-s.nodes.FL.providers.probe={controlRole="fine",present=true,attachedValid=true,attached=true}
-s.modes={heading="SEL",throttle="DIRECT",lateral="SEL"}
-s.systemsRestart.available=true
-s.faults={message,"VESSEL DISASSEMBLED","CHAMBER FL SILENT 12 S; CHECK POWER AND LINK"}
-draw()
-check(#ui.currentIssues==1,"one issue, found "..#ui.currentIssues)
-check(ui.currentIssues[1].id=="assembly-lock" and ui.currentIssues[1].text=="ASSEMBLE VESSEL TO ENABLE CONTROLS","the assembly instruction")
-check(ui.currentIssues[1].detail==message,"the assembly check's message is the detail")
-check(ui.previous.rows[21].text:find("ASSEMBLE VESSEL TO ENABLE CONTROLS",1,true),"bottom line")
-local page={}
-for y=5,20 do page[#page+1]=ui.previous.rows[y].text end
-page=table.concat(page," ")
-check(ui.page=="STATUS" and #ui.tabs==2,"disassembly opens Status with two tabs")
-for y=5,7 do
- local bg=ui.previous.rows[y].background
- check(bg:sub(4,5)=="fe" and bg:sub(53,54)=="ef","banner is three rows with side margins")
-end
-check(ui.previous.rows[9].text:find("CHAMBER STATUS",1,true),"chamber heading")
-local probes=ui.previous.rows[11]
-local fl=assert(probes.text:find("FL PROBE",1,true))
-local fr=assert(probes.text:find("FR NO PROBE",1,true))
-check(probes.foreground:sub(fl,fl+7)==string.rep("d",8),"confirmed probe is green")
-check(probes.foreground:sub(fr,fr+10)==string.rep("e",11),"unconfirmed probe is red")
-check(ui.previous.rows[12].text:find("GAS 12400 m3") and ui.previous.rows[12].text:find("GAS N/A"),"stored and missing gas")
-check(ui.previous.rows[15].text:find("GAS 0 m3"),"zero is a stored value")
-check(ui.previous.rows[18].text:find("Please assemble the vessel to enable controls.",1,true),"assembly instruction")
-local modes=ui.previous.rows[3]
-local sel=assert(modes.text:find("SEL"))
-local direct=assert(modes.text:find("DIRECT"))
-check(modes.foreground:sub(sel,sel)=="9" and modes.foreground:sub(direct,direct)=="9","saved modes are cyan text")
-check(modes.background:sub(sel,sel)=="f" and ui:touch(sel,3,s)==nil,"saved modes are read only")
-check(modes.text:find("SYSTEMS LOCKED",1,true),"Status has the locked global bar")
-check(not ui.previous.rows[4].text:find("STRAFE"),"strafe hidden")
-for _,old in ipairs({"Source: physics","Blocked:","Applied lift ceilings","Nothing resumes","isAssembled() = false","Lift maintenance"}) do
- check(not page:find(old,1,true),"removed: "..old)
-end
-check(ui:touch(45,23,s)==nil,"Settings tab stays local");draw()
-check(ui.page=="SETTINGS","Settings opens")
-ui.systemsMenu=true;draw()
-check(ui.previous.rows[3].text==modes.text,"Settings shares the same locked bar")
-check(not ui.systemsMenu and ui:touch(50,3,s)==nil and not ui.systemsMenu,"locked bar closes and blocks Options")
-ui:touch(40,18,s);draw()
-check(ui.settingsView=="SYSTEMS","normal Settings page navigation")
-local disabled=0
-for _,region in ipairs(ui.settingsRegions) do
- if region.action.type=="start_systems" or region.action.type=="restart_systems" then
-  check(not region.enabled and ui:touch(region.x1,region.y1,s)==nil,"systems action is disabled")
-  disabled=disabled+1
- end
-end
-check(disabled==2,"both systems actions rendered")
-check(ui:touch(10,23,s)==nil,"Status tab stays local");draw()
-check(ui.page=="STATUS","Status returns")
-s.assembly={state="ASSEMBLED",assembled=true};ui.page="FLIGHT";draw()
-check(#ui.tabs==4 and ui.page=="FLIGHT","reassembly restores normal tabs")
-check(ui.previous.rows[3].text:find("Options [v]",1,true),"active bar returns after reassembly")
-check(ui:touch(50,3,s)==nil and ui.systemsMenu,"Options opens after reassembly")
-ui.systemsMenu=nil
-local listed=false
-for _,item in ipairs(ui.currentIssues)do if item.text:find("CHAMBER FL SILENT",1,true)then listed=true end end
-check(listed,"other faults return once assembled")
-s.page="SETTINGS";ui.settingsView="SYSTEMS";assert(ui:draw(s))
-check(ui:touch(2,16,s).type=="start_systems" and ui:touch(29,16,s).type=="restart_systems","normal action eligibility returns")
-""")
-
-    def test_disassembly_gas_uses_retained_recovery_targets(self):
-        self.run_lua("""
-local Flight=require("avionics.flight")
-local f=setmetatable({systemsIntentActive=true,systemsRetainedRun={
- phase="READY",currentTargets={FL={vent=10},FR={vent=0},BL={vent=2}},
- pending={FL={targets={vent=12,probe=5}}},
- batchTargets={FL={vent=14,probe=5}},
- providerRoles={FL={vent="bulk",probe="fine"},BL={vent="bulk",probe="fine"}},
-}},{__index=Flight})
-local gas=f:retainedAssemblyGas()
-check(gas.FL==19 and gas.FR==0 and gas.BL==nil and gas.BR==nil,"batch, zero and incomplete maps")
-f.systemsRetainedRun.telemetryRecovery={targetMaps={FL={vent=25,probe=5}}}
-gas=f:retainedAssemblyGas()
-check(gas.FL==30 and gas.FR==nil,"recovery map supersedes the batch")
-f.systemsIntentActive=false
-check(f:retainedAssemblyGas()==nil,"stopped systems omit old gas targets")
-local function provider(role,amount)
- return {controlRole=role,targetAmount=amount,targetValid=true,present=true}
-end
-local chamber={steamCount=2,providers={
- a=provider("bulk",4200),b=provider("bulk",4100),probe=provider("fine",5),
-}}
-local io={nodes={FL=chamber,FR=chamber,BL={steamCount=2,providers=chamber.providers}},
- nodeFresh=function(_,q)return q~="FR" end}
-gas=f:retainedAssemblyGas(io,1)
-check(gas.FL==8305 and gas.FR==nil and gas.BR==nil,"read persisted ceilings after stop")
-chamber.providers.b.targetValid=false
-check(f:retainedAssemblyGas(io,1)==nil,"incomplete readback stays unavailable")
-f.restart={saved={run={currentTargets={FL={a=4400,b=4300,probe=5}}}}}
-gas=f:retainedAssemblyGas(io,1)
-check(gas.FL==8705 and gas.BL==nil,"pending restart uses its saved targets")
-""")
 
 
 # ======================================================================
@@ -1116,147 +664,6 @@ import project
 from tests import test_builder as support
 
 
-class ShipBoilerDisplayTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        source = support.bundled_builder.collect_project(project.ROOT)
-        source = support.bundle.prepare(source, support.bundled_builder.FOLDERS)
-        cls.bundle = source['library']['/packages/navigation/main.lua'].decode()
-
-    def setUp(self):
-        self.lua, _ = support.native_runtime()
-        self.lua.globals().UI = self.lua.execute(self.bundle, support.bundle.MAGIC, '/avionics/ui.lua')
-        self.lua.globals().CAPTURES = self.lua.table()
-        self.lua.execute(HARNESS)
-
-    def test_chamber_headers_show_lowest_bulk_boiler_rounded_down(self):
-        for width, height in ((57, 24), (80, 30), (100, 36)):
-            with self.subTest(size=(width, height)):
-                self.lua.execute('''
-local ui,s,draw=fixture(%d,%d,'SHIP');running(s)
--- Fine (trim) providers are ignored; the lowest valid bulk vent sets the chamber value.
-local readings={FL={1,0.4},FR={0.016},BL={0.996},BR={}}
-for q,list in pairs(readings)do
- local providers={trim={controlRole='fine',boilerEfficiencyValid=true,boilerEfficiency=0}}
- for i,e in ipairs(list)do providers['vent'..i]={controlRole='bulk',boilerEfficiencyValid=true,boilerEfficiency=e} end
- if q=='BR' then providers.vent1={controlRole='bulk',boilerEfficiencyValid=false} end
- s.nodes[q].providers=providers
-end
-draw()
-local text={}
-for y=1,%d do text[#text+1]=ui.previous.rows[y].text end
-local all=table.concat(text,'\\n')
-check(all:find('FL ONLINE  BOILER 40%%',1,true),'lowest FL bulk vent')
-check(all:find('FR ONLINE  BOILER 1%%',1,true),'FR reading rounds down')
-check(all:find('BL ONLINE  BOILER 99%%',1,true),'0.996 is not shown as 100%%')
-check(all:find('BR ONLINE  BOILER --',1,true),'invalid reading shows no value')
-''' % (width, height, height))
-
-    def test_full_efficiency_shows_100_percent(self):
-        self.lua.execute('''
-local ui,s,draw=fixture(57,24,'SHIP');running(s)
-for _,q in ipairs({'FL','FR','BL','BR'})do
- s.nodes[q].providers={vent={controlRole='bulk',boilerEfficiencyValid=true,boilerEfficiency=1}}
-end
-draw()
-local all={}
-for y=1,24 do all[#all+1]=ui.previous.rows[y].text end
-check(table.concat(all,'\\n'):find('FL ONLINE  BOILER 100%',1,true),'full efficiency')
-''')
-
-
-    def test_lease_warnings_become_one_yellow_core_stall_notice(self):
-        """A lost command or control lease recovers by itself, so the navigator only reports a yellow core stall."""
-        for fault, shown, colour in (('COMMAND LEASE EXPIRED; RAMPING TO ZERO', 'CORE STALL; RESOLVING', '4'),
-                                     ('LB LIFT CONTROL LEASE LOST', 'CORE STALL; RESOLVING', '4'),
-                                     ('SHAFT BROKEN', 'SHAFT BROKEN', 'e')):
-            with self.subTest(fault=fault):
-                self.lua.globals().FAULT = fault
-                self.lua.globals().SHOWN = shown
-                self.lua.globals().COLOUR = colour
-                self.lua.execute('''
-local ui,s,draw=fixture(57,24,'SHIP');running(s)
-s.faults={FAULT}
-draw()
-local found=false
-for y=1,24 do
- local row=ui.previous.rows[y]
- local at=row.text:find(SHOWN,1,true)
- if at then
-  found=true
-  check(row.foreground:sub(at,at)==COLOUR,'colour of '..FAULT..' was '..row.foreground:sub(at,at))
- end
-end
-check(found,'warning not shown: '..SHOWN)
-
-check(not table.concat((function() local t={} for y=1,24 do t[#t+1]=ui.previous.rows[y].text end return t end)(),'\\n'):find('LEASE',1,true) or SHOWN=='x','lease wording leaked')
-''')
-
-
-    def test_cockpit_inputs_menu_names_and_order(self):
-        """Settings page 1 offers COCKPIT INPUTS; its menu lists the four setting pages top to bottom."""
-        self.lua.execute('''
-local ui,s,draw=fixture(57,24,'SHIP');running(s)
-local function screen() local t={} for y=1,24 do t[#t+1]=ui.previous.rows[y].text end return table.concat(t,'\\n') end
-ui.page='SETTINGS';ui.settingsView='GENERAL';draw()
-check(screen():find('COCKPIT INPUTS',1,true) and not screen():find('INPUT TUNING',1,true),'general page button')
-ui.settingsView='TARGET';draw()
-local all=screen()
-local last=0
-for _,name in ipairs({'COCKPIT INPUTS','SEL HEADING SETTINGS','SEL THROTTLE SETTINGS','ALTITUDE SELECTOR SETTINGS','STRAFE SETTINGS'}) do
- local at=all:find(name,last+1,true)
- check(at,'missing or out of order: '..name);last=at or last
-end
-for _,old in ipairs({'SELECTED HEADING INPUT','SELECTED SPEED INPUT','ALTITUDE TARGET INPUT','INPUT TUNING'}) do check(not all:find(old,1,true),'old name still shown: '..old) end
-for view,title in pairs({['SEL HEADING']='SEL HEADING SETTINGS',['SEL THROTTLE']='SEL THROTTLE SETTINGS',
-  ['INPUT ALTITUDE']='ALTITUDE SELECTOR SETTINGS',['STRAFE SETTINGS']='STRAFE SETTINGS'}) do
- ui.settingsView=view;draw();check(screen():find(title,1,true),'page title '..title)
-end
-''')
-
-
-    def test_propulsion_lateral_heading_does_not_overlap_first_thrust_row(self):
-        for width, height in ((57, 24), (80, 30), (100, 36)):
-            with self.subTest(size=(width, height)):
-                self.lua.execute('''
-local ui,s,draw=fixture(%d,%d,'SHIP');running(s)
-ui.shipView='PROP';draw()
-local header,first
-for y=1,%d do
- local row=ui.previous.rows[y].text
- if row:find('LATERALS / APPLIED',1,true) then header=y;check(not row:find('THRUST',1,true),'heading row also holds a thrust indicator: '..row) end
- if row:find('FL THRUST',1,true) then first=y end
-end
-check(header and first and first>header,'FL THRUST must sit below the LATERALS heading')
-''' % (width, height, height))
-
-
-    def test_main_engine_power_value_is_separated_from_its_label(self):
-        for width, height in ((57, 24), (80, 30), (100, 36)):
-            with self.subTest(size=(width, height)):
-                self.lua.execute('''
-local ui,s,draw=fixture(%d,%d,'FLIGHT');running(s);draw()
-local found
-for y=1,%d do
- local row=ui.previous.rows[y].text
- if row:find('MAIN ENG. POWER',1,true) then found=row end
-end
-check(found,'main engine power row missing')
-check(found:find('MAIN ENG. POWER  UNAVAIL',1,true),'label and value need a space: '..found)
-''' % (width, height, height))
-
-
-    def test_flight_chamber_header_reads_chambers(self):
-        for width, height in ((57, 24), (80, 30), (100, 36)):
-            with self.subTest(size=(width, height)):
-                self.lua.execute('''
-local ui,s,draw=fixture(%d,%d,'FLIGHT');running(s);draw()
-local all={}
-for y=1,%d do all[#all+1]=ui.previous.rows[y].text end
-local text=table.concat(all,'\\n')
-check(text:find('CHAMBERS',1,true),'chamber header missing')
-check(not text:find('TARGET  LIFT',1,true),'old header still shown')
-''' % (width, height, height))
 
 
 # ======================================================================
@@ -1312,20 +719,6 @@ assert(Thrust.staleText("PRIMARY-LEFT","READBACK",nil)=="PRIMARY-LEFT READBACK U
         for old in ('"STATUS STALE"', '"NO STATUS"', '"CONTROLLER STATUS STALE"', '"CONTROLLER READBACK STALE"'):
             self.assertNotIn(old, text)
 
-    def test_navigator_stale_labels_wait_ten_seconds(self):
-        text = (project.ROOT / "source/library/packages/navigation/ui.lua").read_text(encoding="utf-8")
-        start = text.index("local STALE_NOTICE_SECONDS")
-        end = text.index("\nend\n", start) + 5
-        lua, _ = support.native_runtime()
-        lua.execute(FINITE + text[start:end].replace("local displayAge = nil", "displayAge = nil") + r'''
-displayAge=4
-local label,tone=staleLabel("HDG STATUS");assert(label=="WAITING FOR CORE" and tone=="yellow")
-displayAge=12.6
-label,tone=staleLabel("HDG STATUS");assert(label=="CORE UNREACHABLE 13 S" and tone=="yellow",label)
-''')
-        for old in ('"COCKPIT STALE"', '"HDG STATUS STALE"', '"THRUST STATUS STALE"', '"FAULT STATUS STALE"'):
-            self.assertNotIn(old, text)
-        self.assertIn("displayAge = snapshot.displayAgeSeconds", text)
 
 
 # ======================================================================
@@ -1441,12 +834,6 @@ out={};addProviderFaults(out,snap,{v1=true});assert(#out==1,"suppressed vent is 
 
 
 class NavigatorAndKillCheckTests(unittest.TestCase):
-    def test_boiler_checks_are_yellow_on_the_navigator(self):
-        text = (project.ROOT / "source/library/packages/navigation/ui.lua").read_text(encoding="utf-8")
-        self.assertIn('tostring(fault):find("CHECK BOILER",1,true) then return "yellow" end', text)
-        self.assertIn('faultTone = tostring(faults[1]):find("CHECK BOILER",1,true) and "yellow" or "red"', text)
-        self.assertIn('tostring(fault),reportedTone(fault),"core")', text)
-        self.assertIn("tostring(fault),reportedTone(fault),source)", text)
 
     def test_kill_check_follows_the_probe_rule(self):
         text = (project.ROOT / "source/core/avionics/io.lua").read_text(encoding="utf-8")
@@ -1486,33 +873,231 @@ import unittest
 import project
 from tests import test_builder as support
 
-STUBS = r'''
-local function finite(v) return type(v)=='number' and v==v and v~=math.huge and v~=-math.huge end
-local function thrustSnapshot(s) return s.thrust end
-local function staleLabel(t) return t end
-local function propulsionMode(s,t) return t.mode end
-local function numberText(v,d,signed) return (signed and v>=0 and "+" or "")..string.format("%."..d.."f",v) end
-local function speedTarget(s,t) return t.target end
-local function propulsionInputPercent() return nil end
-'''
 
 
-class APRequestLabelTests(unittest.TestCase):
-    def test_labels(self):
-        text = (project.ROOT / "source/library/packages/navigation/ui.lua").read_text(encoding="utf-8")
-        function = re.search(r"local function propulsionRequestText\(.*?\nend\n", text, re.S).group(0)
+
+
+
+
+
+class NavigatorGraphicsTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.builder = project.builder_module()
+        cls.source = cls.builder.collect_project(project.ROOT)
+        cls.packed = cls.builder.bundling.prepare(cls.source, cls.builder.FOLDERS)
+
+    def runtime(self):
         lua, _ = support.native_runtime()
-        lua.execute(STUBS + function + r'''
-local settings={thrust={directRpmVerified=true}}
-local function line(mode,ap) return (propulsionRequestText({autopilot={active=ap},settings=settings,
-    thrust={mode=mode,target=4.5,request={directRpm=0}}},true)) end
-assert(line("SEL",true)=="AP TARGET +4.50 b/s",line("SEL",true))
-assert(line("SEL",false)=="SEL TARGET +4.50 b/s")
-assert(line("DIRECT",true)=="AP RPM +0",line("DIRECT",true))
-assert(line("DIRECT",false)=="REQ RPM +0")
-''')
+        bundle = self.packed['library']['/packages/navigation/main.lua'].decode()
+        lua.globals().UI = lua.execute(bundle, self.builder.bundling.MAGIC, '/avionics/ui.lua')
+        lua.execute(NAV_PIXEL_HARNESS)
+        return lua
+
+    def test_all_pages_modes_and_editors_render_in_bounds(self):
+        self.runtime().execute("""
+for _,size in ipairs({{342,216},{456,288},{600,324}}) do
+ for _,page in ipairs({'FLIGHT','NAV','SHIP','SETTINGS'}) do
+  local ui,s,m=navFixture(size[1],size[2],page)
+  for _,ship in ipairs({'LIFT','PROP','TRIM'}) do
+   ui.shipView=ship;assert(ui:draw(s))
+  end
+  for _,mode in ipairs({'single','route'}) do
+   ui.navSection='ADVANCED';ui.navMode=mode;assert(ui:draw(s))
+  end
+  ui:openEditor('x','X',704,{type='ap_edit',key='x'});assert(ui:draw(s))
+  ui:openEditor('name','NAME','Harbour',{type='ap_edit',key='name'});assert(ui:draw(s))
+ end
+end
+""")
+
+    def test_current_and_next_waypoint_and_chevrons(self):
+        self.runtime().execute("""
+local ui,s=navFixture(342,216,'NAV')
+s.autopilot.active=true;s.autopilot.state='CRUISE'
+s.autopilot.route={kind='waypoints',index=1,entries={{name='ONE',x=1,z=2},{name='TWO',x=3,z=4}}}
+assert(ui:draw(s));assert(hasText('ONE') and hasText('NEXT TWO'))
+assert(hasText('AP - CRUISE') and not hasText('SYSTEMS ONLINE'))
+assert(not hasText('ENGAGE AP') and not hasText('MAIN'))
+s.autopilot.route.index=2;assert(ui:draw(s));assert(hasText('TWO') and not hasText('NEXT '))
+""")
+
+    def test_stale_actions_and_resize_are_rejected(self):
+        self.runtime().execute("""
+local ui,s,m=navFixture(342,216,'NAV');assert(ui:draw(s))
+s.displayStale=true
+assert(ui:touch(100,183,s)==nil)
+s.displayStale=false;assert(ui:draw(s));m.width=456
+assert(ui:touch(100,183,s)==nil,'resize invalidates old hit regions')
+""")
+
+    def test_kill_modal_captures_touch_and_expires(self):
+        self.runtime().execute("""
+local ui,s=navFixture(342,216,'SHIP');assert(ui:draw(s))
+ui.systemsMenu=true;assert(ui:draw(s))
+assert(hasText('KILL LIFT') and not hasText('RECOVER LIFT'))
+ui:touch(250,101,s);assert(ui.killReview)
+assert(ui:draw(s));assert(hasText('Locks Systems until disarmed.'))
+assert(ui:touch(100,200,s)==nil,'modal captures footer')
+s.displayStale=true;assert(ui:touch(240,170,s)==nil)
+s.displayStale=false;NOW=12;assert(ui:draw(s));assert(not ui.killReview)
+ui.killReview=NOW;assert(ui:draw(s))
+local action=ui:touch(240,170,s);assert(action.type=='emergency_kill_lift')
+""")
+
+    def test_editor_commit_and_route_order_controls(self):
+        self.runtime().execute("""
+local ui,s=navFixture(342,216,'NAV')
+ui:openEditor('x','X',0,{type='ap_edit',key='x'})
+ui:editorKey('CLEAR');ui:editorKey('-');ui:editorKey('7')
+local a=ui:editorKey('SAVE');assert(a.type=='ap_edit' and a.value==-7)
+ui.navSection='ADVANCED';ui.navMode='route';assert(ui:draw(s))
+assert(hasText('START ROUTE') and not hasText('START HERE'))
+a=ui:touch(100,184,s);assert(a.type=='ap_route_engage' and a.index==nil)
+""")
+
+    def test_emergency_and_mode_actions_revalidate_current_locks(self):
+        self.runtime().execute("""
+local ui,s=navFixture(342,216,'FLIGHT');assert(ui:draw(s))
+s.fleetBoot={ready=false,reason='COMMISSIONING'}
+assert(ui:activate({type='cockpit_mode',axis='heading',mode='SEL'},s)==nil)
+assert(ui:activate({type='systems_stop'},s).type=='systems_stop')
+s.emergencyLift={pending=true}
+assert(ui:activate({type='emergency_kill_lift'},s)==nil)
+s.emergencyLift={latched=true,disarming=true}
+assert(ui:activate({type='disarm_lift_kill'},s)==nil)
+s.fleetBoot={ready=true};s.emergencyLift={}
+s.autopilot.active=true
+assert(ui:activate({type='cockpit_mode',axis='heading',mode='MANUAL'},s)==nil)
+assert(ui:activate({type='ap_disengage'},s).type=='ap_disengage')
+""")
+
+    def test_dropdown_captures_background_and_sensor_validity(self):
+        self.runtime().execute("""
+local ui,s=navFixture(342,216,'FLIGHT');ui.systemsMenu=true;assert(ui:draw(s))
+assert(ui:touch(40,207,s)==nil and not ui.systemsMenu,'outside click closes without activating footer')
+s.vessel.validFields={heading=false};assert(ui:draw(s));assert(hasText('HDG --'))
+s.faults={'FL CHECK BOILER'};assert(ui:draw(s));assert(hasText('FL CHECK BOILER'))
+s.page='SETTINGS';ui.settingsView='GENERAL';assert(ui:draw(s))
+assert(hasText('FL CHECK BOILER'))
+""")
+
+    def test_settings_pagination_preserves_all_groups(self):
+        self.runtime().execute("""
+local ui,s=navFixture(342,216,'SETTINGS')
+s.settings={entries={}}
+for i=1,11 do s.settings.entries[i]={group='PROPULSION',key='P'..i,label='P'..i,value=i,min=0,max=100,step=1} end
+ui.settingsView='PROPULSION';assert(ui:draw(s));assert(ui.settingsPageSize==3)
+ui:activate({localAction='settings_page',count=11},s);assert(ui.settingsOffset==3)
+assert(ui:draw(s));assert(hasText('P4') and hasText('P6') and not hasText('P3'))
+ui.settingsView='TARGET';assert(ui:draw(s));assert(hasText('GENERAL LIMITS'))
+ui.settingsView='PID';assert(ui:draw(s));assert(hasText('TRIM PID'))
+ui.settingsView='NAV';assert(ui:draw(s));assert(hasText('DIGITAL ANCHOR'))
+ui.settingsView='ANCHOR';s.anchorControl={available=true,point={x=12,z=13},horizontalSpeed=.2}
+assert(ui:draw(s));assert(hasText('ENGAGE ANCHOR') and hasText('X 12.0 Z 13.0'))
+""")
+
+    def test_small_or_unsupported_monitors_fail_explicitly(self):
+        self.runtime().execute("""
+local ui,s=navFixture(240,80,'FLIGHT');local ok,why=ui:draw(s)
+assert(not ok and why=='NAVIGATOR NEEDS 342 X 216 PIXELS')
+local renderer,reason=UI.new({getSize=function()return 57,24 end},{})
+assert(renderer==nil and reason=='NAVIGATOR REQUIRES CC: GRAPHICS')
+""")
+
+    def test_speed_trend_and_propeller_follow_fresh_samples(self):
+        self.runtime().execute("""
+local ui,s=navFixture(342,216,'FLIGHT')
+s.vessel.at=1;local trend=ui:speedTrend(s);assert(trend=='--')
+s.vessel.at=2;s.vessel.forwardSpeed=5;trend=ui:speedTrend(s);assert(trend=='UP')
+local slope=ui.speedSlope;ui:speedTrend(s);assert(ui.speedSlope==slope,'same sample retains trend')
+s.displayStale=true;trend=ui:speedTrend(s);assert(trend=='--' and ui.speedSlope==nil)
+s.displayStale=false;s.thrust={units={['primary-left']={online=true,statusFresh=true,readings={{speedRaw=128,validity={speedRaw=true}}}}}}
+assert(ui:draw(s));NOW=2;assert(ui:draw(s));local angle=ui.propellerAngles.left;assert(angle>0)
+s.thrust.units['primary-left'].statusFresh=false;NOW=3;assert(ui:draw(s));assert(ui.propellerAngles.left==angle)
+""")
+
+    def test_flight_chambers_separate_readiness_and_control_states(self):
+        self.runtime().execute("""
+local ui,s=navFixture(342,216,'FLIGHT')
+s.nodes={FL={online=true,ready=true,thrustControlState='RDY',liftControlState='CMD',faults={}}}
+assert(ui:draw(s));assert(hasText('ONLINE') and hasText('THR RDY') and hasText('LIFT CMD'))
+assert(hasText('GAS '))
+s.nodes.FL.liftControlState='FAULT';s.nodes.FL.ready=false
+assert(ui:draw(s));assert(hasText('LIFT FAULT'))
+s.displayStale=true;assert(ui:draw(s));assert(hasText('OFFLINE') and hasText('THR FAULT') and not hasText('THR RDY'))
+""")
+
+    def test_flight_gas_uses_balloon_inventory_instead_of_provider_flow(self):
+        self.runtime().execute("""
+local ui,s=navFixture(342,216,'FLIGHT')
+s.nodes={FL={online=true,ready=true,thrustControlState='RDY',liftControlState='CMD',
+ balloon={hasBalloonValid=true,hasBalloon=true,gasMixValid=true,gasMixAmount=38285},
+ providers={steam={gasOutputValid=true,gasOutput=.12,targetValid=true,targetAmount=40000}}}}
+assert(ui:draw(s));assert(hasText('GAS 38285') and not hasText('GAS 0.12'))
+s.nodes.FL.balloon.gasMixValid=false;assert(ui:draw(s));assert(not hasText('GAS 38285'))
+s.nodes.FL.balloon.gasMixValid=true;s.nodes.FL.balloon.gasMixAmount=0
+assert(ui:draw(s));assert(hasText('GAS 0'))
+s.displayStale=true;assert(ui:draw(s));assert(not hasText('GAS 0'))
+""")
+
+    def test_engine_health_distinguishes_missing_and_temporary_loss(self):
+        self.runtime().execute("""
+local ui,s=navFixture(342,216,'FLIGHT')
+s.thrust={units={['primary-left']={discovered=false},['primary-right']={discovered=true,online=false,statusFresh=false}}}
+assert(ui:engineTone(s,'left')=='red' and ui:engineTone(s,'right')=='yellow')
+assert(ui:draw(s))
+s.displayStale=true;assert(ui:engineTone(s,'left')=='yellow')
+s.displayStale=false;s.thrust.units['primary-left']={discovered=true,online=true,statusFresh=true,available=false,readings={}}
+assert(ui:engineTone(s,'left')=='red')
+s.thrust.units['primary-left']={discovered=true,online=true,statusFresh=true,available=true,readings={{speedRaw=0,validity={speedRaw=true}}}}
+assert(ui:engineTone(s,'left')=='white','stopped engine remains healthy')
+""")
+
+    def test_header_and_frames_are_cached(self):
+        self.runtime().execute("""
+local ui,s,m=navFixture(342,216,'SHIP');assert(ui:draw(s))
+assert(hasText('A.E.V. AMARYLLIS') and hasText('SYSTEMS ONLINE'))
+local count=WRITES;assert(ui:draw(s));assert(WRITES==count)
+ui:close();assert(MODE==0)
+""")
+
+NAV_PIXEL_HARNESS=r"""
+NOW=1;os.clock=function()return NOW end
+TEXTS={};WRITES=0;MODE=0
+local original=UI.Pixel.text
+UI.Pixel.text=function(self,x,y,value,...)
+ TEXTS[#TEXTS+1]=tostring(value);return original(self,x,y,value,...)
+end
+function hasText(value)
+ for _,text in ipairs(TEXTS) do if text:find(value,1,true) then return true end end
+ return false
+end
+function navFixture(width,height,page)
+ local m={width=width,height=height,getSize=function()return width,height end,
+  setTextScale=function()end,setGraphicsMode=function(v)MODE=v end,setFrozen=function()end,
+  setPaletteColor=function()end}
+ m.getSize=function()return m.width,m.height end
+ m.drawPixels=function(x,y,rows,w,h)
+  WRITES=WRITES+1
+  if type(rows)=='table' then
+   assert(x>=0 and y>=0 and y+#rows<=m.height)
+   for _,row in ipairs(rows) do assert(x+#row<=m.width);for i=1,#row do assert(row:byte(i)<=15)end end
+  end
+ end
+ local ui=assert(UI.new(m,{}));ui.page=page
+ local s={page=page,dataFresh=true,vessel={valid=true,heading=90,forwardSpeed=3,altitude=210,verticalSpeed=0,pitch=0,roll=0},
+  systemsStartup={active=true,phase='READY',available=false},systemsRestart={available=true},
+  modes={heading='SEL',throttle='SEL',lateral='MANUAL'},targets={heading=90,speed=3,altitude=210},
+  cockpitControl={available=true},autopilot={active=false,available=true,destination={name='HOME',x=1,z=2,altitude=210,cruiseSpeed=3},
+  library={writable=true,entries={{name='ONE',x=1,z=2},{name='TWO',x=3,z=4}}},
+  playlist={{name='ONE',x=1,z=2,altitude=210,cruiseSpeed=3},{name='TWO',x=3,z=4,altitude=250,cruiseSpeed=5}}},faults={}}
+ local oldDraw=ui.draw
+ ui.draw=function(self,snapshot)TEXTS={};return oldDraw(self,snapshot)end
+ return ui,s,m
+end
+"""
 
 
 if __name__ == "__main__":
-    import unittest
     unittest.main()

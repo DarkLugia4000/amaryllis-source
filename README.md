@@ -22,9 +22,14 @@ propulsion arrangement, lift management and control tuning.
   the onboard monitor interface.
 - **Flight management:** four independently controlled lift chambers, leveling,
   lateral positioning and a digital position anchor.
-- **Point-to-point autopilot:** configurable route speed and altitude, heading
-  acquisition, route capture, acceleration, cruise, approach and arrival handover.
+- **Autopilot:** single destinations and ordered waypoint routes with configurable
+  speed and altitude, heading acquisition, route capture, acceleration, cruise,
+  approach and final arrival handover to the position anchor.
   Route tracking and braking are still being refined through flight recordings.
+- **Graphical navigator:** CC: Graphics Flight, Navigation, Ship and Settings
+  pages, with chamber diagrams, propulsion indicators, route editing and a
+  dedicated AP progress display. The navigator requires at least 342 × 216 pixels;
+  see the [display requirements](docs/development/CC-GRAPHICS.md).
 - **Diagnostics and recovery:** per-computer status, removable-disk debug
   recordings, retained pilot selections and recovery paths for installation
   mistakes and interrupted updates.
